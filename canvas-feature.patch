@@ -1,0 +1,4737 @@
+diff --git a/apps/web/creative-cue/src/components/SideNavigation/index.tsx b/apps/web/creative-cue/src/components/SideNavigation/index.tsx
+index 97669333a9..9d8fae43bf 100644
+--- a/apps/web/creative-cue/src/components/SideNavigation/index.tsx
++++ b/apps/web/creative-cue/src/components/SideNavigation/index.tsx
+@@ -2,7 +2,13 @@
+ import { KsDivider, KsDropdownMenu } from '@byted-keystone/react';
+ import { useTranslation } from '@edenx/runtime/intl';
+ import { useLocation, useNavigate } from '@edenx/runtime/router';
+-import { KsIconBriefcase, KsIconHome, KsIconTips, KsIconTransitions } from '@fe-infra/keystone-icons-react';
++import {
++  KsIconBriefcase,
++  KsIconHome,
++  KsIconLayout,
++  KsIconTips,
++  KsIconTransitions
++} from '@fe-infra/keystone-icons-react';
+ import { Folder as IconFolder, SparklesOutline as IconSparklesOutline } from '@okee-fe/react-icons-creative-studio';
+ import clsx from 'clsx';
+ import React, { useEffect, useMemo, useRef, useState } from 'react';
+@@ -28,6 +34,10 @@ const SIDE_NAV_LABELS: Partial<Record<string, { key: string; defaultValue: strin
+     key: 'cue_home_create_menu_inspire',
+     defaultValue: 'Inspire'
+   },
++  [MenuIds.Canvas]: {
++    key: 'cue_home_create_menu_canvas',
++    defaultValue: 'Canvas'
++  },
+   [MenuIds.Agent]: {
+     key: 'cue_menu_creative_agent',
+     defaultValue: 'Agent'
+@@ -96,6 +106,15 @@ function SideNavigation({
+           }
+         : undefined;
+ 
++    const canvasItem: MenuItem = {
++      id: MenuIds.Canvas,
++      icon: <KsIconLayout size={20} />,
++      label: 'Canvas',
++      labelKey: 'cue_home_create_menu_canvas',
++      path: '/canvas',
++      exactMatch: true
++    };
++
+     const toolsChildren = flattenMenuItemChildren([avatarItem, variationsItem]);
+     const toolsItem =
+       getHasSideNavToolsPermission({ menuItems }) && toolsChildren.length > 0
+@@ -119,7 +138,7 @@ function SideNavigation({
+         }
+       : undefined;
+ 
+-    return [homeItem, inspirationItem, agentItem, createItem, toolsItem, libraryItem, productItem].filter(
++    return [homeItem, inspirationItem, canvasItem, agentItem, createItem, toolsItem, libraryItem, productItem].filter(
+       (item): item is MenuItem => Boolean(item)
+     );
+   }, [menuItems]);
+@@ -180,6 +199,9 @@ function SideNavigation({
+     if (item.id === MenuIds.Agent) {
+       return <IconSparklesOutline size={20} className={iconClassName} />;
+     }
++    if (item.id === MenuIds.Canvas) {
++      return <KsIconLayout size={20} className={iconClassName} />;
++    }
+     if (item.id === MenuIds.Create) {
+       return <KsIconTransitions size={20} className={iconClassName} />;
+     }
+diff --git a/apps/web/creative-cue/src/entries/home/routes/__auth/canvas/page.tsx b/apps/web/creative-cue/src/entries/home/routes/__auth/canvas/page.tsx
+new file mode 100644
+index 0000000000..1d98e9c294
+--- /dev/null
++++ b/apps/web/creative-cue/src/entries/home/routes/__auth/canvas/page.tsx
+@@ -0,0 +1,13 @@
++import CanvasPage from '@/pages/canvas';
++
++/**
++ * 画布是全幅沉浸式页面：不进 WithNavLayout，因此没有全局侧边导航，
++ * 退出入口由画布左上角的关闭按钮提供。
++ */
++export default function CanvasPageRoute() {
++  return (
++    <main className="relative min-h-0 flex-1 bg-neutral-surface1" style={{ height: '100%', width: '100%' }}>
++      <CanvasPage />
++    </main>
++  );
++}
+diff --git a/apps/web/creative-cue/src/hooks/miniappMenu/useDefaultMenuItem.tsx b/apps/web/creative-cue/src/hooks/miniappMenu/useDefaultMenuItem.tsx
+index 5dda0fedcb..a00eeb7f04 100644
+--- a/apps/web/creative-cue/src/hooks/miniappMenu/useDefaultMenuItem.tsx
++++ b/apps/web/creative-cue/src/hooks/miniappMenu/useDefaultMenuItem.tsx
+@@ -46,6 +46,7 @@ export const MenuIds = {
+   T2V: CueMiniApp.T2V,
+   AiAvatar: CueMiniApp.AiAvatar,
+   AvatarTryOn: CueMiniApp.AvatarTryOn,
++  Canvas: 'canvas',
+   Create: 'create',
+   Variations: 'variations',
+   Inspiration: 'CreativeStudio/Inspiration/Inspiration',
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/AgentPanel.tsx b/apps/web/creative-cue/src/pages/canvas/components/AgentPanel.tsx
+new file mode 100644
+index 0000000000..51eb4cf6f2
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/AgentPanel.tsx
+@@ -0,0 +1,137 @@
++import { KsIconAiAssistant, KsIconChevronRight, KsIconSend } from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import { useEffect, useRef, useState } from 'react';
++
++export interface AgentMessage {
++  id: string;
++  role: 'user' | 'agent';
++  content: string;
++}
++
++interface AgentPanelProps {
++  isOpen: boolean;
++  /** Agent 正在生成，禁用发送避免重复触发。 */
++  isBusy: boolean;
++  messages: AgentMessage[];
++  onToggle: () => void;
++  onSend: (content: string) => void;
++}
++
++function MessageBubble({ message }: { message: AgentMessage }) {
++  const isUser = message.role === 'user';
++  return (
++    <div className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}>
++      <div
++        className={clsx(
++          'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-[19px]',
++          isUser
++            ? 'rounded-br-md bg-primary-surface2 text-neutral-highOnSurface'
++            : 'rounded-bl-md bg-neutral-surface2 text-neutral-highOnSurface'
++        )}
++      >
++        {message.content}
++      </div>
++    </div>
++  );
++}
++
++/**
++ * 画布右侧的 Agent 会话面板。
++ * 收起时坍缩成右下角的 FAB，展开时是历史消息 + 底部输入框。
++ */
++function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend }: AgentPanelProps) {
++  const [draft, setDraft] = useState('');
++  const historyRef = useRef<HTMLDivElement>(null);
++
++  /* 新消息进来时滚到底部。 */
++  useEffect(() => {
++    const history = historyRef.current;
++    if (history) {
++      history.scrollTop = history.scrollHeight;
++    }
++  }, [messages, isOpen]);
++
++  const submit = () => {
++    const content = draft.trim();
++    if (!content || isBusy) {
++      return;
++    }
++    onSend(content);
++    setDraft('');
++  };
++
++  if (!isOpen) {
++    return (
++      <button
++        type="button"
++        title="Open agent"
++        onClick={onToggle}
++        className="absolute bottom-6 right-6 z-20 flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)] transition-transform hover:scale-105"
++      >
++        <KsIconAiAssistant size={24} />
++      </button>
++    );
++  }
++
++  return (
++    <aside className="absolute inset-y-4 right-4 z-20 flex w-[320px] flex-col overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3">
++        <span className="flex size-7 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
++          <KsIconAiAssistant size={16} />
++        </span>
++        <span className="flex-1 truncate text-[13px] font-semibold text-neutral-highOnSurface">Agent</span>
++        <button
++          type="button"
++          title="Collapse agent panel"
++          onClick={onToggle}
++          className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
++        >
++          <KsIconChevronRight size={16} />
++        </button>
++      </header>
++
++      <div ref={historyRef} className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
++        {messages.map((message) => (
++          <MessageBubble key={message.id} message={message} />
++        ))}
++      </div>
++
++      <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
++        <div className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-2 focus-within:border-primary-fill">
++          <textarea
++            value={draft}
++            rows={2}
++            placeholder={isBusy ? 'Working…' : 'Ask the agent to build or edit nodes…'}
++            onChange={(event) => setDraft(event.target.value)}
++            onKeyDown={(event) => {
++              // Enter 发送，Shift+Enter 换行
++              if (event.key === 'Enter' && !event.shiftKey) {
++                event.preventDefault();
++                submit();
++              }
++            }}
++            className="w-full resize-none bg-transparent text-[13px] leading-[18px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
++          />
++          <div className="flex justify-end">
++            <button
++              type="button"
++              title="Send"
++              disabled={!draft.trim() || isBusy}
++              onClick={submit}
++              className={clsx(
++                'flex size-7 items-center justify-center rounded-lg transition-colors',
++                draft.trim() && !isBusy
++                  ? 'bg-primary-fill text-neutral-onFill'
++                  : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
++              )}
++            >
++              <KsIconSend size={14} />
++            </button>
++          </div>
++        </div>
++      </div>
++    </aside>
++  );
++}
++
++export default AgentPanel;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/AssetLibraryPanel.tsx b/apps/web/creative-cue/src/pages/canvas/components/AssetLibraryPanel.tsx
+new file mode 100644
+index 0000000000..ee2c556a9a
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/AssetLibraryPanel.tsx
+@@ -0,0 +1,105 @@
++import { KsIconSearch, KsIconUpload } from '@fe-infra/keystone-icons-react';
++import { useEffect, useMemo, useState } from 'react';
++
++import { LIBRARY_ASSETS } from '../const';
++import { fetchLibraryAssets } from '../services/node-runner';
++import type { LibraryAsset } from '../types';
++import { NODE_KIND_ICON } from './nodeIcons';
++
++interface AssetLibraryPanelProps {
++  onPick: (asset: LibraryAsset) => void;
++}
++
++/**
++ * 「从素材库添加」面板，挂在左侧工具栏的素材库入口上。
++ * 目前用 LIBRARY_ASSETS 示例数据，接入真实素材库接口后只需替换数据源。
++ */
++function AssetLibraryPanel({ onPick }: AssetLibraryPanelProps) {
++  const [query, setQuery] = useState('');
++  const [source, setSource] = useState<LibraryAsset[]>(LIBRARY_ASSETS);
++  const [isLoading, setIsLoading] = useState(true);
++
++  /* 拉真实素材库；接口不可用时保留示例数据，面板不至于空着。 */
++  useEffect(() => {
++    let cancelled = false;
++    fetchLibraryAssets()
++      .then((list) => {
++        if (!cancelled && list.length > 0) {
++          setSource(list);
++        }
++      })
++      .catch(() => undefined)
++      .finally(() => {
++        if (!cancelled) {
++          setIsLoading(false);
++        }
++      });
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
++  const assets = useMemo(() => {
++    const keyword = query.trim().toLowerCase();
++    return source.filter((asset) => !keyword || asset.name.toLowerCase().includes(keyword));
++  }, [query, source]);
++
++  return (
++    <div className="w-[280px] rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface p-2 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++      <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
++        Add from library
++      </div>
++
++      <div className="mb-1 flex items-center gap-2 rounded-lg bg-neutral-surface1 px-2">
++        <KsIconSearch size={14} className="shrink-0 text-neutral-lowOnSurface" />
++        <input
++          value={query}
++          placeholder="Search assets"
++          onChange={(event) => setQuery(event.target.value)}
++          className="h-8 w-full bg-transparent text-[13px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
++        />
++      </div>
++
++      <div className="max-h-[300px] overflow-y-auto">
++        {assets.map((asset) => (
++          <button
++            key={asset.id}
++            type="button"
++            title={`Add ${asset.name} to canvas`}
++            onClick={() => onPick(asset)}
++            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-surface2 active:bg-neutral-surface3"
++          >
++            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-surface2 text-neutral-mediumOnSurface">
++              {NODE_KIND_ICON[asset.kind]}
++            </span>
++            <span className="min-w-0 flex-1">
++              <span className="block truncate text-[13px] font-medium text-neutral-highOnSurface">{asset.name}</span>
++              <span className="block truncate text-[11px] text-neutral-lowOnSurface">{asset.meta}</span>
++            </span>
++          </button>
++        ))}
++
++        {assets.length === 0 ? (
++          <div className="px-2 py-6 text-center text-[12px] text-neutral-lowOnSurface">
++            {isLoading ? 'Loading assets…' : 'No matching assets'}
++          </div>
++        ) : null}
++      </div>
++
++      <div className="mt-1 border-t border-solid border-neutral-fillLow pt-1">
++        <button
++          type="button"
++          title="Upload from this device"
++          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
++        >
++          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-neutral-surface2 text-neutral-mediumOnSurface">
++            <KsIconUpload size={14} />
++          </span>
++          Upload from device
++        </button>
++      </div>
++    </div>
++  );
++}
++
++export default AssetLibraryPanel;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/CanvasSidebar.tsx b/apps/web/creative-cue/src/pages/canvas/components/CanvasSidebar.tsx
+new file mode 100644
+index 0000000000..98e021fc5d
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/CanvasSidebar.tsx
+@@ -0,0 +1,160 @@
++import {
++  KsIconDelete,
++  KsIconFolder,
++  KsIconFullScreen,
++  KsIconPlus,
++  KsIconZoomIn,
++  KsIconZoomOut
++} from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import { useEffect, useRef } from 'react';
++
++import type { CanvasNodeKind, LibraryAsset } from '../types';
++import AssetLibraryPanel from './AssetLibraryPanel';
++import NodePalette from './NodePalette';
++
++/** 左侧工具栏当前展开的浮层。 */
++export type SidebarPanel = 'nodes' | 'library' | null;
++
++interface CanvasSidebarProps {
++  zoom: number;
++  canDelete: boolean;
++  openPanel: SidebarPanel;
++  onTogglePanel: (panel: Exclude<SidebarPanel, null>) => void;
++  onClosePanel: () => void;
++  onAddNode: (kind: CanvasNodeKind) => void;
++  onPickAsset: (asset: LibraryAsset) => void;
++  onDeleteSelected: () => void;
++  onZoomIn: () => void;
++  onZoomOut: () => void;
++  onFitView: () => void;
++  onResetZoom: () => void;
++}
++
++const ICON_SIZE = 18;
++
++function PillButton({
++  children,
++  disabled,
++  isActive,
++  title,
++  onClick
++}: {
++  children: React.ReactNode;
++  disabled?: boolean;
++  isActive?: boolean;
++  title: string;
++  onClick: () => void;
++}) {
++  return (
++    <button
++      type="button"
++      title={title}
++      disabled={disabled}
++      onClick={onClick}
++      className={clsx(
++        'flex size-10 items-center justify-center rounded-full transition-colors',
++        disabled && 'cursor-not-allowed opacity-40',
++        !disabled && isActive && 'bg-neutral-onFill/25',
++        !disabled && !isActive && 'hover:bg-neutral-onFill/15 active:bg-neutral-onFill/25'
++      )}
++    >
++      {children}
++    </button>
++  );
++}
++
++/**
++ * 画布左侧竖向药丸工具栏，占据原侧边导航的位置。
++ * 深色 + 全圆角；节点新增收在 "+"，素材库收在文件夹入口。
++ */
++function CanvasSidebar({
++  zoom,
++  canDelete,
++  openPanel,
++  onTogglePanel,
++  onClosePanel,
++  onAddNode,
++  onPickAsset,
++  onDeleteSelected,
++  onZoomIn,
++  onZoomOut,
++  onFitView,
++  onResetZoom
++}: CanvasSidebarProps) {
++  const wrapperRef = useRef<HTMLDivElement>(null);
++
++  /* 点击浮层和工具栏之外的区域收起浮层。 */
++  useEffect(() => {
++    if (!openPanel) {
++      return;
++    }
++    const handlePointerDown = (event: PointerEvent) => {
++      if (!wrapperRef.current?.contains(event.target as Node)) {
++        onClosePanel();
++      }
++    };
++    document.addEventListener('pointerdown', handlePointerDown);
++    return () => document.removeEventListener('pointerdown', handlePointerDown);
++  }, [openPanel, onClosePanel]);
++
++  return (
++    <div ref={wrapperRef} className="absolute left-4 top-1/2 z-30 -translate-y-1/2">
++      <div className="flex flex-col items-center gap-1 rounded-full bg-neutral-fillHigh p-2 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++        <button
++          type="button"
++          title="Add node"
++          onClick={() => onTogglePanel('nodes')}
++          className={clsx(
++            'flex size-10 items-center justify-center rounded-full bg-neutral-onFill text-neutral-fill transition-transform',
++            openPanel === 'nodes' && 'rotate-45'
++          )}
++        >
++          <KsIconPlus size={20} />
++        </button>
++
++        <PillButton
++          title="Add assets from library"
++          isActive={openPanel === 'library'}
++          onClick={() => onTogglePanel('library')}
++        >
++          <KsIconFolder size={ICON_SIZE} />
++        </PillButton>
++
++        <span className="my-1 h-px w-6 bg-neutral-onFill/20" />
++
++        <PillButton title="Zoom in" onClick={onZoomIn}>
++          <KsIconZoomIn size={ICON_SIZE} />
++        </PillButton>
++        <button
++          type="button"
++          title="Reset zoom to 100%"
++          onClick={onResetZoom}
++          className="h-7 w-10 rounded-full text-[10px] font-semibold tabular-nums transition-colors hover:bg-neutral-onFill/15"
++        >
++          {Math.round(zoom * 100)}%
++        </button>
++        <PillButton title="Zoom out" onClick={onZoomOut}>
++          <KsIconZoomOut size={ICON_SIZE} />
++        </PillButton>
++        <PillButton title="Fit all nodes to view" onClick={onFitView}>
++          <KsIconFullScreen size={ICON_SIZE} />
++        </PillButton>
++
++        <span className="my-1 h-px w-6 bg-neutral-onFill/20" />
++
++        <PillButton title="Delete selected node (Backspace)" disabled={!canDelete} onClick={onDeleteSelected}>
++          <KsIconDelete size={ICON_SIZE} />
++        </PillButton>
++      </div>
++
++      {openPanel ? (
++        <div className="absolute left-full top-0 ml-3">
++          {openPanel === 'nodes' ? <NodePalette onSelect={onAddNode} /> : <AssetLibraryPanel onPick={onPickAsset} />}
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++export default CanvasSidebar;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/EdgeLayer.tsx b/apps/web/creative-cue/src/pages/canvas/components/EdgeLayer.tsx
+new file mode 100644
+index 0000000000..eec64dacce
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/EdgeLayer.tsx
+@@ -0,0 +1,76 @@
++import { useMemo } from 'react';
++
++import type { CanvasEdge, CanvasNode, PendingConnection } from '../types';
++import { buildEdgePath, getSourcePort, getTargetPort } from '../utils';
++
++interface EdgeLayerProps {
++  nodes: CanvasNode[];
++  edges: CanvasEdge[];
++  selectedIds: string[];
++  pendingConnection: PendingConnection | null;
++}
++
++/**
++ * 连线层。
++ * 用一个铺满世界坐标系的 SVG 承载所有连线，overflow visible 让负坐标也能画出来；
++ * pointer-events 关掉，避免挡住节点拖拽。
++ */
++function EdgeLayer({ nodes, edges, selectedIds, pendingConnection }: EdgeLayerProps) {
++  const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
++
++  const pendingPath = useMemo(() => {
++    if (!pendingConnection) {
++      return null;
++    }
++    const source = nodeMap.get(pendingConnection.source);
++    if (!source) {
++      return null;
++    }
++    const from = getSourcePort(source, pendingConnection.sourceOutput);
++    return buildEdgePath(from.x, from.y, pendingConnection.toX, pendingConnection.toY);
++  }, [nodeMap, pendingConnection]);
++
++  /*
++   * 尺寸必须非 0：Chrome 下 0×0 的 SVG viewport 不会绘制 overflow 出去的内容，
++   * 连线会整体消失。1px + overflow-visible 才画得出来。
++   */
++  return (
++    <svg className="pointer-events-none absolute left-0 top-0 h-px w-px overflow-visible">
++      {edges.map((edge) => {
++        const source = nodeMap.get(edge.source);
++        const target = nodeMap.get(edge.target);
++        if (!source || !target) {
++          return null;
++        }
++
++        const from = getSourcePort(source, edge.sourceOutput);
++        const to = getTargetPort(target, edge.targetInput);
++        const isActive = selectedIds.includes(edge.source) || selectedIds.includes(edge.target);
++
++        return (
++          <path
++            key={edge.id}
++            d={buildEdgePath(from.x, from.y, to.x, to.y)}
++            fill="none"
++            strokeWidth={isActive ? 2 : 1.5}
++            stroke="currentColor"
++            className={isActive ? 'text-primary-fill' : 'text-neutral-fillMedHigh'}
++          />
++        );
++      })}
++
++      {pendingPath ? (
++        <path
++          d={pendingPath}
++          fill="none"
++          strokeWidth={2}
++          strokeDasharray="6 4"
++          stroke="currentColor"
++          className="text-primary-fill"
++        />
++      ) : null}
++    </svg>
++  );
++}
++
++export default EdgeLayer;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/NodeCard.tsx b/apps/web/creative-cue/src/pages/canvas/components/NodeCard.tsx
+new file mode 100644
+index 0000000000..820159422b
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/NodeCard.tsx
+@@ -0,0 +1,455 @@
++import { KsIconArrowRight, KsIconPlus } from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import type React from 'react';
++
++import { BATCH_PREVIEW_ITEMS, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from '../const';
++import type { CanvasEdge, CanvasNode, EditNodeKind, NodePortSpec, PortType } from '../types';
++import { countInputConnections, getPortOffsetY } from '../utils';
++import NodeHoverToolbar from './NodeHoverToolbar';
++import { PORT_TYPE_ICON } from './nodeIcons';
++
++interface NodeCardProps {
++  node: CanvasNode;
++  edges: CanvasEdge[];
++  isSelected: boolean;
++  isHovered: boolean;
++  /** 是否是唯一选中项；多选时由顶部工具栏统一操作，卡片不再各自弹操作条。 */
++  isSoleSelection: boolean;
++  /** 画布上任意一处正在拉线：此时所有卡片都亮出端口，方便对接。 */
++  isConnecting: boolean;
++  /** 正在拉的连线携带的数据类型，用于高亮可接的输入端口。 */
++  connectingType: PortType | null;
++  onHoverChange: (nodeId: string | null) => void;
++  onPointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => void;
++  onOutputPointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, outputId: string) => void;
++  onInputPointerUp: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, inputId: string) => void;
++  onOpenAddPanel: (nodeId: string, outputId: string) => void;
++  /** 在卡片任意位置松手：自动挑一个类型匹配的输入完成连线。 */
++  onDropOnCard: (nodeId: string) => void;
++  onOpenEditor: (nodeId: string) => void;
++  onRunTool: (nodeId: string, kind: EditNodeKind) => void;
++  /** 执行本节点，调用平台的生成能力。 */
++  onRun: (nodeId: string) => void;
++  /** 编辑卡片内容（prompt / 文案）。 */
++  onTextChange: (nodeId: string, text: string) => void;
++  onDuplicate: (nodeId: string) => void;
++  onDelete: (nodeId: string) => void;
++}
++
++/** 固定的一组波形高度，避免每帧随机导致重渲染时跳动。 */
++const WAVEFORM_BARS = [8, 16, 24, 14, 30, 20, 11, 26, 18, 9, 22, 28, 13, 19, 25, 10, 17, 23, 12, 27];
++
++function StatusChip({ status }: { status: CanvasNode['status'] }) {
++  if (status === 'generating') {
++    return (
++      <span className="flex items-center gap-1 rounded-full bg-primary-surface2 px-2 py-0.5 text-[10px] font-medium text-primary-onSurface">
++        <span className="size-1.5 animate-pulse rounded-full bg-primary-fill" />
++        Generating
++      </span>
++    );
++  }
++  if (status === 'done') {
++    return (
++      <span className="rounded-full bg-neutral-surface2 px-2 py-0.5 text-[10px] font-medium text-success-onSurface">
++        Ready
++      </span>
++    );
++  }
++  return (
++    <span className="rounded-full bg-neutral-surface2 px-2 py-0.5 text-[10px] font-medium text-neutral-lowOnSurface">
++      Idle
++    </span>
++  );
++}
++
++/**
++ * 端口小圆点，连线的实际吸附目标。
++ * 常态就可见（只是较淡），拉线时可接的端口会放大高亮，形成吸附提示。
++ */
++function PortDot({
++  isFilled,
++  isInteractive,
++  isCandidate
++}: {
++  isFilled: boolean;
++  isInteractive: boolean;
++  isCandidate?: boolean;
++}) {
++  return (
++    <span
++      className={clsx(
++        // block 是必须的：span 默认 display:inline，宽高会被忽略，端口会塌成 0×0
++        'block shrink-0 rounded-full border-2 border-solid border-neutral-surface transition-all',
++        isCandidate ? 'size-[14px] bg-primary-fill ring-2 ring-primary-surface2' : 'size-[10px]',
++        !isCandidate && (isFilled ? 'bg-primary-fill' : 'bg-neutral-fillMedHigh'),
++        isInteractive && 'cursor-crosshair hover:scale-125 hover:bg-primary-fill'
++      )}
++    />
++  );
++}
++
++/**
++ * 左侧输入行：图标 + 名称 + 已用/上限 + 端口。
++ * 挂在卡片左外侧，和 Flora 一致，只在 hover / 选中时显示。
++ */
++function InputRow({
++  port,
++  used,
++  offsetY,
++  showLabel,
++  isCandidate,
++  onPointerUp
++}: {
++  port: NodePortSpec;
++  used: number;
++  offsetY: number;
++  showLabel: boolean;
++  isCandidate: boolean;
++  onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
++}) {
++  return (
++    <div
++      className="absolute right-full flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap pr-0"
++      style={{ top: offsetY }}
++      onPointerUp={onPointerUp}
++      onPointerDown={(event) => event.stopPropagation()}
++    >
++      <span
++        className={clsx(
++          'flex items-center gap-1 pr-1.5 text-[10px] font-medium text-neutral-mediumOnSurface transition-opacity',
++          showLabel ? 'opacity-100' : 'pointer-events-none opacity-0'
++        )}
++      >
++        <span className="text-neutral-lowOnSurface">{PORT_TYPE_ICON[port.type]}</span>
++        {port.label}
++        {port.max ? (
++          <span className="tabular-nums text-neutral-lowOnSurface">
++            {used}/{port.max}
++          </span>
++        ) : null}
++      </span>
++      <span className="-mr-[5px]">
++        <PortDot isFilled={used > 0} isInteractive={false} isCandidate={isCandidate} />
++      </span>
++    </div>
++  );
++}
++
++/** 右侧输出行；单输出时不显示文字，只留 ⊕。 */
++function OutputRow({
++  port,
++  offsetY,
++  showLabel,
++  onPointerDown
++}: {
++  port: NodePortSpec;
++  offsetY: number;
++  showLabel: boolean;
++  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
++}) {
++  return (
++    <div
++      className="absolute left-full flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap"
++      style={{ top: offsetY }}
++      onPointerDown={(event) => {
++        event.stopPropagation();
++        onPointerDown(event);
++      }}
++    >
++      <span className="-ml-[5px]">
++        <PortDot isFilled={false} isInteractive />
++      </span>
++      <span
++        className={clsx(
++          'flex items-center gap-1 pl-1.5 text-[10px] font-medium text-neutral-mediumOnSurface transition-opacity',
++          showLabel ? 'opacity-100' : 'pointer-events-none opacity-0'
++        )}
++      >
++        <span className="text-neutral-lowOnSurface">{PORT_TYPE_ICON[port.type]}</span>
++        {port.label}
++      </span>
++    </div>
++  );
++}
++
++/**
++ * 卡片内的可编辑文本框。
++ * 必须挡住 pointerdown：否则一点进去就变成拖拽卡片，光标进不来。
++ */
++function PromptField({
++  value,
++  placeholder,
++  rows,
++  onChange
++}: {
++  value: string;
++  placeholder: string;
++  rows: number;
++  onChange: (text: string) => void;
++}) {
++  return (
++    <textarea
++      value={value}
++      rows={rows}
++      placeholder={placeholder}
++      spellCheck={false}
++      onPointerDown={(event) => event.stopPropagation()}
++      onChange={(event) => onChange(event.target.value)}
++      className="w-full resize-none bg-transparent text-[13px] leading-[18px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
++    />
++  );
++}
++
++function NodeBody({ node, onTextChange }: { node: CanvasNode; onTextChange: (text: string) => void }) {
++  const config = NODE_KIND_CONFIG[node.kind];
++
++  if (config.body === 'media') {
++    return (
++      <>
++        <div
++          className={clsx(
++            'flex h-[136px] w-full items-center justify-center overflow-hidden rounded-xl',
++            config.placeholder
++          )}
++        >
++          {node.assetUrl ? (
++            <img src={node.assetUrl} alt={node.title} className="size-full object-cover" />
++          ) : (
++            <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{node.title}</span>
++          )}
++        </div>
++        <div className="mt-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
++          <PromptField
++            value={node.text ?? ''}
++            rows={2}
++            placeholder="Describe what to generate…"
++            onChange={onTextChange}
++          />
++        </div>
++      </>
++    );
++  }
++
++  if (config.body === 'audio') {
++    return (
++      <>
++        <div className="flex h-[60px] w-full items-center justify-center gap-[3px] rounded-xl bg-neutral-surface2 px-3">
++        {WAVEFORM_BARS.map((height, index) => (
++          <span
++            // 波形只是静态装饰，没有可用于 key 的业务标识
++            // eslint-disable-next-line react/no-array-index-key
++            key={index}
++            className="w-[3px] rounded-full bg-primary-fill/40"
++            style={{ height }}
++          />
++        ))}
++        </div>
++        <div className="mt-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
++          <PromptField
++            value={node.text ?? ''}
++            rows={2}
++            placeholder="Script to speak…"
++            onChange={onTextChange}
++          />
++        </div>
++      </>
++    );
++  }
++
++  if (config.body === 'operation') {
++    return (
++      <div className="rounded-xl bg-neutral-surface1 p-2">
++        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Inputs</div>
++        <p className="line-clamp-3 text-[12px] leading-[17px] text-neutral-mediumOnSurface">{config.description}</p>
++      </div>
++    );
++  }
++
++  if (config.body === 'batch') {
++    return (
++      <div className="rounded-xl bg-neutral-surface1 p-1.5">
++        {BATCH_PREVIEW_ITEMS.map((item) => (
++          <div key={item} className="flex items-center gap-1.5 rounded-md px-1 py-1">
++            <span className="size-4 shrink-0 rounded-sm bg-gradient-to-br from-primary-surface2 to-neutral-surface2" />
++            <span className="truncate text-[11px] text-neutral-mediumOnSurface">{item}</span>
++          </div>
++        ))}
++        <div className="mt-1 flex items-center justify-between border-t border-solid border-neutral-fillLow px-1 pt-1.5">
++          <span className="truncate text-[10px] text-neutral-lowOnSurface">Connect more nodes or upload</span>
++        </div>
++      </div>
++    );
++  }
++
++  if (config.body === 'timeline') {
++    return (
++      <div className="rounded-xl bg-neutral-surface1 p-2">
++        {/* 两条轨道缩影，点开才是完整的时间线编辑器 */}
++        {['video', 'audio'].map((track) => (
++          <div key={track} className="mb-1.5 flex h-6 items-center gap-0.5 last:mb-0">
++            <span className="w-8 shrink-0 text-[9px] uppercase text-neutral-lowOnSurface">{track}</span>
++            <span className="h-full flex-1 rounded-sm bg-gradient-to-r from-primary-surface2 to-neutral-surface2" />
++          </div>
++        ))}
++        <div className="mt-1 text-[10px] text-neutral-lowOnSurface">Double-click to open editor</div>
++      </div>
++    );
++  }
++
++  return (
++    <PromptField
++      value={node.text ?? ''}
++      rows={4}
++      placeholder={config.hint ?? 'Type here…'}
++      onChange={onTextChange}
++    />
++  );
++}
++
++/** 卡片底部的运行入口 + 状态/错误说明。 */
++function RunFooter({ node, onRun }: { node: CanvasNode; onRun: (nodeId: string) => void }) {
++  const isRunning = node.status === 'generating';
++  return (
++    <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 px-3 pb-2">
++      <span className="min-w-0 flex-1 truncate text-[10px] text-neutral-lowOnSurface" title={node.error || node.note}>
++        {node.error || node.note}
++      </span>
++      <button
++        type="button"
++        title="Run this node"
++        disabled={isRunning}
++        onPointerDown={(event) => event.stopPropagation()}
++        onClick={() => onRun(node.id)}
++        className={clsx(
++          'flex size-6 shrink-0 items-center justify-center rounded-full transition-colors',
++          isRunning
++            ? 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
++            : 'bg-primary-fill text-neutral-onFill hover:opacity-90'
++        )}
++      >
++        <KsIconArrowRight size={13} />
++      </button>
++    </div>
++  );
++}
++
++function NodeCard({
++  node,
++  edges,
++  isSelected,
++  isHovered,
++  isSoleSelection,
++  isConnecting,
++  connectingType,
++  onHoverChange,
++  onPointerDown,
++  onOutputPointerDown,
++  onInputPointerUp,
++  onOpenAddPanel,
++  onDropOnCard,
++  onOpenEditor,
++  onRunTool,
++  onRun,
++  onTextChange,
++  onDuplicate,
++  onDelete
++}: NodeCardProps) {
++  const config = NODE_KIND_CONFIG[node.kind];
++  const isAdsNative = config.category === 'ads-native';
++  const isEdit = config.category === 'edit';
++  /** 端口与操作条只在 hover / 选中 / 正在连线时露出，画布才不会显得杂乱。 */
++  const isActive = isHovered || isSelected || isConnecting;
++  const lastOutputIndex = config.outputs.length - 1;
++
++  return (
++    <div
++      className="absolute"
++      style={{ left: node.x, top: node.y, width: node.width, height: config.height }}
++      onPointerEnter={() => onHoverChange(node.id)}
++      onPointerLeave={() => onHoverChange(null)}
++      onPointerUp={() => onDropOnCard(node.id)}
++      onDoubleClick={() => onOpenEditor(node.id)}
++      data-node-kind={node.kind}
++    >
++      {isHovered || isSoleSelection ? (
++        <NodeHoverToolbar
++          onRunTool={(kind) => onRunTool(node.id, kind)}
++          onDuplicate={() => onDuplicate(node.id)}
++          onDelete={() => onDelete(node.id)}
++        />
++      ) : null}
++
++      <div
++        className={clsx(
++          'size-full overflow-hidden rounded-2xl border bg-neutral-surface transition-shadow',
++          isSelected ? 'border-primary-fill shadow-[0_10px_30px_rgba(16,24,40,0.16)]' : 'border-neutral-fillLow shadow-[0_1px_3px_rgba(16,24,40,0.10)] hover:shadow-[0_4px_12px_rgba(16,24,40,0.12)]'
++        )}
++        onPointerDown={(event) => onPointerDown(event, node.id)}
++      >
++        {/* Ads-native 顶部主色条，Edit 顶部虚线感的浅色条，画布上一眼可分 */}
++        {isAdsNative ? <span className="absolute inset-x-0 top-0 h-[3px] bg-primary-fill" /> : null}
++        {isEdit ? <span className="absolute inset-x-0 top-0 h-[3px] bg-primary-surface3" /> : null}
++
++        <div className="flex h-9 items-center justify-between gap-2 px-3">
++          <span
++            className={clsx(
++              'truncate text-[11px] font-semibold uppercase tracking-wide',
++              isAdsNative || isEdit ? 'text-primary-onSurface' : 'text-neutral-lowOnSurface'
++            )}
++          >
++            {config.label}
++          </span>
++          <StatusChip status={node.status} />
++        </div>
++
++        <div className="px-3 pb-9">
++          <NodeBody node={node} onTextChange={(text) => onTextChange(node.id, text)} />
++        </div>
++
++        <RunFooter node={node} onRun={onRun} />
++      </div>
++
++      {/* 端口常驻可见，标签只在 hover/选中/拉线时浮现 */}
++      {config.inputs.map((port, index) => (
++        <InputRow
++          key={port.id}
++          port={port}
++          used={countInputConnections(edges, node.id, port.id)}
++          offsetY={getPortOffsetY(index, config.inputs.length, node.kind)}
++          showLabel={isActive}
++          isCandidate={connectingType === port.type}
++          onPointerUp={(event) => onInputPointerUp(event, node.id, port.id)}
++        />
++      ))}
++
++      {config.outputs.map((port, index) => (
++        <OutputRow
++          key={port.id}
++          port={port}
++          offsetY={getPortOffsetY(index, config.outputs.length, node.kind)}
++          showLabel={isActive && config.outputs.length > 1}
++          onPointerDown={(event) => onOutputPointerDown(event, node.id, port.id)}
++        />
++      ))}
++
++      {/* ⊕：从最后一个输出往下挂，点开可直接添加下游节点 */}
++      {isActive ? (
++        <button
++          type="button"
++          title="Add connected node"
++          onPointerDown={(event) => event.stopPropagation()}
++          onClick={() => onOpenAddPanel(node.id, config.outputs[lastOutputIndex]?.id ?? 'out')}
++          className="absolute left-full z-20 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-solid border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:border-primary-fill hover:text-primary-fill"
++          style={{
++            top: getPortOffsetY(lastOutputIndex, config.outputs.length, node.kind) + PORT_ROW_HEIGHT,
++            marginLeft: 10
++          }}
++        >
++          <KsIconPlus size={14} />
++        </button>
++      ) : null}
++    </div>
++  );
++}
++
++export default NodeCard;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/NodeHoverToolbar.tsx b/apps/web/creative-cue/src/pages/canvas/components/NodeHoverToolbar.tsx
+new file mode 100644
+index 0000000000..c501e3f1ab
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/NodeHoverToolbar.tsx
+@@ -0,0 +1,145 @@
++import {
++  KsIconAiGeneration,
++  KsIconChevronDown,
++  KsIconCopyContent,
++  KsIconDelete,
++  KsIconDownload,
++  KsIconExpand,
++  KsIconFilledLock,
++  KsIconToolbox
++} from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import { useState } from 'react';
++
++import type { EditNodeKind } from '../types';
++
++interface NodeHoverToolbarProps {
++  /** Tools 菜单里选中的编辑动作，会在下游新建对应的 Edit 节点。 */
++  onRunTool: (kind: EditNodeKind) => void;
++  onDuplicate: () => void;
++  onDelete: () => void;
++}
++
++/** Tools 下拉里的编辑动作，前两项落到真实的 Edit 节点。 */
++const TOOL_ACTIONS: Array<{ label: string; kind?: EditNodeKind }> = [
++  { label: 'Split A/V', kind: 'split-av' },
++  { label: 'Split Audio Tracks', kind: 'split-tracks' },
++  { label: 'Upscale' },
++  { label: 'Extract frame' },
++  { label: 'Remove background' },
++  { label: 'Add subtitles' },
++  { label: 'Stitch videos' },
++  { label: 'Color grade' }
++];
++
++const ICON_SIZE = 14;
++
++function IconButton({
++  children,
++  title,
++  onClick
++}: {
++  children: React.ReactNode;
++  title: string;
++  onClick?: () => void;
++}) {
++  return (
++    <button
++      type="button"
++      title={title}
++      onClick={onClick}
++      className="flex size-7 items-center justify-center rounded-md text-neutral-onFill/80 transition-colors hover:bg-neutral-onFill/15 hover:text-neutral-onFill"
++    >
++      {children}
++    </button>
++  );
++}
++
++/**
++ * 悬浮在节点卡片正上方的操作条，参考 Flora。
++ * 只在 hover / 选中时出现，深色药丸压在画布之上。
++ */
++function NodeHoverToolbar({ onRunTool, onDuplicate, onDelete }: NodeHoverToolbarProps) {
++  const [isToolsOpen, setIsToolsOpen] = useState(false);
++
++  return (
++    <div
++      className="absolute bottom-full left-0 z-30 mb-2"
++      // 操作条不参与画布平移，也不触发卡片拖拽
++      onPointerDown={(event) => event.stopPropagation()}
++    >
++      <div className="flex items-center gap-0.5 rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++        <button
++          type="button"
++          title="Auto — let the agent choose settings"
++          className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-neutral-onFill/90 transition-colors hover:bg-neutral-onFill/15"
++        >
++          <KsIconAiGeneration size={ICON_SIZE} />
++          Auto
++          <KsIconChevronDown size={12} />
++        </button>
++
++        <button
++          type="button"
++          title="Tools"
++          onClick={() => setIsToolsOpen((open) => !open)}
++          className={clsx(
++            'flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium transition-colors',
++            isToolsOpen ? 'bg-neutral-onFill/20 text-neutral-onFill' : 'text-neutral-onFill/90 hover:bg-neutral-onFill/15'
++          )}
++        >
++          <KsIconToolbox size={ICON_SIZE} />
++          Tools
++          <KsIconChevronDown size={12} />
++        </button>
++
++        <span className="mx-0.5 h-4 w-px bg-neutral-onFill/20" />
++
++        <IconButton title="Lock node">
++          <KsIconFilledLock size={ICON_SIZE} />
++        </IconButton>
++        <IconButton title="Duplicate node" onClick={onDuplicate}>
++          <KsIconCopyContent size={ICON_SIZE} />
++        </IconButton>
++        <IconButton title="Download output">
++          <KsIconDownload size={ICON_SIZE} />
++        </IconButton>
++        <IconButton title="Open full screen">
++          <KsIconExpand size={ICON_SIZE} />
++        </IconButton>
++        <IconButton title="Delete node" onClick={onDelete}>
++          <KsIconDelete size={ICON_SIZE} />
++        </IconButton>
++      </div>
++
++      {isToolsOpen ? (
++        <div className="absolute left-0 top-full mt-1 w-[208px] rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface p-1 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++          {TOOL_ACTIONS.map((action) => (
++            <button
++              key={action.label}
++              type="button"
++              title={action.label}
++              disabled={!action.kind}
++              onClick={() => {
++                if (action.kind) {
++                  onRunTool(action.kind);
++                }
++                setIsToolsOpen(false);
++              }}
++              className={clsx(
++                'flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors',
++                action.kind
++                  ? 'text-neutral-highOnSurface hover:bg-neutral-surface2'
++                  : 'cursor-not-allowed text-neutral-lowOnSurface'
++              )}
++            >
++              {action.label}
++            </button>
++          ))}
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++export default NodeHoverToolbar;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/NodePalette.tsx b/apps/web/creative-cue/src/pages/canvas/components/NodePalette.tsx
+new file mode 100644
+index 0000000000..6bfff44f5c
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/NodePalette.tsx
+@@ -0,0 +1,72 @@
++import { KsIconSearch } from '@fe-infra/keystone-icons-react';
++import { useMemo, useState } from 'react';
++
++import { CATEGORY_LABEL, CATEGORY_ORDER, KINDS_BY_CATEGORY, NODE_KIND_CONFIG } from '../const';
++import type { CanvasNodeKind } from '../types';
++import { NODE_KIND_ICON } from './nodeIcons';
++
++interface NodePaletteProps {
++  onSelect: (kind: CanvasNodeKind) => void;
++}
++
++/**
++ * 节点面板：工具栏 "+" 和卡片右侧 ⊕ 共用。
++ * 顶部带搜索，下面按 Ads-native / Creative / Edit 分组。
++ */
++function NodePalette({ onSelect }: NodePaletteProps) {
++  const [query, setQuery] = useState('');
++
++  const groups = useMemo(() => {
++    const keyword = query.trim().toLowerCase();
++    return CATEGORY_ORDER.map((category) => ({
++      category,
++      kinds: KINDS_BY_CATEGORY[category].filter(
++        (kind) => !keyword || NODE_KIND_CONFIG[kind].label.toLowerCase().includes(keyword)
++      )
++    })).filter((group) => group.kinds.length > 0);
++  }, [query]);
++
++  return (
++    <div className="w-[248px] rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface p-2 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++      <div className="mb-1 flex items-center gap-2 rounded-lg bg-neutral-surface1 px-2">
++        <KsIconSearch size={14} className="shrink-0 text-neutral-lowOnSurface" />
++        <input
++          value={query}
++          placeholder="Search nodes and actions"
++          onChange={(event) => setQuery(event.target.value)}
++          className="h-8 w-full bg-transparent text-[13px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
++        />
++      </div>
++
++      <div className="max-h-[320px] overflow-y-auto">
++        {groups.map((group) => (
++          <div key={group.category} className="mb-1 last:mb-0">
++            <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
++              {CATEGORY_LABEL[group.category]}
++            </div>
++            {group.kinds.map((kind) => (
++              <button
++                key={kind}
++                type="button"
++                title={`Add ${NODE_KIND_CONFIG[kind].label} node`}
++                onClick={() => onSelect(kind)}
++                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2 active:bg-neutral-surface3"
++              >
++                <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-neutral-surface2 text-neutral-mediumOnSurface">
++                  {NODE_KIND_ICON[kind]}
++                </span>
++                {NODE_KIND_CONFIG[kind].label}
++              </button>
++            ))}
++          </div>
++        ))}
++
++        {groups.length === 0 ? (
++          <div className="px-2 py-6 text-center text-[12px] text-neutral-lowOnSurface">No matching nodes</div>
++        ) : null}
++      </div>
++    </div>
++  );
++}
++
++export default NodePalette;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/SelectionToolbar.tsx b/apps/web/creative-cue/src/pages/canvas/components/SelectionToolbar.tsx
+new file mode 100644
+index 0000000000..1f9e85bf3c
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/SelectionToolbar.tsx
+@@ -0,0 +1,99 @@
++import {
++  KsIconCopyContent,
++  KsIconDelete,
++  KsIconDownload,
++  KsIconFilledLock,
++  KsIconFolderAdd,
++  KsIconFullSelect
++} from '@fe-infra/keystone-icons-react';
++
++interface SelectionToolbarProps {
++  count: number;
++  onSaveAsTemplate: () => void;
++  onDuplicate: () => void;
++  onSelectAll: () => void;
++  onDelete: () => void;
++  onClear: () => void;
++}
++
++const ICON_SIZE = 15;
++
++function ToolButton({
++  children,
++  label,
++  tone = 'default',
++  onClick
++}: {
++  children: React.ReactNode;
++  label: string;
++  tone?: 'default' | 'danger';
++  onClick: () => void;
++}) {
++  return (
++    <button
++      type="button"
++      title={label}
++      onClick={onClick}
++      className={
++        tone === 'danger'
++          ? 'flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-error-fillLow transition-colors hover:bg-error-fill/20'
++          : 'flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-neutral-onFill/90 transition-colors hover:bg-neutral-onFill/15'
++      }
++    >
++      {children}
++      {label}
++    </button>
++  );
++}
++
++/**
++ * 选中节点后浮在画布顶部的批量操作条，参考 Flora。
++ * 没有选中时不渲染。
++ */
++function SelectionToolbar({
++  count,
++  onSaveAsTemplate,
++  onDuplicate,
++  onSelectAll,
++  onDelete,
++  onClear
++}: SelectionToolbarProps) {
++  if (count === 0) {
++    return null;
++  }
++
++  return (
++    <div
++      className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]"
++      data-selection-toolbar
++    >
++      <span className="px-2 text-[12px] font-semibold tabular-nums">{count} selected</span>
++
++      <span className="mx-0.5 h-4 w-px bg-neutral-onFill/20" />
++
++      <ToolButton label="Save as template" onClick={onSaveAsTemplate}>
++        <KsIconFolderAdd size={ICON_SIZE} />
++      </ToolButton>
++      <ToolButton label="Duplicate" onClick={onDuplicate}>
++        <KsIconCopyContent size={ICON_SIZE} />
++      </ToolButton>
++      <ToolButton label="Select all" onClick={onSelectAll}>
++        <KsIconFullSelect size={ICON_SIZE} />
++      </ToolButton>
++      <ToolButton label="Export" onClick={onSaveAsTemplate}>
++        <KsIconDownload size={ICON_SIZE} />
++      </ToolButton>
++      <ToolButton label="Lock" onClick={onClear}>
++        <KsIconFilledLock size={ICON_SIZE} />
++      </ToolButton>
++
++      <span className="mx-0.5 h-4 w-px bg-neutral-onFill/20" />
++
++      <ToolButton label="Delete" tone="danger" onClick={onDelete}>
++        <KsIconDelete size={ICON_SIZE} />
++      </ToolButton>
++    </div>
++  );
++}
++
++export default SelectionToolbar;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/TimelineEditor.tsx b/apps/web/creative-cue/src/pages/canvas/components/TimelineEditor.tsx
+new file mode 100644
+index 0000000000..53b4b3039a
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/TimelineEditor.tsx
+@@ -0,0 +1,454 @@
++/* eslint-disable max-lines-per-function */
++import {
++  KsIconClose,
++  KsIconCopyContent,
++  KsIconCut,
++  KsIconDelete,
++  KsIconDownload,
++  KsIconFolder,
++  KsIconFullScreen,
++  KsIconRedo,
++  KsIconSound,
++  KsIconTextFile,
++  KsIconUndo
++} from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import { useEffect, useRef, useState } from 'react';
++
++import { INITIAL_TIMELINE_TRACKS } from '../const';
++import type { TimelineTrack } from '../types';
++
++interface TimelineEditorProps {
++  /** 编辑对象的名称，展示在 Source 区。 */
++  sourceLabel: string;
++  onClose: () => void;
++}
++
++/** 时间轴每秒占用的像素，缩放滑杆会在此基础上乘系数。 */
++const BASE_PX_PER_SECOND = 104;
++const RULER_SECONDS = 9;
++const PLAYBACK_TICK_MS = 100;
++
++/** 把秒格式化成 00:00.00。 */
++const formatTime = (seconds: number) => {
++  const clamped = Math.max(0, seconds);
++  const mm = String(Math.floor(clamped / 60)).padStart(2, '0');
++  const ss = String(Math.floor(clamped % 60)).padStart(2, '0');
++  const cs = String(Math.floor((clamped % 1) * 100)).padStart(2, '0');
++  return `${mm}:${ss}.${cs}`;
++};
++
++function ToolButton({
++  children,
++  isActive,
++  title,
++  onClick
++}: {
++  children: React.ReactNode;
++  isActive?: boolean;
++  title: string;
++  onClick?: () => void;
++}) {
++  return (
++    <button
++      type="button"
++      title={title}
++      onClick={onClick}
++      className={clsx(
++        'flex size-8 items-center justify-center rounded-lg transition-colors',
++        isActive
++          ? 'bg-primary-surface2 text-primary-onSurface'
++          : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2'
++      )}
++    >
++      {children}
++    </button>
++  );
++}
++
++/** 右侧属性面板的分组标题。 */
++function InspectorSection({
++  children,
++  title,
++  collapsible
++}: {
++  children?: React.ReactNode;
++  title: string;
++  collapsible?: boolean;
++}) {
++  const [isOpen, setIsOpen] = useState(!collapsible);
++  return (
++    <div className="border-b border-solid border-neutral-fillLow">
++      <button
++        type="button"
++        title={title}
++        onClick={() => setIsOpen((open) => !open)}
++        className="flex w-full items-center justify-between px-3 py-2.5 text-[12px] font-semibold text-neutral-highOnSurface"
++      >
++        {title}
++        <span className="text-neutral-lowOnSurface">{isOpen ? '−' : '+'}</span>
++      </button>
++      {isOpen && children ? <div className="px-3 pb-3">{children}</div> : null}
++    </div>
++  );
++}
++
++function NumberField({ label, value }: { label: string; value: string }) {
++  return (
++    <label className="flex flex-1 items-center gap-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
++      <span className="text-[11px] text-neutral-lowOnSurface">{label}</span>
++      <input
++        defaultValue={value}
++        className="w-full bg-transparent text-right text-[12px] tabular-nums text-neutral-highOnSurface outline-none"
++      />
++    </label>
++  );
++}
++
++/**
++ * 全屏时间线编辑器，参考 Flora 的 Timeline Editor。
++ * 上方预览、下方多轨时间线、右侧属性面板。
++ */
++function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
++  const [tracks, setTracks] = useState<TimelineTrack[]>(INITIAL_TIMELINE_TRACKS);
++  const [selectedClipId, setSelectedClipId] = useState<string | null>('clip-1');
++  const [currentTime, setCurrentTime] = useState(0);
++  const [isPlaying, setIsPlaying] = useState(false);
++  const [zoom, setZoom] = useState(1);
++  const [activeTool, setActiveTool] = useState<'select' | 'text' | 'media'>('select');
++  const rulerRef = useRef<HTMLDivElement>(null);
++
++  const pxPerSecond = BASE_PX_PER_SECOND * zoom;
++  const duration = Math.max(
++    ...tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration)),
++    1
++  );
++
++  /* 播放时推进播放头，到片尾自动停。 */
++  useEffect(() => {
++    if (!isPlaying) {
++      return;
++    }
++    const timer = setInterval(() => {
++      setCurrentTime((time) => {
++        const next = time + PLAYBACK_TICK_MS / 1000;
++        if (next >= duration) {
++          setIsPlaying(false);
++          return duration;
++        }
++        return next;
++      });
++    }, PLAYBACK_TICK_MS);
++    return () => clearInterval(timer);
++  }, [duration, isPlaying]);
++
++  /** 点击标尺跳转播放头。 */
++  const seekFromPointer = (clientX: number) => {
++    const rect = rulerRef.current?.getBoundingClientRect();
++    if (!rect) {
++      return;
++    }
++    setCurrentTime(Math.max(0, Math.min(duration, (clientX - rect.left) / pxPerSecond)));
++  };
++
++  const toggleTrackFlag = (trackId: string, flag: 'visible' | 'muted') => {
++    setTracks((current) =>
++      current.map((track) => (track.id === trackId ? { ...track, [flag]: !track[flag] } : track))
++    );
++  };
++
++  const deleteSelectedClip = () => {
++    if (!selectedClipId) {
++      return;
++    }
++    setTracks((current) =>
++      current.map((track) => ({ ...track, clips: track.clips.filter((clip) => clip.id !== selectedClipId) }))
++    );
++    setSelectedClipId(null);
++  };
++
++  /** 在播放头处切开选中片段。 */
++  const splitSelectedClip = () => {
++    if (!selectedClipId) {
++      return;
++    }
++    setTracks((current) =>
++      current.map((track) => ({
++        ...track,
++        clips: track.clips.flatMap((clip) => {
++          const cutAt = currentTime - clip.start;
++          if (clip.id !== selectedClipId || cutAt <= 0 || cutAt >= clip.duration) {
++            return [clip];
++          }
++          return [
++            { ...clip, duration: cutAt },
++            { ...clip, id: `${clip.id}-b`, start: clip.start + cutAt, duration: clip.duration - cutAt }
++          ];
++        })
++      }))
++    );
++  };
++
++  return (
++    <div className="absolute inset-0 z-40 flex flex-col bg-neutral-surface1" data-timeline-editor>
++      <div className="flex min-h-0 flex-1">
++        <div className="flex min-w-0 flex-1 flex-col">
++          {/* 预览区 */}
++          <div className="relative flex min-h-0 flex-1 items-center justify-center p-6">
++            <div className="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
++              <button
++                type="button"
++                title="Close timeline editor"
++                onClick={onClose}
++                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
++              >
++                <KsIconClose size={14} />
++              </button>
++              <button
++                type="button"
++                title="Save to library"
++                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
++              >
++                <KsIconFolder size={14} />
++              </button>
++              <button
++                type="button"
++                title="Download"
++                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
++              >
++                <KsIconDownload size={14} />
++              </button>
++            </div>
++
++            <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
++              <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
++            </div>
++          </div>
++
++          {/* 时间线区 */}
++          <div className="shrink-0 border-t border-solid border-neutral-fillLow bg-neutral-surface">
++            <div className="flex items-center gap-1 px-3 py-2">
++              <ToolButton title="Split clip at playhead" onClick={splitSelectedClip}>
++                <KsIconCut size={15} />
++              </ToolButton>
++              <ToolButton title="Duplicate clip">
++                <KsIconCopyContent size={15} />
++              </ToolButton>
++              <ToolButton title="Delete clip" onClick={deleteSelectedClip}>
++                <KsIconDelete size={15} />
++              </ToolButton>
++
++              <span className="ml-3 min-w-[68px] text-[12px] tabular-nums text-neutral-highOnSurface">
++                {formatTime(currentTime)}
++              </span>
++
++              <div className="flex flex-1 items-center justify-center gap-1">
++                <ToolButton title="Jump to start" onClick={() => setCurrentTime(0)}>
++                  ⏮
++                </ToolButton>
++                <button
++                  type="button"
++                  title={isPlaying ? 'Pause' : 'Play'}
++                  onClick={() => setIsPlaying((playing) => !playing)}
++                  className="flex size-8 items-center justify-center rounded-lg bg-neutral-surface2 text-neutral-highOnSurface transition-colors hover:bg-neutral-surface3"
++                >
++                  {isPlaying ? '❚❚' : '▶'}
++                </button>
++                <ToolButton title="Jump to end" onClick={() => setCurrentTime(duration)}>
++                  ⏭
++                </ToolButton>
++              </div>
++
++              <span className="min-w-[68px] text-right text-[12px] tabular-nums text-neutral-lowOnSurface">
++                {formatTime(duration)}
++              </span>
++
++              <div className="ml-3 flex items-center gap-2">
++                <span className="text-neutral-lowOnSurface">−</span>
++                <input
++                  type="range"
++                  min={0.5}
++                  max={2}
++                  step={0.1}
++                  value={zoom}
++                  title="Timeline zoom"
++                  onChange={(event) => setZoom(Number(event.target.value))}
++                  className="w-24 accent-primary-fill"
++                />
++                <span className="text-neutral-lowOnSurface">+</span>
++              </div>
++            </div>
++
++            <div className="flex border-t border-solid border-neutral-fillLow">
++              {/* 轨道头 */}
++              <div className="w-[112px] shrink-0 border-r border-solid border-neutral-fillLow">
++                <div className="h-7 border-b border-solid border-neutral-fillLow" />
++                {tracks.map((track, index) => (
++                  <div
++                    key={track.id}
++                    className="flex h-[72px] items-center gap-1.5 border-b border-solid border-neutral-fillLow px-2"
++                  >
++                    <span className="w-4 text-[11px] tabular-nums text-neutral-lowOnSurface">{index + 1}</span>
++                    <button
++                      type="button"
++                      title={track.visible ? 'Hide track' : 'Show track'}
++                      onClick={() => toggleTrackFlag(track.id, 'visible')}
++                      className={clsx(
++                        'flex size-6 items-center justify-center rounded-md text-[11px]',
++                        track.visible ? 'text-neutral-mediumOnSurface' : 'text-neutral-lowOnSurface opacity-50'
++                      )}
++                    >
++                      👁
++                    </button>
++                    <button
++                      type="button"
++                      title={track.muted ? 'Unmute track' : 'Mute track'}
++                      onClick={() => toggleTrackFlag(track.id, 'muted')}
++                      className={clsx(
++                        'flex size-6 items-center justify-center rounded-md',
++                        track.muted ? 'text-neutral-lowOnSurface opacity-50' : 'text-neutral-mediumOnSurface'
++                      )}
++                    >
++                      <KsIconSound size={13} />
++                    </button>
++                  </div>
++                ))}
++              </div>
++
++              {/* 标尺 + 轨道 */}
++              <div className="relative min-w-0 flex-1 overflow-x-auto">
++                <div style={{ width: RULER_SECONDS * pxPerSecond }}>
++                  <div
++                    ref={rulerRef}
++                    className="relative h-7 cursor-pointer border-b border-solid border-neutral-fillLow"
++                    onPointerDown={(event) => seekFromPointer(event.clientX)}
++                  >
++                    {Array.from({ length: RULER_SECONDS }, (_, second) => (
++                      <span
++                        key={second}
++                        className="absolute top-1.5 text-[10px] tabular-nums text-neutral-lowOnSurface"
++                        style={{ left: second * pxPerSecond + 4 }}
++                      >
++                        00:0{second}
++                      </span>
++                    ))}
++                  </div>
++
++                  {tracks.map((track) => (
++                    <div key={track.id} className="relative h-[72px] border-b border-solid border-neutral-fillLow">
++                      {track.clips.map((clip) => (
++                        <button
++                          key={clip.id}
++                          type="button"
++                          title={clip.label}
++                          onClick={() => setSelectedClipId(clip.id)}
++                          className={clsx(
++                            'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-md border text-left transition-colors',
++                            selectedClipId === clip.id
++                              ? 'border-primary-fill bg-primary-surface2'
++                              : 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3',
++                            !track.visible && 'opacity-40'
++                          )}
++                          style={{ left: clip.start * pxPerSecond, width: Math.max(24, clip.duration * pxPerSecond) }}
++                        >
++                          <span className="truncate px-1.5 pt-1 text-[10px] font-medium text-neutral-highOnSurface">
++                            {clip.label}
++                          </span>
++                          {clip.hasAudio ? (
++                            <span className="mt-auto flex h-4 items-end gap-px px-1 pb-1">
++                              {Array.from({ length: 24 }, (_, bar) => (
++                                <span
++                                  key={bar}
++                                  className="flex-1 rounded-sm bg-primary-fill/40"
++                                  style={{ height: `${30 + ((bar * 37) % 70)}%` }}
++                                />
++                              ))}
++                            </span>
++                          ) : null}
++                        </button>
++                      ))}
++                    </div>
++                  ))}
++
++                  {/* 播放头 */}
++                  <div
++                    className="pointer-events-none absolute top-0 z-10 h-full w-px bg-primary-fill"
++                    style={{ left: currentTime * pxPerSecond }}
++                  >
++                    <span className="absolute -left-1 top-0 size-2 rounded-sm bg-primary-fill" />
++                  </div>
++                </div>
++              </div>
++            </div>
++          </div>
++        </div>
++
++        {/* 右侧属性面板 */}
++        <aside className="flex w-[280px] shrink-0 flex-col overflow-y-auto border-l border-solid border-neutral-fillLow bg-neutral-surface">
++          <div className="flex items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-2.5">
++            <span className="flex-1 text-[12px] font-semibold text-neutral-highOnSurface">Timeline Editor</span>
++          </div>
++
++          <div className="flex items-center gap-1 border-b border-solid border-neutral-fillLow px-2 py-1.5">
++            <ToolButton
++              title="Select tool"
++              isActive={activeTool === 'select'}
++              onClick={() => setActiveTool('select')}
++            >
++              ▷
++            </ToolButton>
++            <ToolButton title="Text tool" isActive={activeTool === 'text'} onClick={() => setActiveTool('text')}>
++              <KsIconTextFile size={15} />
++            </ToolButton>
++            <ToolButton title="Media tool" isActive={activeTool === 'media'} onClick={() => setActiveTool('media')}>
++              <KsIconFolder size={15} />
++            </ToolButton>
++            <span className="mx-1 h-4 w-px bg-neutral-fillLow" />
++            <ToolButton title="Undo">
++              <KsIconUndo size={15} />
++            </ToolButton>
++            <ToolButton title="Redo">
++              <KsIconRedo size={15} />
++            </ToolButton>
++            <span className="flex-1" />
++            <ToolButton title="Fit to view">
++              <KsIconFullScreen size={15} />
++            </ToolButton>
++          </div>
++
++          <InspectorSection title="Source">
++            <div className="text-[12px] text-neutral-highOnSurface">{sourceLabel}</div>
++            <div className="mt-1 text-[11px] tabular-nums text-neutral-lowOnSurface">{formatTime(duration)}</div>
++          </InspectorSection>
++
++          <InspectorSection title="Layout">
++            <div className="flex gap-2">
++              <NumberField label="W" value="1080" />
++              <NumberField label="H" value="1920" />
++            </div>
++            <div className="mt-2 flex gap-2">
++              <NumberField label="X" value="0" />
++              <NumberField label="Y" value="0" />
++            </div>
++            <div className="mt-2 flex gap-2">
++              <NumberField label="Rotation" value="0°" />
++            </div>
++          </InspectorSection>
++
++          <InspectorSection title="Fill">
++            <label className="flex items-center gap-2">
++              <span className="text-[11px] text-neutral-lowOnSurface">Opacity</span>
++              <input type="range" min={0} max={100} defaultValue={100} className="flex-1 accent-primary-fill" />
++            </label>
++          </InspectorSection>
++
++          <InspectorSection title="Crop" collapsible />
++          <InspectorSection title="Video" collapsible />
++          <InspectorSection title="Audio" collapsible />
++        </aside>
++      </div>
++    </div>
++  );
++}
++
++export default TimelineEditor;
+diff --git a/apps/web/creative-cue/src/pages/canvas/components/nodeIcons.tsx b/apps/web/creative-cue/src/pages/canvas/components/nodeIcons.tsx
+new file mode 100644
+index 0000000000..396527cb04
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/components/nodeIcons.tsx
+@@ -0,0 +1,45 @@
++import {
++  KsIconCampaignList,
++  KsIconImageCollection,
++  KsIconPeople,
++  KsIconSend,
++  KsIconSeperateAudio,
++  KsIconShowTimeline,
++  KsIconSound,
++  KsIconSplit,
++  KsIconTextFile,
++  KsIconTips,
++  KsIconUpload,
++  KsIconVideoClip
++} from '@fe-infra/keystone-icons-react';
++import type { ReactNode } from 'react';
++
++import type { CanvasNodeKind, PortType } from '../types';
++
++const ICON_SIZE = 16;
++const PORT_ICON_SIZE = 12;
++
++/** 端口类型图标，用于卡片两侧的输入/输出行。 */
++export const PORT_TYPE_ICON: Record<PortType, ReactNode> = {
++  prompt: <KsIconTextFile size={PORT_ICON_SIZE} />,
++  image: <KsIconImageCollection size={PORT_ICON_SIZE} />,
++  video: <KsIconVideoClip size={PORT_ICON_SIZE} />,
++  audio: <KsIconSound size={PORT_ICON_SIZE} />
++};
++
++/** 节点类型图标，供 "+" 面板和卡片头部复用。 */
++export const NODE_KIND_ICON: Record<CanvasNodeKind, ReactNode> = {
++  hook: <KsIconTips size={ICON_SIZE} />,
++  body: <KsIconCampaignList size={ICON_SIZE} />,
++  cta: <KsIconSend size={ICON_SIZE} />,
++  text: <KsIconTextFile size={ICON_SIZE} />,
++  image: <KsIconImageCollection size={ICON_SIZE} />,
++  video: <KsIconVideoClip size={ICON_SIZE} />,
++  audio: <KsIconSound size={ICON_SIZE} />,
++  avatar: <KsIconPeople size={ICON_SIZE} />,
++  import: <KsIconUpload size={ICON_SIZE} />,
++  'split-av': <KsIconSplit size={ICON_SIZE} />,
++  'split-tracks': <KsIconSeperateAudio size={ICON_SIZE} />,
++  timeline: <KsIconShowTimeline size={ICON_SIZE} />,
++  batch: <KsIconCampaignList size={ICON_SIZE} />
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/const.ts b/apps/web/creative-cue/src/pages/canvas/const.ts
+new file mode 100644
+index 0000000000..3517d3d4f0
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/const.ts
+@@ -0,0 +1,359 @@
++import type {
++  CanvasEdge,
++  CanvasNode,
++  CanvasNodeCategory,
++  CanvasNodeKind,
++  LibraryAsset,
++  NodeBodyShape,
++  NodePortSpec,
++  TimelineTrack
++} from './types';
++
++export const MIN_ZOOM = 0.25;
++export const MAX_ZOOM = 2.5;
++export const ZOOM_STEP = 1.15;
++
++/** 世界坐标下的点阵间距，缩放时按 zoom 等比放大。 */
++export const GRID_SIZE = 24;
++
++export const NODE_DEFAULT_WIDTH = 264;
++
++/** 端口行高，输入/输出行以卡片竖直中线为基准均分排布。 */
++export const PORT_ROW_HEIGHT = 26;
++
++/** fitView 时四周留白（屏幕像素）。 */
++export const FIT_VIEW_PADDING = 80;
++
++interface NodeKindConfig {
++  category: CanvasNodeCategory;
++  label: string;
++  /** 卡片主体形态。 */
++  body: NodeBodyShape;
++  /**
++   * 卡片高度。
++   * 连线端点和 fitView 都要在渲染前拿到高度，所以固定而非实测 DOM，
++   * 改动卡片内部结构时要同步这里。
++   */
++  height: number;
++  /** 左侧输入端口。 */
++  inputs: NodePortSpec[];
++  /** 右侧输出端口。 */
++  outputs: NodePortSpec[];
++  /** media 形态的占位底纹（tailwind 渐变 token）。 */
++  placeholder?: string;
++  /** text 形态的空态提示。 */
++  hint?: string;
++  /** 编辑类节点的能力说明，展示在 hover 卡片上。 */
++  description?: string;
++}
++
++const TEXT_NODE_HEIGHT = 168;
++const MEDIA_NODE_HEIGHT = 296;
++const AUDIO_NODE_HEIGHT = 192;
++const OPERATION_NODE_HEIGHT = 172;
++const TIMELINE_NODE_HEIGHT = 192;
++const BATCH_NODE_HEIGHT = 220;
++
++/** 生成类节点通用的输入组合，和 Flora 的 Prompt/Image/Video/Audio 一致。 */
++const GENERATIVE_INPUTS: NodePortSpec[] = [
++  { id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 },
++  { id: 'image', label: 'Image', type: 'image', max: 9 },
++  { id: 'video', label: 'Video', type: 'video', max: 3 },
++  { id: 'audio', label: 'Audio', type: 'audio', max: 3 }
++];
++
++const TEXT_ONLY_INPUT: NodePortSpec[] = [{ id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 }];
++
++export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
++  // —— Ads-native：一条广告的脚本结构 ——
++  hook: {
++    category: 'ads-native',
++    label: 'Hook',
++    body: 'text',
++    height: TEXT_NODE_HEIGHT,
++    hint: 'Opening line that stops the scroll…',
++    inputs: TEXT_ONLY_INPUT,
++    outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
++  },
++  body: {
++    category: 'ads-native',
++    label: 'Body',
++    body: 'text',
++    height: TEXT_NODE_HEIGHT,
++    hint: 'Main message, product value, proof…',
++    inputs: TEXT_ONLY_INPUT,
++    outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
++  },
++  cta: {
++    category: 'ads-native',
++    label: 'CTA',
++    body: 'text',
++    height: TEXT_NODE_HEIGHT,
++    hint: 'Closing call to action…',
++    inputs: TEXT_ONLY_INPUT,
++    outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
++  },
++
++  // —— Creative：素材形态 ——
++  text: {
++    category: 'creative',
++    label: 'Text',
++    body: 'text',
++    height: TEXT_NODE_HEIGHT,
++    hint: 'Describe what you want to generate…',
++    inputs: TEXT_ONLY_INPUT,
++    outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
++  },
++  image: {
++    category: 'creative',
++    label: 'Image',
++    body: 'media',
++    height: MEDIA_NODE_HEIGHT,
++    placeholder: 'bg-gradient-to-br from-primary-surface2 to-neutral-surface2',
++    inputs: GENERATIVE_INPUTS,
++    outputs: [{ id: 'out', label: 'Image', type: 'image' }]
++  },
++  video: {
++    category: 'creative',
++    label: 'Video',
++    body: 'media',
++    height: MEDIA_NODE_HEIGHT,
++    placeholder: 'bg-gradient-to-br from-neutral-surface2 to-primary-surface2',
++    inputs: GENERATIVE_INPUTS,
++    outputs: [{ id: 'out', label: 'Video', type: 'video' }]
++  },
++  audio: {
++    category: 'creative',
++    label: 'Audio',
++    body: 'audio',
++    height: AUDIO_NODE_HEIGHT,
++    inputs: [
++      { id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 },
++      { id: 'audio', label: 'Audio', type: 'audio', max: 3 }
++    ],
++    outputs: [{ id: 'out', label: 'Audio', type: 'audio' }]
++  },
++  avatar: {
++    category: 'creative',
++    label: 'Avatar',
++    body: 'media',
++    height: MEDIA_NODE_HEIGHT,
++    placeholder: 'bg-gradient-to-br from-primary-surface2 to-primary-surface3',
++    inputs: [
++      { id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 },
++      { id: 'image', label: 'Image', type: 'image', max: 4 },
++      { id: 'audio', label: 'Audio', type: 'audio', max: 1 }
++    ],
++    outputs: [{ id: 'out', label: 'Video', type: 'video' }]
++  },
++  import: {
++    category: 'creative',
++    label: 'Import',
++    body: 'text',
++    height: TEXT_NODE_HEIGHT,
++    hint: 'Drop a file or pick from Library…',
++    inputs: [],
++    outputs: [{ id: 'out', label: 'Asset', type: 'image' }]
++  },
++
++  // —— Edit：对已有素材做拆分加工，多输出 ——
++  'split-av': {
++    category: 'edit',
++    label: 'Split A/V',
++    body: 'operation',
++    height: OPERATION_NODE_HEIGHT,
++    description: 'Extract the audio track from a video and produce a muted video alongside it.',
++    inputs: [{ id: 'video', label: 'Video', type: 'video', max: 1 }],
++    outputs: [
++      { id: 'video', label: 'Video', type: 'video' },
++      { id: 'audio', label: 'Audio', type: 'audio' }
++    ]
++  },
++  'split-tracks': {
++    category: 'edit',
++    label: 'Split Tracks',
++    body: 'operation',
++    height: OPERATION_NODE_HEIGHT,
++    description: 'Separate one audio input into BGM and individual voiceover tracks.',
++    inputs: [{ id: 'audio', label: 'Audio', type: 'audio', max: 1 }],
++    outputs: [
++      { id: 'bgm', label: 'BGM', type: 'audio' },
++      { id: 'vo-1', label: 'Voiceover 1', type: 'audio' },
++      { id: 'vo-2', label: 'Voiceover 2', type: 'audio' }
++    ]
++  },
++  timeline: {
++    category: 'edit',
++    label: 'Timeline',
++    body: 'timeline',
++    height: TIMELINE_NODE_HEIGHT,
++    description: 'Trim & edit video, audio, images on a multi-track timeline.',
++    inputs: [
++      { id: 'video', label: 'Video', type: 'video', max: 8 },
++      { id: 'image', label: 'Image', type: 'image', max: 8 },
++      { id: 'audio', label: 'Audio', type: 'audio', max: 4 }
++    ],
++    outputs: [{ id: 'out', label: 'Video', type: 'video' }]
++  },
++  batch: {
++    category: 'edit',
++    label: 'Batch',
++    body: 'batch',
++    height: BATCH_NODE_HEIGHT,
++    description: 'Process multiple items at once — generate variations and scale in one step.',
++    inputs: [
++      { id: 'image', label: 'Image', type: 'image' },
++      { id: 'video', label: 'Video', type: 'video' },
++      { id: 'prompt', label: 'Prompt', type: 'prompt' }
++    ],
++    outputs: [{ id: 'out', label: 'Items', type: 'image' }]
++  }
++};
++
++/** Batch 卡片上的示例条目，接真实批处理后替换为已连入的素材。 */
++export const BATCH_PREVIEW_ITEMS = [
++  'Flat Lay Fashion 2, 2',
++  'Menswear Outfit Grid 2, 1',
++  'Fashion Flat Lay 2, 3',
++  'High Fashion Flat Lays 1, 1'
++];
++
++/** Timeline 编辑器的示例轨道数据。 */
++export const INITIAL_TIMELINE_TRACKS: TimelineTrack[] = [
++  {
++    id: 'track-1',
++    kind: 'video',
++    visible: true,
++    muted: false,
++    clips: [
++      { id: 'clip-1', label: 'Video 9: Merge Audio into Video', start: 0, duration: 3.08, hasAudio: true },
++      { id: 'clip-2', label: 'Street b-roll', start: 3.3, duration: 2.4, hasAudio: false }
++    ]
++  },
++  {
++    id: 'track-2',
++    kind: 'audio',
++    visible: true,
++    muted: false,
++    clips: [{ id: 'clip-3', label: 'Brand BGM — upbeat', start: 0, duration: 5.7, hasAudio: true }]
++  }
++];
++
++export const CATEGORY_LABEL: Record<CanvasNodeCategory, string> = {
++  'ads-native': 'Ads-native',
++  creative: 'Creative',
++  edit: 'Edit'
++};
++
++/** 工具栏分组顺序，也是新增节点的展示顺序。 */
++export const CATEGORY_ORDER: CanvasNodeCategory[] = ['ads-native', 'creative', 'edit'];
++
++export const KINDS_BY_CATEGORY: Record<CanvasNodeCategory, CanvasNodeKind[]> = {
++  'ads-native': ['hook', 'body', 'cta'],
++  creative: ['text', 'image', 'video', 'audio', 'avatar', 'import'],
++  edit: ['split-av', 'split-tracks', 'timeline', 'batch']
++};
++
++/**
++ * 素材库示例数据。
++ * 接入真实素材库接口后替换，节点侧不需要改动。
++ */
++export const LIBRARY_ASSETS: LibraryAsset[] = [
++  { id: 'asset-1', name: 'Serum bottle — studio', kind: 'image', meta: 'PNG · 1080×1920' },
++  { id: 'asset-2', name: 'Serum bottle — wet stone', kind: 'image', meta: 'PNG · 1080×1920' },
++  { id: 'asset-3', name: 'Unboxing b-roll', kind: 'video', meta: 'MP4 · 0:12' },
++  { id: 'asset-4', name: 'Street scene b-roll', kind: 'video', meta: 'MP4 · 0:08' },
++  { id: 'asset-5', name: 'Brand BGM — upbeat', kind: 'audio', meta: 'MP3 · 0:30' },
++  { id: 'asset-6', name: 'UGC presenter — Mia', kind: 'avatar', meta: 'Avatar · licensed' }
++];
++
++/**
++ * 首屏示例图：Hook → Body → CTA 串成脚本骨架，各自挂素材节点。
++ * 真接入生成能力后应替换为后端返回的节点数据。
++ */
++export const INITIAL_NODES: CanvasNode[] = [
++  {
++    id: 'node-hook-1',
++    kind: 'hook',
++    x: 0,
++    y: 0,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Hook',
++    text: 'POV: your 10-step routine just became one bottle.',
++    status: 'done'
++  },
++  {
++    id: 'node-body-1',
++    kind: 'body',
++    x: 0,
++    y: 220,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Body',
++    text: 'Clinically tested hydration that lasts 72 hours — on wet stone, morning light, cinematic product shot.',
++    status: 'done'
++  },
++  {
++    id: 'node-cta-1',
++    kind: 'cta',
++    x: 0,
++    y: 440,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'CTA',
++    text: 'Shop the bundle — 20% off today.',
++    status: 'idle'
++  },
++  {
++    id: 'node-image-1',
++    kind: 'image',
++    x: 440,
++    y: -60,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Product hero',
++    status: 'done'
++  },
++  {
++    id: 'node-avatar-1',
++    kind: 'avatar',
++    x: 440,
++    y: 250,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'UGC presenter',
++    status: 'generating'
++  },
++  {
++    id: 'node-video-1',
++    kind: 'video',
++    x: 880,
++    y: 80,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Final cut',
++    status: 'done'
++  },
++  {
++    id: 'node-split-1',
++    kind: 'split-av',
++    x: 1320,
++    y: 120,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Split A/V',
++    status: 'idle'
++  },
++  {
++    id: 'node-tracks-1',
++    kind: 'split-tracks',
++    x: 1320,
++    y: 340,
++    width: NODE_DEFAULT_WIDTH,
++    title: 'Split Tracks',
++    status: 'idle'
++  }
++];
++
++export const INITIAL_EDGES: CanvasEdge[] = [
++  { id: 'edge-1', source: 'node-hook-1', sourceOutput: 'out', target: 'node-image-1', targetInput: 'prompt' },
++  { id: 'edge-2', source: 'node-body-1', sourceOutput: 'out', target: 'node-avatar-1', targetInput: 'prompt' },
++  { id: 'edge-3', source: 'node-image-1', sourceOutput: 'out', target: 'node-video-1', targetInput: 'image' },
++  { id: 'edge-4', source: 'node-avatar-1', sourceOutput: 'out', target: 'node-video-1', targetInput: 'video' },
++  { id: 'edge-5', source: 'node-video-1', sourceOutput: 'out', target: 'node-split-1', targetInput: 'video' },
++  { id: 'edge-6', source: 'node-split-1', sourceOutput: 'audio', target: 'node-tracks-1', targetInput: 'audio' }
++];
+diff --git a/apps/web/creative-cue/src/pages/canvas/graph-ops.ts b/apps/web/creative-cue/src/pages/canvas/graph-ops.ts
+new file mode 100644
+index 0000000000..830fa144c2
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/graph-ops.ts
+@@ -0,0 +1,77 @@
++import { NODE_DEFAULT_WIDTH, NODE_KIND_CONFIG } from './const';
++import type { AdsNativeNodeKind, CanvasEdge, CanvasNode, CanvasNodeKind } from './types';
++import { findMatchingInput, getNodeHeight } from './utils';
++
++let idSeq = 0;
++
++/** 画布内的临时 id；接入后端后应改用服务端返回的 id。 */
++export const createId = (prefix: string) => {
++  idSeq += 1;
++  return `${prefix}-${Date.now()}-${idSeq}`;
++};
++
++export const buildNode = (kind: CanvasNodeKind, x: number, y: number, title?: string): CanvasNode => ({
++  id: createId('node'),
++  kind,
++  x,
++  y,
++  width: NODE_DEFAULT_WIDTH,
++  title: title ?? NODE_KIND_CONFIG[kind].label,
++  status: 'idle'
++});
++
++/** 以卡片中心为基准放置节点。 */
++export const buildNodeAtCenter = (kind: CanvasNodeKind, centerX: number, centerY: number, title?: string) =>
++  buildNode(kind, centerX - NODE_DEFAULT_WIDTH / 2, centerY - getNodeHeight(kind) / 2, title);
++
++/** 追加一条连线；同源同目标同输入的重复连线会被忽略。 */
++export const appendEdge = (
++  edges: CanvasEdge[],
++  source: string,
++  sourceOutput: string,
++  target: string,
++  targetInput: string
++): CanvasEdge[] => {
++  const exists = edges.some(
++    (edge) => edge.source === source && edge.target === target && edge.targetInput === targetInput
++  );
++  if (exists) {
++    return edges;
++  }
++  return [...edges, { id: createId('edge'), source, sourceOutput, target, targetInput }];
++};
++
++/** Agent 生成脚本节点时的纵向间距。 */
++const SCRIPT_ROW_GAP = 220;
++
++/**
++ * 把 Agent 产出的脚本段落变成一串纵向排列、首尾相连的节点。
++ * 纯函数：返回新节点和新连线，由调用方合并进 state。
++ */
++export const buildScriptNodes = (
++  sections: Array<{ kind: AdsNativeNodeKind; text: string }>,
++  centerX: number,
++  centerY: number
++): { nodes: CanvasNode[]; edges: CanvasEdge[] } => {
++  if (sections.length === 0) {
++    return { nodes: [], edges: [] };
++  }
++
++  const nodes = sections.map((section, index) => ({
++    ...buildNodeAtCenter(
++      section.kind,
++      centerX,
++      centerY + (index - (sections.length - 1) / 2) * SCRIPT_ROW_GAP
++    ),
++    text: section.text,
++    status: 'done' as const
++  }));
++
++  const edges = nodes.slice(1).reduce<CanvasEdge[]>((acc, node, index) => {
++    const previous = nodes[index];
++    const input = findMatchingInput(previous.kind, 'out', node.kind);
++    return input ? appendEdge(acc, previous.id, 'out', node.id, input.id) : acc;
++  }, []);
++
++  return { nodes, edges };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-bulk-ops.ts b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-bulk-ops.ts
+new file mode 100644
+index 0000000000..87a4dc8cff
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-bulk-ops.ts
+@@ -0,0 +1,73 @@
++import { type Dispatch, type SetStateAction, useCallback } from 'react';
++
++import { createId } from '../graph-ops';
++import type { CanvasEdge, CanvasNode } from '../types';
++
++interface UseCanvasBulkOpsOptions {
++  setNodes: Dispatch<SetStateAction<CanvasNode[]>>;
++  setEdges: Dispatch<SetStateAction<CanvasEdge[]>>;
++}
++
++/** 复制时的错位量，避免和原节点完全重叠。 */
++const DUPLICATE_OFFSET = 32;
++
++/** 框选之后的批量操作。 */
++export const useCanvasBulkOps = ({ setNodes, setEdges }: UseCanvasBulkOpsOptions) => {
++  /** 批量删除：连同挂在这些节点上的连线一起清掉。 */
++  const removeNodes = useCallback(
++    (nodeIds: string[]) => {
++      const doomed = new Set(nodeIds);
++      if (doomed.size === 0) {
++        return;
++      }
++      setNodes((current) => current.filter((node) => !doomed.has(node.id)));
++      setEdges((current) => current.filter((edge) => !doomed.has(edge.source) && !doomed.has(edge.target)));
++    },
++    [setEdges, setNodes]
++  );
++
++  /**
++   * 批量复制：整体偏移一个身位。
++   * 选区内部的连线一并复制，跨越选区边界的连线不复制（否则会接到原节点上）。
++   */
++  const duplicateNodes = useCallback(
++    (nodeIds: string[]) => {
++      const picked = new Set(nodeIds);
++      if (picked.size === 0) {
++        return [];
++      }
++
++      const idMap = new Map<string, string>();
++      nodeIds.forEach((id) => idMap.set(id, createId('node')));
++
++      setNodes((current) => [
++        ...current,
++        ...current
++          .filter((node) => picked.has(node.id))
++          .map((node) => ({
++            ...node,
++            id: idMap.get(node.id) as string,
++            x: node.x + DUPLICATE_OFFSET,
++            y: node.y + DUPLICATE_OFFSET
++          }))
++      ]);
++
++      setEdges((current) => [
++        ...current,
++        ...current
++          .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
++          .map((edge) => ({
++            ...edge,
++            id: createId('edge'),
++            source: idMap.get(edge.source) as string,
++            target: idMap.get(edge.target) as string
++          }))
++      ]);
++
++      return [...idMap.values()];
++    },
++    [setEdges, setNodes]
++  );
++
++  return { removeNodes, duplicateNodes };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-connections.ts b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-connections.ts
+new file mode 100644
+index 0000000000..5c55e6acd5
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-connections.ts
+@@ -0,0 +1,42 @@
++import { type Dispatch, type SetStateAction, useCallback } from 'react';
++
++import { appendEdge } from '../graph-ops';
++import type { CanvasEdge, CanvasNode } from '../types';
++import { findMatchingInput } from '../utils';
++
++interface UseCanvasConnectionsOptions {
++  nodes: CanvasNode[];
++  setEdges: Dispatch<SetStateAction<CanvasEdge[]>>;
++}
++
++/** 建立连线的两种方式：命中具体端口，或落在卡片上自动择一。 */
++export const useCanvasConnections = ({ nodes, setEdges }: UseCanvasConnectionsOptions) => {
++  /** 精确连到指定输入端口。 */
++  const connect = useCallback(
++    (sourceId: string, sourceOutput: string, targetId: string, targetInput: string) => {
++      if (sourceId === targetId) {
++        return;
++      }
++      setEdges((current) => appendEdge(current, sourceId, sourceOutput, targetId, targetInput));
++    },
++    [setEdges]
++  );
++
++  /** 只给目标节点，自动挑一个类型匹配的输入——用于在卡片任意位置松手。 */
++  const connectToBestInput = useCallback(
++    (sourceId: string, sourceOutput: string, targetId: string) => {
++      const source = nodes.find((node) => node.id === sourceId);
++      const target = nodes.find((node) => node.id === targetId);
++      if (!source || !target || sourceId === targetId) {
++        return;
++      }
++      const matched = findMatchingInput(source.kind, sourceOutput, target.kind);
++      if (matched) {
++        setEdges((current) => appendEdge(current, sourceId, sourceOutput, targetId, matched.id));
++      }
++    },
++    [nodes, setEdges]
++  );
++
++  return { connect, connectToBestInput };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-graph.ts b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-graph.ts
+new file mode 100644
+index 0000000000..00afe552c3
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-graph.ts
+@@ -0,0 +1,158 @@
++import { useCallback, useState } from 'react';
++
++import { INITIAL_EDGES, INITIAL_NODES, NODE_KIND_CONFIG } from '../const';
++import { appendEdge, buildNode, buildNodeAtCenter, buildScriptNodes, createId } from '../graph-ops';
++import type { AdsNativeNodeKind, CanvasEdge, CanvasNode, CanvasNodeKind, EditNodeKind, LibraryAsset } from '../types';
++import { findMatchingInput } from '../utils';
++import { useCanvasBulkOps } from './use-canvas-bulk-ops';
++import { useCanvasConnections } from './use-canvas-connections';
++import { useNodeExecution } from './use-node-execution';
++
++/** 新节点相对来源节点向右偏移的距离。 */
++const DOWNSTREAM_GAP = 120;
++
++/** 复制节点时的错位量，避免和原节点完全重叠。 */
++const DUPLICATE_OFFSET = 32;
++
++
++/**
++ * 画布图数据的增删改。
++ * 从页面组件里拆出来，避免 index.tsx 同时扛交互和数据两件事。
++ */
++export const useCanvasGraph = () => {
++  const [nodes, setNodes] = useState<CanvasNode[]>(INITIAL_NODES);
++  const [edges, setEdges] = useState<CanvasEdge[]>(INITIAL_EDGES);
++
++  /** 在指定世界坐标上新增节点，坐标按卡片尺寸居中。 */
++  const addNodeAt = useCallback((kind: CanvasNodeKind, centerX: number, centerY: number, title?: string) => {
++    const node = buildNodeAtCenter(kind, centerX, centerY, title);
++    setNodes((current) => [...current, node]);
++    return node.id;
++  }, []);
++
++  /** 在来源节点右侧新增节点并自动连线。 */
++  const addConnectedNode = useCallback((sourceId: string, sourceOutput: string, kind: CanvasNodeKind) => {
++    setNodes((currentNodes) => {
++      const source = currentNodes.find((node) => node.id === sourceId);
++      if (!source) {
++        return currentNodes;
++      }
++
++      const matched = findMatchingInput(source.kind, sourceOutput, kind);
++      const node = buildNode(kind, source.x + source.width + DOWNSTREAM_GAP, source.y);
++
++      if (matched) {
++        setEdges((currentEdges) => appendEdge(currentEdges, sourceId, sourceOutput, node.id, matched.id));
++      }
++      return [...currentNodes, node];
++    });
++  }, []);
++
++  /**
++   * 在指定世界坐标新建节点并从来源连过去。
++   * 用于「从端口拉线甩到空白处」——落点就是新节点的位置。
++   */
++  const addConnectedNodeAt = useCallback(
++    (sourceId: string, sourceOutput: string, kind: CanvasNodeKind, centerX: number, centerY: number) => {
++      setNodes((currentNodes) => {
++        const source = currentNodes.find((node) => node.id === sourceId);
++        if (!source) {
++          return currentNodes;
++        }
++        const matched = findMatchingInput(source.kind, sourceOutput, kind);
++        const node = buildNodeAtCenter(kind, centerX, centerY);
++        if (matched) {
++          setEdges((currentEdges) => appendEdge(currentEdges, sourceId, sourceOutput, node.id, matched.id));
++        }
++        return [...currentNodes, node];
++      });
++    },
++    []
++  );
++
++  /** Tools 菜单里的编辑动作：在下游挂一个 Edit 节点。 */
++  const runTool = useCallback(
++    (sourceId: string, kind: EditNodeKind) => {
++      const source = nodes.find((node) => node.id === sourceId);
++      if (!source) {
++        return;
++      }
++      addConnectedNode(sourceId, NODE_KIND_CONFIG[source.kind].outputs[0]?.id ?? 'out', kind);
++    },
++    [addConnectedNode, nodes]
++  );
++
++  /**
++   * Agent 产出的脚本骨架落到画布；返回新建的节点 id，供调用方选中/定位。
++   */
++  const addScriptSections = useCallback(
++    (sections: Array<{ kind: AdsNativeNodeKind; text: string }>, centerX: number, centerY: number) => {
++      const built = buildScriptNodes(sections, centerX, centerY);
++      if (built.nodes.length === 0) {
++        return [];
++      }
++      setNodes((current) => [...current, ...built.nodes]);
++      setEdges((current) => [...current, ...built.edges]);
++      return built.nodes.map((node) => node.id);
++    },
++    []
++  );
++
++  /** 素材库条目落到画布上，直接生成对应类型的节点。 */
++  const addAssetNode = useCallback(
++    (asset: LibraryAsset, centerX: number, centerY: number) => addNodeAt(asset.kind, centerX, centerY, asset.name),
++    [addNodeAt]
++  );
++
++  const { connect, connectToBestInput } = useCanvasConnections({ nodes, setEdges });
++
++  const patchNode = useCallback((nodeId: string, patch: Partial<CanvasNode>) => {
++    setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)));
++  }, []);
++
++  const executeNode = useNodeExecution({ nodes, edges, patchNode });
++
++  const moveNode = useCallback((nodeId: string, x: number, y: number) => {
++    setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, x, y } : node)));
++  }, []);
++
++  const duplicateNode = useCallback((nodeId: string) => {
++    setNodes((current) => {
++      const source = current.find((node) => node.id === nodeId);
++      if (!source) {
++        return current;
++      }
++      return [
++        ...current,
++        { ...source, id: createId('node'), x: source.x + DUPLICATE_OFFSET, y: source.y + DUPLICATE_OFFSET }
++      ];
++    });
++  }, []);
++
++  const removeNode = useCallback((nodeId: string) => {
++    setNodes((current) => current.filter((node) => node.id !== nodeId));
++    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
++  }, []);
++
++  const { removeNodes, duplicateNodes } = useCanvasBulkOps({ setNodes, setEdges });
++
++  return {
++    nodes,
++    edges,
++    addNodeAt,
++    addConnectedNode,
++    addConnectedNodeAt,
++    addScriptSections,
++    addAssetNode,
++    runTool,
++    connect,
++    connectToBestInput,
++    executeNode,
++    patchNode,
++    moveNode,
++    duplicateNode,
++    duplicateNodes,
++    removeNode,
++    removeNodes
++  };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-viewport.ts b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-viewport.ts
+new file mode 100644
+index 0000000000..805e1a4dbf
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/hooks/use-canvas-viewport.ts
+@@ -0,0 +1,85 @@
++import { type RefObject, useCallback, useEffect, useState } from 'react';
++
++import { ZOOM_STEP } from '../const';
++import type { Viewport } from '../types';
++import { clampZoom, zoomAtPoint } from '../utils';
++
++interface UseCanvasViewportOptions {
++  containerRef: RefObject<HTMLDivElement>;
++}
++
++/**
++ * 管理画布视口的平移与缩放。
++ * wheel 必须以 passive: false 手动绑定：ctrl/⌘ + wheel 要 preventDefault，
++ * 否则会触发浏览器整页缩放而不是画布缩放。
++ */
++export const useCanvasViewport = ({ containerRef }: UseCanvasViewportOptions) => {
++  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
++
++  useEffect(() => {
++    const container = containerRef.current;
++    if (!container) {
++      return;
++    }
++
++    const handleWheel = (event: WheelEvent) => {
++      event.preventDefault();
++      const rect = container.getBoundingClientRect();
++      const pointerX = event.clientX - rect.left;
++      const pointerY = event.clientY - rect.top;
++
++      // ctrl/⌘ + wheel 以及触控板捏合（浏览器同样上报 ctrlKey）走缩放
++      if (event.ctrlKey || event.metaKey) {
++        setViewport((current) =>
++          zoomAtPoint(current, current.zoom * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), pointerX, pointerY)
++        );
++        return;
++      }
++
++      // 其余滚动按平移处理，贴合触控板双指的直觉
++      setViewport((current) => ({
++        ...current,
++        x: current.x - event.deltaX,
++        y: current.y - event.deltaY
++      }));
++    };
++
++    container.addEventListener('wheel', handleWheel, { passive: false });
++    return () => container.removeEventListener('wheel', handleWheel);
++  }, [containerRef]);
++
++  /** 以容器中心为锚点按档位缩放，供工具栏按钮使用。 */
++  const zoomBy = useCallback(
++    (factor: number) => {
++      const container = containerRef.current;
++      if (!container) {
++        return;
++      }
++      const rect = container.getBoundingClientRect();
++      setViewport((current) => zoomAtPoint(current, current.zoom * factor, rect.width / 2, rect.height / 2));
++    },
++    [containerRef]
++  );
++
++  const zoomIn = useCallback(() => zoomBy(ZOOM_STEP), [zoomBy]);
++  const zoomOut = useCallback(() => zoomBy(1 / ZOOM_STEP), [zoomBy]);
++
++  const resetZoom = useCallback(() => {
++    const container = containerRef.current;
++    if (!container) {
++      return;
++    }
++    const rect = container.getBoundingClientRect();
++    setViewport((current) => zoomAtPoint(current, 1, rect.width / 2, rect.height / 2));
++  }, [containerRef]);
++
++  const panBy = useCallback((dx: number, dy: number) => {
++    setViewport((current) => ({ ...current, x: current.x + dx, y: current.y + dy }));
++  }, []);
++
++  const setZoom = useCallback((zoom: number) => {
++    setViewport((current) => ({ ...current, zoom: clampZoom(zoom) }));
++  }, []);
++
++  return { viewport, setViewport, zoomIn, zoomOut, resetZoom, panBy, setZoom };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/hooks/use-node-execution.ts b/apps/web/creative-cue/src/pages/canvas/hooks/use-node-execution.ts
+new file mode 100644
+index 0000000000..85e4cdf635
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/hooks/use-node-execution.ts
+@@ -0,0 +1,46 @@
++import { useCallback } from 'react';
++
++import { NodeNotWiredError, runNode } from '../services/node-runner';
++import type { CanvasEdge, CanvasNode } from '../types';
++
++interface UseNodeExecutionOptions {
++  nodes: CanvasNode[];
++  edges: CanvasEdge[];
++  patchNode: (nodeId: string, patch: Partial<CanvasNode>) => void;
++}
++
++/**
++ * 执行单个节点：把上游节点的文本作为上下文，调平台已有的生成能力。
++ * 状态流转 generating → done/idle；失败原因留在卡片上，不静默吞掉。
++ */
++export const useNodeExecution = ({ nodes, edges, patchNode }: UseNodeExecutionOptions) =>
++  useCallback(
++    async (nodeId: string) => {
++      const node = nodes.find((item) => item.id === nodeId);
++      if (!node) {
++        return;
++      }
++
++      const upstreamIds = edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source);
++      const upstream = nodes.filter((item) => upstreamIds.includes(item.id));
++
++      patchNode(nodeId, { status: 'generating', error: undefined });
++      try {
++        const result = await runNode(node, upstream);
++        patchNode(nodeId, {
++          status: 'done',
++          text: result.text ?? node.text,
++          assetUrl: result.assetUrl,
++          note: result.note,
++          error: undefined
++        });
++      } catch (error) {
++        const notWired = error instanceof NodeNotWiredError;
++        patchNode(nodeId, {
++          status: 'idle',
++          error: notWired ? 'No backend wired for this node yet' : (error as Error)?.message || 'Generation failed'
++        });
++      }
++    },
++    [edges, nodes, patchNode]
++  );
+diff --git a/apps/web/creative-cue/src/pages/canvas/index.test.tsx b/apps/web/creative-cue/src/pages/canvas/index.test.tsx
+new file mode 100644
+index 0000000000..8163a31ee9
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/index.test.tsx
+@@ -0,0 +1,473 @@
++/* eslint-disable max-lines-per-function */
++import { createRoot, type Root } from 'react-dom/client';
++import { act } from 'react-dom/test-utils';
++
++import { CATEGORY_LABEL, KINDS_BY_CATEGORY, LIBRARY_ASSETS, NODE_KIND_CONFIG } from './const';
++import CanvasPage from './index';
++import type { CanvasNodeKind } from './types';
++
++/* 画布测试不打真实接口：在 service 边界上挡住 @/api（它带 ESM 依赖，jest 无法转译）。 */
++const mockRunNode = jest.fn(() => Promise.resolve({ text: 'generated copy' }));
++jest.mock('./services/node-runner', () => ({
++  runNode: (...args: unknown[]) => mockRunNode(...(args as [])),
++  fetchLibraryAssets: () => Promise.resolve([]),
++  NodeNotWiredError: class NodeNotWiredError extends Error {}
++}));
++
++const mockBuildScriptGraph = jest.fn(() =>
++  Promise.resolve({
++    sections: [
++      { kind: 'hook', text: 'generated hook' },
++      { kind: 'body', text: 'generated body' },
++      { kind: 'cta', text: 'generated cta' }
++    ],
++    reply: 'Built a HOOK → BODY → CTA script for Serum and wired the nodes together.'
++  })
++);
++jest.mock('./services/agent', () => ({
++  buildScriptGraph: () => mockBuildScriptGraph()
++}));
++
++const mockNavigate = jest.fn();
++jest.mock('@edenx/runtime/router', () => ({
++  useNavigate: () => mockNavigate
++}));
++
++let container: HTMLDivElement,
++ root: Root;
++
++/* 与仓库其他组件测试一致，直接用 createRoot + act，不引入 @testing-library/react。 */
++const renderCanvas = () => {
++  act(() => {
++    root.render(<CanvasPage />);
++  });
++};
++
++const query = (selector: string) => container.querySelector<HTMLElement>(selector);
++
++const clickByTitle = (title: string) => {
++  const button = query(`[title="${title}"]`);
++  if (!button) {
++    throw new Error(`button not found: ${title}`);
++  }
++  act(() => {
++    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
++  });
++};
++
++/** hover 才会渲染端口行和卡片操作条，这里模拟指针进入某个节点。 */
++const hoverNode = (kind: CanvasNodeKind) => {
++  const card = query(`[data-node-kind="${kind}"]`);
++  if (!card) {
++    throw new Error(`node card not found: ${kind}`);
++  }
++  act(() => {
++    card.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
++    card.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
++  });
++};
++
++/** 按 data-node-kind 统计画布上的节点卡片，避免受卡片内文案重复影响。 */
++const countNodes = (kind: CanvasNodeKind) => container.querySelectorAll(`[data-node-kind="${kind}"]`).length;
++
++beforeAll(() => {
++  // jsdom 不实现 PointerEvent / 指针捕获
++  if (typeof window.PointerEvent === 'undefined') {
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    (window as any).PointerEvent = MouseEvent;
++  }
++  Element.prototype.setPointerCapture = jest.fn();
++  Element.prototype.releasePointerCapture = jest.fn();
++});
++
++beforeEach(() => {
++  mockNavigate.mockClear();
++  container = document.createElement('div');
++  document.body.appendChild(container);
++  root = createRoot(container);
++});
++
++afterEach(() => {
++  act(() => {
++    root.unmount();
++  });
++  container.remove();
++});
++
++describe('CanvasPage', () => {
++  it('renders the seeded graph including the edit nodes', () => {
++    renderCanvas();
++
++    expect(countNodes('hook')).toBe(1);
++    expect(countNodes('video')).toBe(1);
++    expect(countNodes('split-av')).toBe(1);
++    expect(countNodes('split-tracks')).toBe(1);
++    expect(container.querySelectorAll('svg path').length).toBeGreaterThan(0);
++  });
++
++  it('keeps every node kind behind the + button, including the Edit category', () => {
++    renderCanvas();
++
++    expect(query('[title="Add Hook node"]')).toBeNull();
++
++    clickByTitle('Add node');
++
++    [...KINDS_BY_CATEGORY['ads-native'], ...KINDS_BY_CATEGORY.creative, ...KINDS_BY_CATEGORY.edit].forEach((kind) => {
++      expect(query(`[title="Add ${NODE_KIND_CONFIG[kind].label} node"]`)).not.toBeNull();
++    });
++
++    const text = container.textContent ?? '';
++    expect(text).toContain(CATEGORY_LABEL['ads-native']);
++    expect(text).toContain(CATEGORY_LABEL.creative);
++    expect(text).toContain(CATEGORY_LABEL.edit);
++  });
++
++  it('splits audio into BGM and numbered voiceover tracks', () => {
++    const outputs = NODE_KIND_CONFIG['split-tracks'].outputs.map((port) => port.label);
++
++    expect(outputs).toEqual(['BGM', 'Voiceover 1', 'Voiceover 2']);
++    // Split A/V 把视频拆成静音视频 + 音频两路输出
++    expect(NODE_KIND_CONFIG['split-av'].outputs.map((port) => port.type)).toEqual(['video', 'audio']);
++  });
++
++  it('opens the asset library from the toolbar and drops the picked asset on the canvas', () => {
++    renderCanvas();
++
++    const before = countNodes('image');
++    clickByTitle('Add assets from library');
++
++    const asset = LIBRARY_ASSETS.find((item) => item.kind === 'image');
++    expect(asset).toBeDefined();
++
++    clickByTitle(`Add ${asset?.name} to canvas`);
++    expect(countNodes('image')).toBe(before + 1);
++  });
++
++  it('shows the hover toolbar with tools only when the card is hovered', () => {
++    renderCanvas();
++
++    expect(query('[title="Tools"]')).toBeNull();
++
++    hoverNode('video');
++    expect(query('[title="Tools"]')).not.toBeNull();
++    expect(query('[title="Duplicate node"]')).not.toBeNull();
++  });
++
++  it('adds an edit node downstream when a tool is run from the hover toolbar', () => {
++    renderCanvas();
++    hoverNode('video');
++
++    const before = countNodes('split-av');
++    clickByTitle('Tools');
++    clickByTitle('Split A/V');
++
++    expect(countNodes('split-av')).toBe(before + 1);
++  });
++
++  it('exposes labelled input rows on hover', () => {
++    renderCanvas();
++    hoverNode('video');
++
++    // Video 节点的四个输入端口都带 已用/上限；seed 图里 Image 和 Video 各接了一条
++    const text = container.textContent ?? '';
++    expect(text).toContain('Prompt0/1');
++    expect(text).toContain('Image1/9');
++    expect(text).toContain('Video1/3');
++    expect(text).toContain('Audio0/3');
++  });
++
++  it('adds a connected node from the card + button', () => {
++    renderCanvas();
++    hoverNode('hook');
++
++    const before = countNodes('image');
++    clickByTitle('Add connected node');
++    clickByTitle('Add Image node');
++
++    expect(countNodes('image')).toBe(before + 1);
++  });
++
++  it('collapses the agent panel into a FAB and restores it', () => {
++    renderCanvas();
++
++    expect(query('aside textarea')).not.toBeNull();
++
++    clickByTitle('Collapse agent panel');
++    expect(query('aside textarea')).toBeNull();
++    expect(query('[title="Open agent"]')).not.toBeNull();
++
++    clickByTitle('Open agent');
++    expect(query('aside textarea')).not.toBeNull();
++  });
++
++  it('connects two nodes manually by dragging from an output port onto a card', () => {
++    renderCanvas();
++
++    const edgesBefore = container.querySelectorAll('svg path').length;
++
++    // 从 CTA 的输出端口拉线，落到 Split Tracks 卡片上（不必精确命中端口）
++    hoverNode('cta');
++    const outputPort = container.querySelectorAll('[data-node-kind="cta"] .cursor-crosshair')[0];
++    expect(outputPort).toBeDefined();
++
++    act(() => {
++      outputPort.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
++    });
++    act(() => {
++      query('[data-node-kind="split-tracks"]')?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
++    });
++
++    expect(container.querySelectorAll('svg path').length).toBe(edgesBefore + 1);
++  });
++
++  it('opens the node panel when a dragged line is released on empty canvas', () => {
++    renderCanvas();
++
++    const nodesBefore = countNodes('image');
++    const edgesBefore = container.querySelectorAll('svg path').length;
++
++    // 从 CTA 输出端口拉线，甩到画布空白处松手
++    hoverNode('cta');
++    const outputPort = container.querySelectorAll('[data-node-kind="cta"] .cursor-crosshair')[0];
++    act(() => {
++      outputPort.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
++    });
++    act(() => {
++      query('[data-canvas-surface]')?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
++    });
++
++    // 面板在落点弹出，选一个节点即在该处新建并接上来源
++    expect(query('[title="Add Image node"]')).not.toBeNull();
++    clickByTitle('Add Image node');
++
++    expect(countNodes('image')).toBe(nodesBefore + 1);
++    expect(container.querySelectorAll('svg path').length).toBe(edgesBefore + 1);
++  });
++
++  it('shows port dots without hovering so lines can be started anywhere', () => {
++    renderCanvas();
++
++    // 端口常驻可见：未 hover 也能找到可拉线的输出端口
++    expect(container.querySelectorAll('[data-node-kind="hook"] .cursor-crosshair').length).toBeGreaterThan(0);
++  });
++
++  it('lets you type a prompt into a text node', () => {
++    renderCanvas();
++
++    const card = query('[data-node-kind="hook"]');
++    const textarea = card?.querySelector('textarea') as HTMLTextAreaElement | null;
++    expect(textarea).not.toBeNull();
++
++    // 受控组件：直接改 value 后派发 input，React 才收得到
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
++    act(() => {
++      setter?.call(textarea, 'a punchy new hook');
++      textarea?.dispatchEvent(new Event('input', { bubbles: true }));
++    });
++
++    expect((query('[data-node-kind="hook"]')?.querySelector('textarea') as HTMLTextAreaElement)?.value).toBe(
++      'a punchy new hook'
++    );
++  });
++
++  it('gives media and audio nodes their own prompt field', () => {
++    renderCanvas();
++
++    expect(query('[data-node-kind="image"] textarea')).not.toBeNull();
++    expect(query('[data-node-kind="video"] textarea')).not.toBeNull();
++  });
++
++  it('does not drag the card when the pointer goes down in the prompt field', () => {
++    renderCanvas();
++
++    const card = query('[data-node-kind="hook"]');
++    const before = card?.style.left;
++
++    act(() => {
++      card?.querySelector('textarea')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
++    });
++    act(() => {
++      query('[data-canvas-surface]')?.dispatchEvent(
++        new MouseEvent('pointermove', { bubbles: true, clientX: 400, clientY: 400 })
++      );
++    });
++
++    // 在输入框里按下不应该带着卡片跑
++    expect(query('[data-node-kind="hook"]')?.style.left).toBe(before);
++  });
++
++  it('adds the Batch node from the Edit category', () => {
++    renderCanvas();
++
++    const before = countNodes('batch');
++    clickByTitle('Add node');
++    clickByTitle('Add Batch node');
++
++    expect(countNodes('batch')).toBe(before + 1);
++    expect(NODE_KIND_CONFIG.batch.category).toBe('edit');
++  });
++
++  it('opens the timeline editor by double-clicking a Timeline node', () => {
++    renderCanvas();
++
++    // 先从面板加一个 Timeline 节点
++    clickByTitle('Add node');
++    clickByTitle('Add Timeline node');
++    expect(query('[data-timeline-editor]')).toBeNull();
++
++    const card = query('[data-node-kind="timeline"]');
++    act(() => {
++      card?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
++    });
++
++    const editor = query('[data-timeline-editor]');
++    expect(editor).not.toBeNull();
++    // 时间线编辑器该有的部件：轨道、播放、属性面板
++    const text = editor?.textContent ?? '';
++    expect(text).toContain('Timeline Editor');
++    expect(text).toContain('Source');
++    expect(text).toContain('Layout');
++    expect(query('[title="Split clip at playhead"]')).not.toBeNull();
++    expect(query('[title="Play"]')).not.toBeNull();
++  });
++
++  it('closes the timeline editor', () => {
++    renderCanvas();
++    clickByTitle('Add node');
++    clickByTitle('Add Timeline node');
++    act(() => {
++      query('[data-node-kind="timeline"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
++    });
++
++    clickByTitle('Close timeline editor');
++    expect(query('[data-timeline-editor]')).toBeNull();
++  });
++
++  it('builds a connected Hook/Body/CTA script from an agent prompt', async () => {
++    renderCanvas();
++
++    const hooksBefore = countNodes('hook');
++    const edgesBefore = container.querySelectorAll('svg path').length;
++
++    const composer = query('aside textarea') as HTMLTextAreaElement;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
++    act(() => {
++      setter?.call(composer, 'Build a 15s ad for the serum');
++      composer.dispatchEvent(new Event('input', { bubbles: true }));
++    });
++
++    act(() => {
++      query('[title="Send"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
++    });
++    // 让 agent 的 promise 链跑完
++    await act(() => Promise.resolve());
++
++    expect(mockBuildScriptGraph).toHaveBeenCalled();
++    // 三个脚本节点落到画布，并且首尾相连
++    expect(countNodes('hook')).toBe(hooksBefore + 1);
++    expect(countNodes('body')).toBe(2);
++    expect(countNodes('cta')).toBe(2);
++    expect(container.querySelectorAll('svg path').length).toBe(edgesBefore + 2);
++    // agent 的回复替换掉了 "Writing the script…" 占位
++    expect(container.textContent).toContain('wired the nodes together');
++    expect(container.textContent).not.toContain('Writing the script…');
++  });
++
++  it('surfaces the agent error instead of leaving the placeholder', async () => {
++    mockBuildScriptGraph.mockRejectedValueOnce(new Error('script service unavailable'));
++    renderCanvas();
++
++    const composer = query('aside textarea') as HTMLTextAreaElement;
++    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
++    act(() => {
++      setter?.call(composer, 'anything');
++      composer.dispatchEvent(new Event('input', { bubbles: true }));
++    });
++
++    act(() => {
++      query('[title="Send"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
++    });
++    // 让 agent 的 promise 链跑完
++    await act(() => Promise.resolve());
++
++    expect(container.textContent).toContain('script service unavailable');
++  });
++
++  it('marquee-selects nodes and shows the selection toolbar', () => {
++    renderCanvas();
++
++    expect(query('[data-selection-toolbar]')).toBeNull();
++
++    const surface = query('[data-canvas-surface]');
++    act(() => {
++      surface?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }));
++    });
++    // jsdom 下 getBoundingClientRect 全 0，视口即世界坐标，拉一个足够大的框罩住所有节点
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++    expect(query('[data-marquee]')).not.toBeNull();
++
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++
++    // 框选结束后矩形消失，工具栏出现并报出数量
++    expect(query('[data-marquee]')).toBeNull();
++    const toolbar = query('[data-selection-toolbar]');
++    expect(toolbar).not.toBeNull();
++    expect(toolbar?.textContent).toContain('selected');
++  });
++
++  it('deletes every selected node in one click', () => {
++    renderCanvas();
++
++    const before = container.querySelectorAll('[data-node-kind]').length;
++    expect(before).toBeGreaterThan(1);
++
++    const surface = query('[data-canvas-surface]');
++    act(() => {
++      surface?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }));
++    });
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++
++    clickByTitle('Delete');
++
++    expect(container.querySelectorAll('[data-node-kind]').length).toBe(0);
++    // 全删之后工具栏也应该收起
++    expect(query('[data-selection-toolbar]')).toBeNull();
++  });
++
++  it('duplicates the whole selection from the toolbar', () => {
++    renderCanvas();
++
++    const surface = query('[data-canvas-surface]');
++    act(() => {
++      surface?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }));
++    });
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++    act(() => {
++      surface?.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 5000, clientY: 5000 }));
++    });
++
++    const before = container.querySelectorAll('[data-node-kind]').length;
++    clickByTitle('Duplicate');
++
++    expect(container.querySelectorAll('[data-node-kind]').length).toBe(before * 2);
++  });
++
++  it('exits the canvas through the close button', () => {
++    renderCanvas();
++
++    clickByTitle('Close canvas');
++
++    expect(mockNavigate).toHaveBeenCalledWith('/create');
++  });
++});
+diff --git a/apps/web/creative-cue/src/pages/canvas/index.tsx b/apps/web/creative-cue/src/pages/canvas/index.tsx
+new file mode 100644
+index 0000000000..ab88d25d20
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/index.tsx
+@@ -0,0 +1,616 @@
++/* eslint-disable max-lines-per-function */
++import { useNavigate } from '@edenx/runtime/router';
++import { KsIconClose } from '@fe-infra/keystone-icons-react';
++import clsx from 'clsx';
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++
++import AgentPanel, { type AgentMessage } from './components/AgentPanel';
++import CanvasSidebar, { type SidebarPanel } from './components/CanvasSidebar';
++import EdgeLayer from './components/EdgeLayer';
++import NodeCard from './components/NodeCard';
++import NodePalette from './components/NodePalette';
++import SelectionToolbar from './components/SelectionToolbar';
++import TimelineEditor from './components/TimelineEditor';
++import { GRID_SIZE, INITIAL_NODES, NODE_KIND_CONFIG } from './const';
++import { useCanvasGraph } from './hooks/use-canvas-graph';
++import { useCanvasViewport } from './hooks/use-canvas-viewport';
++import { buildScriptGraph } from './services/agent';
++import type { CanvasNodeKind, LibraryAsset, PendingConnection } from './types';
++import { getFitViewport, isNodeInRect, type Rect, rectFromPoints, screenToWorld } from './utils';
++
++/** 指针拖拽的三种模式，用 ref 存避免每次 move 都触发重渲染。 */
++type DragState =
++  | { kind: 'pan'; startX: number; startY: number; originX: number; originY: number }
++  | { kind: 'node'; nodeId: string; offsetX: number; offsetY: number }
++  | { kind: 'connect'; source: string; sourceOutput: string }
++  | { kind: 'marquee'; startX: number; startY: number; additive: boolean }
++  | null;
++
++/**
++ * 节点面板的锚点，记录要从哪个输出接出去。
++ * 卡片上的 ⊕ 和「拉线甩到空白处」共用它。
++ */
++interface AddPanelAnchor {
++  nodeId: string;
++  outputId: string;
++  /** 屏幕坐标，用于定位浮层。 */
++  screenX: number;
++  screenY: number;
++  /** 世界坐标；由拉线触发时新节点落在这里，⊕ 触发时为空表示挂到来源右侧。 */
++  worldX?: number;
++  worldY?: number;
++}
++
++/** 鼠标中键，用于强制平移。 */
++const MIDDLE_BUTTON = 1;
++
++/** 退出画布后回到的落地页。 */
++const EXIT_PATH = '/create';
++
++const INITIAL_MESSAGES: AgentMessage[] = [
++  { id: 'msg-1', role: 'user', content: 'Build a 15s ad for the hydration serum.' },
++  {
++    id: 'msg-2',
++    role: 'agent',
++    content: 'Laid out a Hook → Body → CTA script and wired product, presenter and voiceover nodes into a final cut.'
++  },
++  { id: 'msg-3', role: 'user', content: 'Split the audio so I can swap the BGM.' },
++  {
++    id: 'msg-4',
++    role: 'agent',
++    content: 'Added Split A/V and Split Tracks after the final cut — BGM and two voiceover tracks are separated.'
++  }
++];
++
++let messageSeq = 0;
++
++function CanvasPage() {
++  const containerRef = useRef<HTMLDivElement>(null);
++  const dragRef = useRef<DragState>(null);
++  const navigate = useNavigate();
++
++  const {
++    nodes,
++    edges,
++    addNodeAt,
++    addConnectedNode,
++    addConnectedNodeAt,
++    addScriptSections,
++    addAssetNode,
++    runTool,
++    connect,
++    connectToBestInput,
++    executeNode,
++    patchNode,
++    moveNode,
++    duplicateNode,
++    removeNode,
++    removeNodes,
++    duplicateNodes
++  } = useCanvasGraph();
++
++  const [selectedIds, setSelectedIds] = useState<string[]>([]);
++  const [marquee, setMarquee] = useState<Rect | null>(null);
++  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
++  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
++  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
++  const [isPanning, setIsPanning] = useState(false);
++  const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>(null);
++  const [addPanelAnchor, setAddPanelAnchor] = useState<AddPanelAnchor | null>(null);
++  const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
++  const [isAgentOpen, setIsAgentOpen] = useState(true);
++  const [isAgentBusy, setIsAgentBusy] = useState(false);
++  const [messages, setMessages] = useState<AgentMessage[]>(INITIAL_MESSAGES);
++
++  const { viewport, setViewport, zoomIn, zoomOut, resetZoom } = useCanvasViewport({ containerRef });
++
++  /** 首次挂载时把示例节点居中，避免用户进来看到空白区域。 */
++  useEffect(() => {
++    const container = containerRef.current;
++    if (!container) {
++      return;
++    }
++    const rect = container.getBoundingClientRect();
++    setViewport(getFitViewport(INITIAL_NODES, rect.width, rect.height));
++  }, [setViewport]);
++
++  const toWorld = useCallback(
++    (clientX: number, clientY: number) => {
++      const rect = containerRef.current?.getBoundingClientRect();
++      if (!rect) {
++        return { x: 0, y: 0 };
++      }
++      return screenToWorld(clientX - rect.left, clientY - rect.top, viewport);
++    },
++    [viewport]
++  );
++
++  /** 视口中心的世界坐标，新增节点默认落在这里。 */
++  const getViewportCenter = useCallback(() => {
++    const rect = containerRef.current?.getBoundingClientRect();
++    if (!rect) {
++      return { x: 0, y: 0 };
++    }
++    return screenToWorld(rect.width / 2, rect.height / 2, viewport);
++  }, [viewport]);
++
++  /**
++   * 空白处按下：默认拉框选，按住空格或中键才是平移（与 Figma / Flora 一致）。
++   * 触控板双指滚动仍然随时可以平移，见 use-canvas-viewport。
++   */
++  const handleContainerPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
++    setAddPanelAnchor(null);
++    event.currentTarget.setPointerCapture(event.pointerId);
++
++    const wantsPan = isSpaceHeld || event.button === MIDDLE_BUTTON;
++    if (wantsPan) {
++      dragRef.current = {
++        kind: 'pan',
++        startX: event.clientX,
++        startY: event.clientY,
++        originX: viewport.x,
++        originY: viewport.y
++      };
++      setIsPanning(true);
++      return;
++    }
++
++    const world = toWorld(event.clientX, event.clientY);
++    // Shift 表示在已有选区上追加
++    dragRef.current = { kind: 'marquee', startX: world.x, startY: world.y, additive: event.shiftKey };
++    setMarquee({ x: world.x, y: world.y, width: 0, height: 0 });
++    if (!event.shiftKey) {
++      setSelectedIds([]);
++    }
++  };
++
++  const handleNodePointerDown = (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => {
++    event.stopPropagation();
++    const node = nodes.find((item) => item.id === nodeId);
++    if (!node) {
++      return;
++    }
++    const world = toWorld(event.clientX, event.clientY);
++    dragRef.current = { kind: 'node', nodeId, offsetX: world.x - node.x, offsetY: world.y - node.y };
++    setSelectedIds((current) => {
++      if (event.shiftKey) {
++        return current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId];
++      }
++      return current.includes(nodeId) ? current : [nodeId];
++    });
++    containerRef.current?.setPointerCapture(event.pointerId);
++  };
++
++  const handleOutputPointerDown = (
++    event: React.PointerEvent<HTMLDivElement>,
++    nodeId: string,
++    outputId: string
++  ) => {
++    event.stopPropagation();
++    const world = toWorld(event.clientX, event.clientY);
++    dragRef.current = { kind: 'connect', source: nodeId, sourceOutput: outputId };
++    setPendingConnection({ source: nodeId, sourceOutput: outputId, toX: world.x, toY: world.y });
++    containerRef.current?.setPointerCapture(event.pointerId);
++  };
++
++  /** 在目标节点的某个输入端口松手即建立连线。 */
++  const handleInputPointerUp = (event: React.PointerEvent<HTMLDivElement>, nodeId: string, inputId: string) => {
++    const drag = dragRef.current;
++    if (drag?.kind !== 'connect') {
++      return;
++    }
++    event.stopPropagation();
++    connect(drag.source, drag.sourceOutput, nodeId, inputId);
++    dragRef.current = null;
++    setPendingConnection(null);
++  };
++
++  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
++    const drag = dragRef.current;
++    if (!drag) {
++      return;
++    }
++
++    if (drag.kind === 'pan') {
++      setViewport((current) => ({
++        ...current,
++        x: drag.originX + (event.clientX - drag.startX),
++        y: drag.originY + (event.clientY - drag.startY)
++      }));
++      return;
++    }
++
++    const world = toWorld(event.clientX, event.clientY);
++
++    if (drag.kind === 'marquee') {
++      setMarquee(rectFromPoints(drag.startX, drag.startY, world.x, world.y));
++      return;
++    }
++
++    if (drag.kind === 'node') {
++      moveNode(drag.nodeId, world.x - drag.offsetX, world.y - drag.offsetY);
++      return;
++    }
++
++    setPendingConnection({ source: drag.source, sourceOutput: drag.sourceOutput, toX: world.x, toY: world.y });
++  };
++
++  /** 在卡片任意位置松手也能完成连线，不必精确命中端口。 */
++  const handleDropOnCard = (nodeId: string) => {
++    const drag = dragRef.current;
++    if (drag?.kind !== 'connect') {
++      return;
++    }
++    connectToBestInput(drag.source, drag.sourceOutput, nodeId);
++    dragRef.current = null;
++    setPendingConnection(null);
++  };
++
++  /**
++   * 松手收尾。
++   * 若此时还在拉线（说明没落在任何卡片上），就在落点打开节点面板，
++   * 选中的节点会直接建在这里并接上来源——Flora 的「甩到空白处」行为。
++   */
++  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
++    const drag = dragRef.current;
++    if (drag?.kind === 'connect') {
++      const rect = containerRef.current?.getBoundingClientRect();
++      const world = toWorld(event.clientX, event.clientY);
++      if (rect) {
++        setAddPanelAnchor({
++          nodeId: drag.source,
++          outputId: drag.sourceOutput,
++          screenX: event.clientX - rect.left,
++          screenY: event.clientY - rect.top,
++          worldX: world.x,
++          worldY: world.y
++        });
++      }
++    }
++    if (drag?.kind === 'marquee' && marquee) {
++      const hit = nodes.filter((node) => isNodeInRect(node, marquee)).map((node) => node.id);
++      setSelectedIds((current) => (drag.additive ? [...new Set([...current, ...hit])] : hit));
++    }
++
++    dragRef.current = null;
++    setIsPanning(false);
++    setPendingConnection(null);
++    setMarquee(null);
++  };
++
++  const deleteSelected = useCallback(() => {
++    if (selectedIds.length === 0) {
++      return;
++    }
++    removeNodes(selectedIds);
++    setSelectedIds([]);
++  }, [removeNodes, selectedIds]);
++
++  const selectAll = useCallback(() => {
++    setSelectedIds(nodes.map((node) => node.id));
++  }, [nodes]);
++
++  useEffect(() => {
++    /** 输入态下不劫持任何快捷键。 */
++    const isTyping = (target: EventTarget | null) => {
++      const element = target as HTMLElement | null;
++      return Boolean(element && ['INPUT', 'TEXTAREA'].includes(element.tagName));
++    };
++
++    const handleKeyDown = (event: KeyboardEvent) => {
++      if (isTyping(event.target)) {
++        return;
++      }
++      if (event.code === 'Space') {
++        // 空格切成平移，避免和框选抢左键
++        event.preventDefault();
++        setIsSpaceHeld(true);
++        return;
++      }
++      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
++        event.preventDefault();
++        selectAll();
++        return;
++      }
++      if (event.key === 'Escape') {
++        setSelectedIds([]);
++        return;
++      }
++      if (event.key === 'Backspace' || event.key === 'Delete') {
++        deleteSelected();
++      }
++    };
++
++    const handleKeyUp = (event: KeyboardEvent) => {
++      if (event.code === 'Space') {
++        setIsSpaceHeld(false);
++      }
++    };
++
++    window.addEventListener('keydown', handleKeyDown);
++    window.addEventListener('keyup', handleKeyUp);
++    return () => {
++      window.removeEventListener('keydown', handleKeyDown);
++      window.removeEventListener('keyup', handleKeyUp);
++    };
++  }, [deleteSelected, selectAll]);
++
++  /** 批量另存为模板：目前落在本地，接模板接口后替换。 */
++  const saveAsTemplate = useCallback(() => {
++    const picked = nodes.filter((node) => selectedIds.includes(node.id));
++    // eslint-disable-next-line no-console
++    console.info('[canvas] save as template', { nodes: picked.length });
++  }, [nodes, selectedIds]);
++
++  const duplicateSelected = useCallback(() => {
++    const ids = duplicateNodes(selectedIds);
++    if (ids.length > 0) {
++      setSelectedIds(ids);
++    }
++  }, [duplicateNodes, selectedIds]);
++
++  /** 左侧 "+" 面板：在视口中心新增游离节点。 */
++  const addNodeFromSidebar = useCallback(
++    (kind: CanvasNodeKind) => {
++      const center = getViewportCenter();
++      setSelectedIds([addNodeAt(kind, center.x, center.y)]);
++      setSidebarPanel(null);
++    },
++    [addNodeAt, getViewportCenter]
++  );
++
++  /** 素材库条目落到画布中心。 */
++  const pickAsset = useCallback(
++    (asset: LibraryAsset) => {
++      const center = getViewportCenter();
++      setSelectedIds([addAssetNode(asset, center.x, center.y)]);
++      setSidebarPanel(null);
++    },
++    [addAssetNode, getViewportCenter]
++  );
++
++  /** 卡片 ⊕ 面板：在来源节点右侧新增并自动连线。 */
++  const addNodeFromCard = useCallback(
++    (kind: CanvasNodeKind) => {
++      if (!addPanelAnchor) {
++        return;
++      }
++      if (addPanelAnchor.worldX === undefined || addPanelAnchor.worldY === undefined) {
++        addConnectedNode(addPanelAnchor.nodeId, addPanelAnchor.outputId, kind);
++      } else {
++        addConnectedNodeAt(
++          addPanelAnchor.nodeId,
++          addPanelAnchor.outputId,
++          kind,
++          addPanelAnchor.worldX,
++          addPanelAnchor.worldY
++        );
++      }
++      setAddPanelAnchor(null);
++    },
++    [addConnectedNode, addConnectedNodeAt, addPanelAnchor]
++  );
++
++  const openAddPanel = useCallback(
++    (nodeId: string, outputId: string) => {
++      const node = nodes.find((item) => item.id === nodeId);
++      const rect = containerRef.current?.getBoundingClientRect();
++      if (!node || !rect) {
++        return;
++      }
++      // 面板挂在卡片右侧，换算成容器内的屏幕坐标
++      setAddPanelAnchor({
++        nodeId,
++        outputId,
++        screenX: (node.x + node.width) * viewport.zoom + viewport.x + 40,
++        screenY: node.y * viewport.zoom + viewport.y
++      });
++    },
++    [nodes, viewport]
++  );
++
++  const fitView = useCallback(() => {
++    const rect = containerRef.current?.getBoundingClientRect();
++    if (!rect) {
++      return;
++    }
++    setViewport(getFitViewport(nodes, rect.width, rect.height));
++  }, [nodes, setViewport]);
++
++  /** 卡片内编辑 prompt / 文案。 */
++  const handleTextChange = useCallback(
++    (nodeId: string, text: string) => {
++      patchNode(nodeId, { text });
++    },
++    [patchNode]
++  );
++
++  /**
++   * Agent 对话：把需求交给平台的脚本模型，产出 Hook → Body → CTA 并直接落到画布上。
++   * 失败时把原因作为 agent 回复，不静默吞掉。
++   */
++  const sendMessage = useCallback(
++    async (content: string) => {
++      messageSeq += 1;
++      const pendingId = `msg-agent-${messageSeq}`;
++      setMessages((current) => [
++        ...current,
++        { id: `msg-user-${messageSeq}`, role: 'user', content },
++        { id: pendingId, role: 'agent', content: 'Writing the script…' }
++      ]);
++      setIsAgentBusy(true);
++
++      const replacePending = (reply: string) => {
++        setMessages((current) =>
++          current.map((message) => (message.id === pendingId ? { ...message, content: reply } : message))
++        );
++      };
++
++      try {
++        const result = await buildScriptGraph(content);
++        if (result.sections.length > 0) {
++          const center = getViewportCenter();
++          const ids = addScriptSections(result.sections, center.x, center.y);
++          setSelectedIds(ids);
++        }
++        replacePending(result.reply);
++      } catch (error) {
++        replacePending((error as Error)?.message || 'Something went wrong while building the script.');
++      } finally {
++        setIsAgentBusy(false);
++      }
++    },
++    [addScriptSections, getViewportCenter]
++  );
++
++  /** 正在拉的连线携带的数据类型，卡片据此高亮可接的输入端口。 */
++  const connectingType = useMemo(() => {
++    if (!pendingConnection) {
++      return null;
++    }
++    const source = nodes.find((node) => node.id === pendingConnection.source);
++    if (!source) {
++      return null;
++    }
++    return (
++      NODE_KIND_CONFIG[source.kind].outputs.find((port) => port.id === pendingConnection.sourceOutput)?.type ?? null
++    );
++  }, [nodes, pendingConnection]);
++
++  /** 打开时间线编辑器的节点；只有 Timeline 节点会进这个全屏编辑态。 */
++  const editorNode = useMemo(
++    () => nodes.find((node) => node.id === editorNodeId && node.kind === 'timeline') ?? null,
++    [editorNodeId, nodes]
++  );
++
++  /** 点阵背景跟随视口平移和缩放，制造无限画布的感觉。 */
++  const gridStyle = useMemo(() => {
++    const size = GRID_SIZE * viewport.zoom;
++    return {
++      // currentColor 取自网格层自身的 text token，避免依赖运行时 CSS 变量名
++      backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)',
++      backgroundSize: `${size}px ${size}px`,
++      backgroundPosition: `${viewport.x}px ${viewport.y}px`
++    };
++  }, [viewport]);
++
++  return (
++    <div className="relative size-full overflow-hidden bg-neutral-surface1">
++      <div
++        ref={containerRef}
++        className={clsx(
++          'absolute inset-0 touch-none',
++          pendingConnection
++            ? 'cursor-crosshair'
++            : isPanning
++              ? 'cursor-grabbing'
++              : isSpaceHeld
++                ? 'cursor-grab'
++                : 'cursor-default'
++        )}
++        onPointerDown={handleContainerPointerDown}
++        onPointerMove={handlePointerMove}
++        onPointerUp={handlePointerUp}
++        onPointerCancel={handlePointerUp}
++        data-canvas-surface
++      >
++        <div className="pointer-events-none absolute inset-0 text-neutral-fillLow" style={gridStyle} />
++        <div
++          className="absolute left-0 top-0"
++          style={{
++            transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
++            transformOrigin: '0 0'
++          }}
++        >
++          <EdgeLayer nodes={nodes} edges={edges} selectedIds={selectedIds} pendingConnection={pendingConnection} />
++          {marquee ? (
++            <div
++              className="pointer-events-none absolute border border-solid border-primary-fill bg-primary-fill/10"
++              style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
++              data-marquee
++            />
++          ) : null}
++          {nodes.map((node) => (
++            <NodeCard
++              key={node.id}
++              node={node}
++              edges={edges}
++              isSelected={selectedIds.includes(node.id)}
++              isSoleSelection={selectedIds.length === 1 && selectedIds[0] === node.id}
++              isHovered={hoveredNodeId === node.id}
++              isConnecting={Boolean(pendingConnection)}
++              connectingType={connectingType}
++              onHoverChange={setHoveredNodeId}
++              onPointerDown={handleNodePointerDown}
++              onOutputPointerDown={handleOutputPointerDown}
++              onInputPointerUp={handleInputPointerUp}
++              onOpenAddPanel={openAddPanel}
++              onDropOnCard={handleDropOnCard}
++              onOpenEditor={setEditorNodeId}
++              onRunTool={runTool}
++              onRun={executeNode}
++              onTextChange={handleTextChange}
++              onDuplicate={duplicateNode}
++              onDelete={removeNode}
++            />
++          ))}
++        </div>
++      </div>
++
++      {/* 卡片 ⊕ 面板：跟随卡片位置浮在画布之上 */}
++      {addPanelAnchor ? (
++        <div className="absolute z-30" style={{ left: addPanelAnchor.screenX, top: addPanelAnchor.screenY }}>
++          <NodePalette onSelect={addNodeFromCard} />
++        </div>
++      ) : null}
++
++      <SelectionToolbar
++        count={selectedIds.length}
++        onSaveAsTemplate={saveAsTemplate}
++        onDuplicate={duplicateSelected}
++        onSelectAll={selectAll}
++        onDelete={deleteSelected}
++        onClear={() => setSelectedIds([])}
++      />
++
++      {/* 画布内隐藏了全局侧边导航，这里提供唯一的退出入口 */}
++      <button
++        type="button"
++        title="Close canvas"
++        onClick={() => navigate(EXIT_PATH)}
++        className="absolute left-4 top-4 z-30 flex size-9 items-center justify-center rounded-full border border-solid border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:bg-neutral-surface2"
++      >
++        <KsIconClose size={18} />
++      </button>
++
++      <CanvasSidebar
++        zoom={viewport.zoom}
++        canDelete={selectedIds.length > 0}
++        openPanel={sidebarPanel}
++        onTogglePanel={(panel) => setSidebarPanel((current) => (current === panel ? null : panel))}
++        onClosePanel={() => setSidebarPanel(null)}
++        onAddNode={addNodeFromSidebar}
++        onPickAsset={pickAsset}
++        onDeleteSelected={deleteSelected}
++        onZoomIn={zoomIn}
++        onZoomOut={zoomOut}
++        onFitView={fitView}
++        onResetZoom={resetZoom}
++      />
++
++      {editorNode ? (
++        <TimelineEditor sourceLabel={editorNode.title} onClose={() => setEditorNodeId(null)} />
++      ) : null}
++
++      <AgentPanel
++        isOpen={isAgentOpen}
++        isBusy={isAgentBusy}
++        messages={messages}
++        onToggle={() => setIsAgentOpen((open) => !open)}
++        onSend={sendMessage}
++      />
++    </div>
++  );
++}
++
++export default CanvasPage;
+diff --git a/apps/web/creative-cue/src/pages/canvas/services/agent.ts b/apps/web/creative-cue/src/pages/canvas/services/agent.ts
+new file mode 100644
+index 0000000000..fba68c3493
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/services/agent.ts
+@@ -0,0 +1,81 @@
++import { generateScript } from '@/api';
++import { ScriptType, VideoDurationLen } from '@/api/typings';
++
++import type { AdsNativeNodeKind } from '../types';
++import { resolveScriptContext } from './products';
++
++/** Agent 生成出来的一段脚本，直接对应一个 Ads-native 节点。 */
++export interface ScriptSection {
++  kind: AdsNativeNodeKind;
++  text: string;
++}
++
++export interface AgentBuildResult {
++  sections: ScriptSection[];
++  /** 回给用户的一句话，说明这次做了什么。 */
++  reply: string;
++}
++
++const KIND_BY_SCRIPT_TYPE: Partial<Record<ScriptType, AdsNativeNodeKind>> = {
++  [ScriptType.HOOK]: 'hook',
++  [ScriptType.USP]: 'body',
++  [ScriptType.CTA]: 'cta'
++};
++
++/** 脚本骨架的固定顺序，保证画布上从上到下是 Hook → Body → CTA。 */
++const SECTION_ORDER: AdsNativeNodeKind[] = ['hook', 'body', 'cta'];
++
++/**
++ * 让 Agent 根据一句话需求生成一条广告脚本骨架。
++ * 用平台已有的 generateScript：它本来就按 HOOK / USP / CTA 分段返回，
++ * 正好一段对应画布上的一个 Ads-native 节点。
++ */
++export const buildScriptGraph = async (prompt: string): Promise<AgentBuildResult> => {
++  const context = await resolveScriptContext(prompt);
++  if (!context) {
++    return {
++      sections: [],
++      reply: "I need a product first — save one in your product library and I'll write the script around it."
++    };
++  }
++
++  const resp = await generateScript({
++    needNum: 1,
++    productName: context.productName,
++    description: context.description,
++    price: context.price,
++    duration: VideoDurationLen.DURATION_15,
++    language: 'en'
++  });
++
++  const script = resp?.Scripts?.[0]?.Script ?? [];
++  if (script.length === 0) {
++    return { sections: [], reply: 'The script model came back empty. Try again, or give me more detail.' };
++  }
++
++  // 同一类型可能返回多段，合并成一个节点的文案
++  const byKind = new Map<AdsNativeNodeKind, string[]>();
++  script.forEach((item) => {
++    const kind = KIND_BY_SCRIPT_TYPE[item.Type];
++    if (!kind || !item.Content) {
++      return;
++    }
++    byKind.set(kind, [...(byKind.get(kind) ?? []), item.Content]);
++  });
++
++  const sections = SECTION_ORDER.filter((kind) => byKind.has(kind)).map((kind) => ({
++    kind,
++    text: (byKind.get(kind) ?? []).join('\n').trim()
++  }));
++
++  if (sections.length === 0) {
++    return { sections: [], reply: 'The script came back without Hook / Body / CTA sections, so I left the canvas as is.' };
++  }
++
++  return {
++    sections,
++    reply: `Built a ${sections.map((section) => section.kind.toUpperCase()).join(' → ')} script for ${
++      context.productName
++    } and wired the nodes together.`
++  };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/services/generation.ts b/apps/web/creative-cue/src/pages/canvas/services/generation.ts
+new file mode 100644
+index 0000000000..13d35d17c0
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/services/generation.ts
+@@ -0,0 +1,146 @@
++import * as i2vApi from '@/api/bff-gen/i2v';
++import * as t2vApi from '@/api/bff-gen/t2v';
++
++/** 生成任务的一条产物。 */
++interface DraftInfo {
++  id?: string;
++  vid?: string;
++  content?: string;
++  coverImage?: string;
++  previewLink?: string;
++  draftTaskStatus?: string | number;
++  renderTaskStatus?: string | number;
++  generateErrorMessage?: string;
++  renderErrorMessage?: string;
++  videoInfo?: { MainURL?: string; main_url?: string } | unknown;
++}
++
++interface CheckResult {
++  draft_infos?: DraftInfo[];
++}
++
++/** 轮询节奏：与 i2v miniapp 一致，先密后疏，超时兜底。 */
++const POLL_INTERVAL_MS = 6_000;
++const POLL_TIMEOUT_MS = 300_000;
++
++/** 平台任务状态枚举在不同 IDL 里有数字/字符串两种形态，统一按字面量判断。 */
++const isFailed = (status?: string | number) => status === 'FAILED' || status === 3;
++const isSuccess = (status?: string | number) => status === 'SUCCESS' || status === 2;
++
++/** 所有产物都到达终态（成功或失败）才停止轮询。 */
++const shouldStop = (result: CheckResult) => {
++  const drafts = result?.draft_infos ?? [];
++  if (drafts.length === 0) {
++    return false;
++  }
++  return drafts.every((draft) => {
++    if (isFailed(draft.draftTaskStatus) || isFailed(draft.renderTaskStatus)) {
++      return true;
++    }
++    return isSuccess(draft.draftTaskStatus) && Boolean(draft.vid || draft.content || draft.previewLink);
++  });
++};
++
++/** 从产物里挑一个可以直接展示的地址。 */
++export const pickAssetUrl = (result: CheckResult): string | undefined => {
++  const draft = result?.draft_infos?.find(
++    (item) => item.previewLink || item.content || item.coverImage
++  );
++  if (!draft) {
++    return undefined;
++  }
++  const info = draft.videoInfo as { MainURL?: string; main_url?: string } | undefined;
++  return draft.previewLink || info?.MainURL || info?.main_url || draft.content || draft.coverImage;
++};
++
++/** 汇总产物上的失败原因。 */
++const collectError = (result: CheckResult) =>
++  result?.draft_infos
++    ?.map((draft) => draft.generateErrorMessage || draft.renderErrorMessage)
++    .filter(Boolean)
++    .join('; ');
++
++const sleep = (ms: number) =>
++  new Promise((resolve) => {
++    setTimeout(resolve, ms);
++  });
++
++/**
++ * 轮询任务直到终态。
++ * check 由调用方注入，因为 t2v / i2v 各有自己的 checkGenTask。
++ */
++const pollTask = async (taskId: string, check: (taskId: string) => Promise<CheckResult>): Promise<CheckResult> => {
++  const deadline = Date.now() + POLL_TIMEOUT_MS;
++
++  for (;;) {
++    const result = await check(taskId);
++    if (shouldStop(result)) {
++      const error = collectError(result);
++      if (error) {
++        throw new Error(error);
++      }
++      return result;
++    }
++    if (Date.now() > deadline) {
++      throw new Error('Generation timed out');
++    }
++    await sleep(POLL_INTERVAL_MS);
++  }
++};
++
++/**
++ * 画布默认用的模型；后续接模型选择器时从节点配置里取。
++ * 取值与 packages/creative-cue-biz 的 I2VModelType 一致，这里内联常量，
++ * 避免把画布绑到那个尚未构建 dist 的 workspace 包上。
++ */
++export const DEFAULT_MODELS = {
++  /** I2VModelType.T2V_Seedance */
++  t2v: '5000003',
++  /** I2VModelType.I2V_Seedance */
++  i2v: '4000003',
++  /** I2VModelType.I2I_NanoBanana */
++  i2i: 'gemini'
++} as const;
++
++const DEFAULT_DURATION_SECONDS = 5;
++
++/** 文生视频。 */
++export const generateVideoFromText = async (prompt: string) => {
++  const created = await t2vApi.createGenerationTask({
++    prompt,
++    model: DEFAULT_MODELS.t2v,
++    duration: DEFAULT_DURATION_SECONDS
++  });
++  if (!created?.task_id) {
++    throw new Error('Video task was not created');
++  }
++  return pollTask(created.task_id, (taskId) => t2vApi.checkGenTask({ taskId }) as Promise<CheckResult>);
++};
++
++/** 图生视频。 */
++export const generateVideoFromImage = async (image: string, prompt: string) => {
++  const created = await i2vApi.createGenerationTask({
++    image,
++    prompt,
++    model: DEFAULT_MODELS.i2v,
++    duration: DEFAULT_DURATION_SECONDS
++  });
++  if (!created?.task_id) {
++    throw new Error('Video task was not created');
++  }
++  return pollTask(created.task_id, (taskId) => i2vApi.checkGenTask({ taskId }) as Promise<CheckResult>);
++};
++
++/** 图生图；平台的图片生成需要至少一张参考图。 */
++export const generateImage = async (images: string[], prompt: string) => {
++  const created = await i2vApi.genI2IImage({
++    images,
++    prompt,
++    model: DEFAULT_MODELS.i2i,
++    num: 1
++  });
++  if (!created?.task_id) {
++    throw new Error('Image task was not created');
++  }
++  return pollTask(created.task_id, (taskId) => i2vApi.checkGenTask({ taskId }) as Promise<CheckResult>);
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/services/node-runner.test.ts b/apps/web/creative-cue/src/pages/canvas/services/node-runner.test.ts
+new file mode 100644
+index 0000000000..ec6aeefaeb
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/services/node-runner.test.ts
+@@ -0,0 +1,107 @@
++import type { CanvasNode, CanvasNodeKind } from '../types';
++
++const mockGenerateScript = jest.fn();
++const mockGenerateVoiceover = jest.fn();
++const mockResolveScriptContext = jest.fn();
++const mockGenerateImage = jest.fn();
++const mockGenerateVideoFromText = jest.fn();
++const mockGenerateVideoFromImage = jest.fn();
++
++jest.mock('@/api', () => ({
++  generateScript: (...args: unknown[]) => mockGenerateScript(...args),
++  generateVoiceover: (...args: unknown[]) => mockGenerateVoiceover(...args),
++  getMyLibrary: jest.fn()
++}));
++jest.mock('@/api/typings', () => ({
++  ScriptType: { HOOK: 1, USP: 2, CTA: 3 },
++  VideoDurationLen: { DURATION_15: 1 }
++}));
++jest.mock('./products', () => ({
++  resolveScriptContext: (...args: unknown[]) => mockResolveScriptContext(...args)
++}));
++jest.mock('./generation', () => ({
++  generateImage: (...args: unknown[]) => mockGenerateImage(...args),
++  generateVideoFromText: (...args: unknown[]) => mockGenerateVideoFromText(...args),
++  generateVideoFromImage: (...args: unknown[]) => mockGenerateVideoFromImage(...args),
++  pickAssetUrl: () => 'https://cdn/out.mp4'
++}));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const { NodeNotWiredError, runNode } = require('./node-runner');
++
++const makeNode = (kind: CanvasNodeKind, overrides: Partial<CanvasNode> = {}): CanvasNode => ({
++  id: `node-${kind}`,
++  kind,
++  x: 0,
++  y: 0,
++  width: 264,
++  title: kind,
++  status: 'idle',
++  ...overrides
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockResolveScriptContext.mockResolvedValue({ productName: 'Serum', description: 'hydrating' });
++  mockGenerateScript.mockResolvedValue({
++    Scripts: [{ Script: [{ Type: 1, Content: 'hook line' }, { Type: 3, Content: 'cta line' }], modelNames: ['gpt'] }]
++  });
++});
++
++describe('runNode', () => {
++  it('sends real product context to the script model and picks the matching section', async () => {
++    const result = await runNode(makeNode('hook'), []);
++
++    expect(mockResolveScriptContext).toHaveBeenCalled();
++    expect(mockGenerateScript).toHaveBeenCalledWith(
++      expect.objectContaining({ productName: 'Serum', description: 'hydrating' })
++    );
++    // Hook 节点只取 HOOK 段落
++    expect(result.text).toBe('hook line');
++    expect(result.note).toContain('Serum');
++  });
++
++  it('picks the CTA section for a CTA node', async () => {
++    const result = await runNode(makeNode('cta'), []);
++    expect(result.text).toBe('cta line');
++  });
++
++  it('fails with a clear message when the account has no saved product', async () => {
++    mockResolveScriptContext.mockResolvedValue(null);
++    await expect(runNode(makeNode('text'), [])).rejects.toThrow(/Save a product first/);
++    expect(mockGenerateScript).not.toHaveBeenCalled();
++  });
++
++  it('uses text-to-video when nothing upstream provides an asset', async () => {
++    mockGenerateVideoFromText.mockResolvedValue({});
++    const upstream = [makeNode('hook', { text: 'a serum ad' })];
++
++    const result = await runNode(makeNode('video'), upstream);
++
++    expect(mockGenerateVideoFromText).toHaveBeenCalledWith('a serum ad');
++    expect(mockGenerateVideoFromImage).not.toHaveBeenCalled();
++    expect(result.assetUrl).toBe('https://cdn/out.mp4');
++  });
++
++  it('switches to image-to-video when an upstream node produced an asset', async () => {
++    mockGenerateVideoFromImage.mockResolvedValue({});
++    const upstream = [makeNode('image', { text: 'a serum ad', assetUrl: 'https://cdn/in.png' })];
++
++    await runNode(makeNode('video'), upstream);
++
++    expect(mockGenerateVideoFromImage).toHaveBeenCalledWith('https://cdn/in.png', 'a serum ad');
++    expect(mockGenerateVideoFromText).not.toHaveBeenCalled();
++  });
++
++  it('requires a reference image before generating an image', async () => {
++    await expect(runNode(makeNode('image'), [makeNode('hook', { text: 'prompt' })])).rejects.toThrow(
++      /needs a reference/
++    );
++    expect(mockGenerateImage).not.toHaveBeenCalled();
++  });
++
++  it('reports node kinds that have no platform capability instead of faking success', async () => {
++    await expect(runNode(makeNode('split-av'), [])).rejects.toBeInstanceOf(NodeNotWiredError);
++    await expect(runNode(makeNode('batch'), [])).rejects.toBeInstanceOf(NodeNotWiredError);
++  });
++});
+diff --git a/apps/web/creative-cue/src/pages/canvas/services/node-runner.ts b/apps/web/creative-cue/src/pages/canvas/services/node-runner.ts
+new file mode 100644
+index 0000000000..9754b6acb5
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/services/node-runner.ts
+@@ -0,0 +1,176 @@
++import { generateScript, generateVoiceover, getMyLibrary } from '@/api';
++import { type MyLibraryAsset,ScriptType, VideoDurationLen } from '@/api/typings';
++
++import type { CanvasNode, CanvasNodeKind, LibraryAsset } from '../types';
++import { generateImage, generateVideoFromImage, generateVideoFromText, pickAssetUrl } from './generation';
++import { resolveScriptContext } from './products';
++
++/**
++ * 节点执行结果。
++ * text 落到卡片正文，assetUrl 落到媒体预览，两者都可能为空（例如纯编辑节点）。
++ */
++export interface NodeRunResult {
++  text?: string;
++  assetUrl?: string;
++  /** 展示在卡片上的补充说明，例如用到的模型名。 */
++  note?: string;
++}
++
++/** 未接后端的节点抛这个，调用方据此把状态标成 idle 并给出说明。 */
++export class NodeNotWiredError extends Error {
++  constructor(kind: CanvasNodeKind) {
++    super(`No backend wired for "${kind}" yet`);
++    this.name = 'NodeNotWiredError';
++  }
++}
++
++/** Ads-native 节点类型 → 平台脚本类型。 */
++const SCRIPT_TYPE_BY_KIND: Partial<Record<CanvasNodeKind, ScriptType>> = {
++  hook: ScriptType.HOOK,
++  body: ScriptType.USP,
++  cta: ScriptType.CTA
++};
++
++/** 汇总所有上游文本，作为本次生成的 prompt 上下文。 */
++export const collectUpstreamText = (node: CanvasNode, upstream: CanvasNode[]) =>
++  [node.text, ...upstream.map((item) => item.text)].filter(Boolean).join('\n').trim();
++
++/** 取上游第一张可用的图片/视频产物，作为生成的参考素材。 */
++const findUpstreamAsset = (upstream: CanvasNode[]) => upstream.find((item) => item.assetUrl)?.assetUrl;
++
++/**
++ * 文本类节点：走平台的 generateScript（LLM）。
++ * Hook / Body / CTA 各取脚本里对应的段落，Text 节点取整体。
++ */
++const runTextNode = async (node: CanvasNode, prompt: string): Promise<NodeRunResult> => {
++  // 该接口需要真实商品上下文，否则返回空脚本 —— 先取账号下保存的商品
++  const context = await resolveScriptContext(prompt || node.title);
++  if (!context) {
++    throw new Error('Save a product first — the script model needs product context');
++  }
++
++  const resp = await generateScript({
++    needNum: 1,
++    productName: context.productName,
++    description: context.description,
++    price: context.price,
++    duration: VideoDurationLen.DURATION_15,
++    language: 'en'
++  });
++
++  const script = resp?.Scripts?.[0];
++  if (!script?.Script?.length) {
++    throw new Error('The script service returned no content');
++  }
++
++  const wanted = SCRIPT_TYPE_BY_KIND[node.kind];
++  const matched = wanted ? script.Script.filter((item) => item.Type === wanted) : script.Script;
++  const picked = matched.length > 0 ? matched : script.Script;
++
++  return {
++    text: picked.map((item) => item.Content).join('\n').trim(),
++    note: [context.productName, script.modelNames?.join(', ')].filter(Boolean).join(' · ')
++  };
++};
++
++/**
++ * 音频节点：走平台的 TTS。
++ * voiceId / videoId 目前用平台默认值，接入选音色后从节点配置里取。
++ */
++const runAudioNode = async (prompt: string): Promise<NodeRunResult> => {
++  if (!prompt) {
++    throw new Error('Connect a text node or type a script first');
++  }
++  const resp = await generateVoiceover({ script: prompt, voiceId: '', videoId: '' });
++  const first = resp?.TtsList?.[0];
++  return {
++    text: prompt,
++    assetUrl: (first as { AudioUrl?: string } | undefined)?.AudioUrl,
++    note: resp?.VoiceDuration ? `${resp.VoiceDuration}s` : undefined
++  };
++};
++
++/** 图片节点：平台的图片生成需要至少一张参考图，从上游取。 */
++const runImageNode = async (prompt: string, reference?: string): Promise<NodeRunResult> => {
++  if (!reference) {
++    throw new Error('Connect an image upstream — image generation needs a reference');
++  }
++  if (!prompt) {
++    throw new Error('Connect a text node or type a prompt first');
++  }
++  const result = await generateImage([reference], prompt);
++  return { assetUrl: pickAssetUrl(result), note: 'nanoBanana' };
++};
++
++/** 视频节点：有上游图走图生视频，没有就走文生视频。 */
++const runVideoNode = async (prompt: string, reference?: string): Promise<NodeRunResult> => {
++  if (!prompt) {
++    throw new Error('Connect a text node or type a prompt first');
++  }
++  const result = reference ? await generateVideoFromImage(reference, prompt) : await generateVideoFromText(prompt);
++  return { assetUrl: pickAssetUrl(result), note: reference ? 'seedance · i2v' : 'seedance · t2v' };
++};
++
++/** Avatar 节点：本质是带人物参考图的图生视频。 */
++const runAvatarNode = async (prompt: string, reference?: string): Promise<NodeRunResult> => {
++  if (!reference) {
++    throw new Error('Connect an avatar or portrait image upstream');
++  }
++  const result = await generateVideoFromImage(reference, prompt || 'Talking presenter, natural delivery');
++  return { assetUrl: pickAssetUrl(result), note: 'seedance · avatar' };
++};
++
++/**
++ * 按节点类型分发到平台已有的能力。
++ * 没有对应后端能力的类型抛 NodeNotWiredError，由 UI 明确提示，而不是假装成功。
++ */
++export const runNode = (node: CanvasNode, upstream: CanvasNode[]): Promise<NodeRunResult> => {
++  const prompt = collectUpstreamText(node, upstream);
++  const reference = findUpstreamAsset(upstream);
++
++  switch (node.kind) {
++    case 'hook':
++    case 'body':
++    case 'cta':
++    case 'text':
++      return runTextNode(node, prompt);
++    case 'audio':
++      return runAudioNode(prompt);
++    case 'image':
++      return runImageNode(prompt, reference);
++    case 'video':
++      return runVideoNode(prompt, reference);
++    case 'avatar':
++      return runAvatarNode(prompt, reference);
++    default:
++      // Import 只承载素材；Split / Timeline / Batch 平台侧暂无对应能力
++      return Promise.reject(new NodeNotWiredError(node.kind));
++  }
++};
++
++/** 平台素材库资产 → 画布节点可消费的形状。 */
++const ASSET_KIND_BY_TYPE: Record<string, LibraryAsset['kind']> = {
++  image: 'image',
++  IMAGE: 'image',
++  video: 'video',
++  VIDEO: 'video',
++  audio: 'audio',
++  AUDIO: 'audio',
++  avatar: 'avatar',
++  AVATAR: 'avatar'
++};
++
++const toLibraryAsset = (asset: MyLibraryAsset): LibraryAsset => ({
++  id: asset.assetId,
++  name: asset.fileName || asset.assetId,
++  kind: ASSET_KIND_BY_TYPE[asset.assetType] ?? 'image',
++  meta: asset.assetType,
++  url: asset.content
++});
++
++/** 拉真实素材库；失败时由调用方回退到示例数据。 */
++export const fetchLibraryAssets = async (limit = 30): Promise<LibraryAsset[]> => {
++  const resp = await getMyLibrary({ limit, offset: 0 });
++  const list = (resp as { Assets?: MyLibraryAsset[]; assets?: MyLibraryAsset[] })?.Assets ?? resp?.assets ?? [];
++  return list.map(toLibraryAsset);
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/services/products.ts b/apps/web/creative-cue/src/pages/canvas/services/products.ts
+new file mode 100644
+index 0000000000..d206f273bd
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/services/products.ts
+@@ -0,0 +1,48 @@
++import { listProducts } from '@/api';
++import type { SavedProduct } from '@/api/typings';
++
++/**
++ * generateScript 需要真实的商品上下文才会返回内容。
++ * 这里缓存一次账号下的商品列表，供文本类节点复用。
++ */
++let cache: Promise<SavedProduct[]> | null = null;
++
++export const fetchProducts = (): Promise<SavedProduct[]> => {
++  if (!cache) {
++    cache = listProducts({ limit: 20, offset: 0 })
++      .then((resp) => resp?.products ?? [])
++      .catch(() => []);
++  }
++  return cache;
++};
++
++/** 清掉缓存，商品变更后调用。 */
++export const invalidateProducts = () => {
++  cache = null;
++};
++
++export interface ScriptProductContext {
++  productName: string;
++  description: string;
++  price?: string;
++}
++
++/**
++ * 组装 generateScript 的商品上下文。
++ * 优先用账号里保存的商品；没有商品时退回调用方给的文案，
++ * 但这种情况下平台大概率返回空脚本 —— 由调用方给出明确提示。
++ */
++export const resolveScriptContext = async (fallbackDescription: string): Promise<ScriptProductContext | null> => {
++  const products = await fetchProducts();
++  const product = products[0];
++
++  if (!product) {
++    return null;
++  }
++
++  return {
++    productName: product.name,
++    description: [product.description, fallbackDescription].filter(Boolean).join('\n').trim() || product.name,
++    price: product.price ? `${product.price}${product.currency ? ` ${product.currency}` : ''}` : undefined
++  };
++};
+diff --git a/apps/web/creative-cue/src/pages/canvas/types.ts b/apps/web/creative-cue/src/pages/canvas/types.ts
+new file mode 100644
+index 0000000000..fc5e7293cb
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/types.ts
+@@ -0,0 +1,105 @@
++/** 节点分类：广告原生结构件 / 通用创意素材件 / 编辑处理件。 */
++export type CanvasNodeCategory = 'ads-native' | 'creative' | 'edit';
++
++/** 广告原生节点，对应一条广告的脚本结构。 */
++export type AdsNativeNodeKind = 'hook' | 'body' | 'cta';
++
++/** 创意节点，对应素材形态。 */
++export type CreativeNodeKind = 'text' | 'image' | 'video' | 'audio' | 'avatar' | 'import';
++
++/** 编辑节点，对素材做拆分/加工/批处理，通常多输入或多输出。 */
++export type EditNodeKind = 'split-av' | 'split-tracks' | 'timeline' | 'batch';
++
++export type CanvasNodeKind = AdsNativeNodeKind | CreativeNodeKind | EditNodeKind;
++
++/** 端口承载的数据类型，决定图标与连线校验。 */
++export type PortType = 'prompt' | 'image' | 'video' | 'audio';
++
++export interface NodePortSpec {
++  /** 在所属节点内唯一。 */
++  id: string;
++  label: string;
++  type: PortType;
++  /** 输入端口的最大接入数；不填表示不限。 */
++  max?: number;
++}
++
++/** 卡片主体的展示形态，决定 NodeCard 渲染哪一种 body。 */
++export type NodeBodyShape = 'text' | 'media' | 'audio' | 'operation' | 'batch' | 'timeline';
++
++/** 时间线上的一段素材。 */
++export interface TimelineClip {
++  id: string;
++  label: string;
++  /** 起始秒与时长秒，渲染时按像素/秒换算。 */
++  start: number;
++  duration: number;
++  /** 有音频的片段会额外画一条波形。 */
++  hasAudio: boolean;
++}
++
++export interface TimelineTrack {
++  id: string;
++  kind: 'video' | 'audio';
++  visible: boolean;
++  muted: boolean;
++  clips: TimelineClip[];
++}
++
++/** 节点生成状态，驱动卡片上的状态条展示。 */
++export type CanvasNodeStatus = 'idle' | 'generating' | 'done';
++
++export interface CanvasNode {
++  id: string;
++  kind: CanvasNodeKind;
++  /** 世界坐标，不随缩放变化。 */
++  x: number;
++  y: number;
++  width: number;
++  title: string;
++  text?: string;
++  status: CanvasNodeStatus;
++  /** 运行产物地址（图/视频/音频）。 */
++  assetUrl?: string;
++  /** 运行失败时的原因，展示在卡片上。 */
++  error?: string;
++  /** 补充说明，例如用到的模型名。 */
++  note?: string;
++}
++
++export interface CanvasEdge {
++  id: string;
++  source: string;
++  /** 源节点的输出端口 id。 */
++  sourceOutput: string;
++  target: string;
++  /** 目标节点的输入端口 id。 */
++  targetInput: string;
++}
++
++/** 画布视口：world → screen 的平移和缩放。 */
++export interface Viewport {
++  x: number;
++  y: number;
++  zoom: number;
++}
++
++/** 正在拖拽中的连线，松手前只存端点。 */
++export interface PendingConnection {
++  source: string;
++  sourceOutput: string;
++  /** 世界坐标下的当前指针位置。 */
++  toX: number;
++  toY: number;
++}
++
++/** 素材库条目，用于「从素材库添加」面板。 */
++export interface LibraryAsset {
++  id: string;
++  name: string;
++  /** 落到画布上会生成哪种节点。 */
++  kind: Extract<CanvasNodeKind, 'image' | 'video' | 'audio' | 'avatar'>;
++  meta: string;
++  /** 真实素材地址；示例数据没有，节点会退化成占位底纹。 */
++  url?: string;
++}
+diff --git a/apps/web/creative-cue/src/pages/canvas/utils.ts b/apps/web/creative-cue/src/pages/canvas/utils.ts
+new file mode 100644
+index 0000000000..4b85b65643
+--- /dev/null
++++ b/apps/web/creative-cue/src/pages/canvas/utils.ts
+@@ -0,0 +1,145 @@
++import { FIT_VIEW_PADDING, MAX_ZOOM, MIN_ZOOM, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from './const';
++import type { CanvasEdge, CanvasNode, CanvasNodeKind, NodePortSpec, Viewport } from './types';
++
++export const getNodeHeight = (kind: CanvasNodeKind) => NODE_KIND_CONFIG[kind].height;
++
++export const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
++
++/** 世界坐标 → 屏幕坐标。 */
++export const worldToScreen = (x: number, y: number, viewport: Viewport) => ({
++  x: x * viewport.zoom + viewport.x,
++  y: y * viewport.zoom + viewport.y
++});
++
++/** 屏幕坐标 → 世界坐标。 */
++export const screenToWorld = (x: number, y: number, viewport: Viewport) => ({
++  x: (x - viewport.x) / viewport.zoom,
++  y: (y - viewport.y) / viewport.zoom
++});
++
++/**
++ * 端口行相对卡片顶部的偏移。
++ * 多个端口以卡片竖直中线为基准均分，和 Flora 的挂边排布一致。
++ */
++export const getPortOffsetY = (index: number, total: number, kind: CanvasNodeKind) => {
++  const center = getNodeHeight(kind) / 2;
++  return center + (index - (total - 1) / 2) * PORT_ROW_HEIGHT;
++};
++
++/** 某个输出端口在世界坐标下的位置（卡片右侧）。 */
++export const getSourcePort = (node: CanvasNode, outputId: string) => {
++  const {outputs} = NODE_KIND_CONFIG[node.kind];
++  const index = Math.max(
++    0,
++    outputs.findIndex((port) => port.id === outputId)
++  );
++  return {
++    x: node.x + node.width,
++    y: node.y + getPortOffsetY(index, outputs.length, node.kind)
++  };
++};
++
++/** 某个输入端口在世界坐标下的位置（卡片左侧）。 */
++export const getTargetPort = (node: CanvasNode, inputId: string) => {
++  const {inputs} = NODE_KIND_CONFIG[node.kind];
++  const index = Math.max(
++    0,
++    inputs.findIndex((port) => port.id === inputId)
++  );
++  return {
++    x: node.x,
++    y: node.y + getPortOffsetY(index, Math.max(inputs.length, 1), node.kind)
++  };
++};
++
++/**
++ * 给定来源输出，在目标节点上挑一个类型匹配的输入端口。
++ * 匹配不到就退到第一个输入；目标没有输入时返回 undefined。
++ */
++export const findMatchingInput = (
++  sourceKind: CanvasNodeKind,
++  sourceOutput: string,
++  targetKind: CanvasNodeKind
++): NodePortSpec | undefined => {
++  const sourcePort = NODE_KIND_CONFIG[sourceKind].outputs.find((port) => port.id === sourceOutput);
++  const targetInputs = NODE_KIND_CONFIG[targetKind].inputs;
++  return targetInputs.find((port) => port.type === sourcePort?.type) ?? targetInputs[0];
++};
++
++/** 统计某个输入端口已接入的连线数，用于展示 1/3 这样的容量。 */
++export const countInputConnections = (edges: CanvasEdge[], nodeId: string, inputId: string) =>
++  edges.filter((edge) => edge.target === nodeId && edge.targetInput === inputId).length;
++
++/**
++ * 水平三次贝塞尔连线。
++ * 控制点偏移取水平距离的一半并设下限，短连线也不会塌成直线。
++ */
++export const buildEdgePath = (fromX: number, fromY: number, toX: number, toY: number) => {
++  const offset = Math.max(40, Math.abs(toX - fromX) * 0.5);
++  return `M ${fromX},${fromY} C ${fromX + offset},${fromY} ${toX - offset},${toY} ${toX},${toY}`;
++};
++
++/** 以指定屏幕点为锚点缩放，保证该点下的世界坐标不动。 */
++export const zoomAtPoint = (viewport: Viewport, nextZoom: number, screenX: number, screenY: number): Viewport => {
++  const zoom = clampZoom(nextZoom);
++  const world = screenToWorld(screenX, screenY, viewport);
++  return {
++    zoom,
++    x: screenX - world.x * zoom,
++    y: screenY - world.y * zoom
++  };
++};
++
++/** 计算能容纳所有节点的视口；无节点时回到原点。 */
++export const getFitViewport = (nodes: CanvasNode[], containerWidth: number, containerHeight: number): Viewport => {
++  if (nodes.length === 0 || containerWidth === 0 || containerHeight === 0) {
++    return { x: 0, y: 0, zoom: 1 };
++  }
++
++  const minX = Math.min(...nodes.map((node) => node.x));
++  const minY = Math.min(...nodes.map((node) => node.y));
++  const maxX = Math.max(...nodes.map((node) => node.x + node.width));
++  const maxY = Math.max(...nodes.map((node) => node.y + getNodeHeight(node.kind)));
++
++  const contentWidth = maxX - minX;
++  const contentHeight = maxY - minY;
++  const zoom = clampZoom(
++    Math.min(
++      (containerWidth - FIT_VIEW_PADDING * 2) / contentWidth,
++      (containerHeight - FIT_VIEW_PADDING * 2) / contentHeight
++    )
++  );
++
++  return {
++    zoom,
++    x: containerWidth / 2 - (minX + contentWidth / 2) * zoom,
++    y: containerHeight / 2 - (minY + contentHeight / 2) * zoom
++  };
++};
++
++/** 屏幕/世界坐标下的矩形，框选用。 */
++export interface Rect {
++  x: number;
++  y: number;
++  width: number;
++  height: number;
++}
++
++/** 由拖拽的两个角推出规范化矩形（支持反向拖）。 */
++export const rectFromPoints = (x1: number, y1: number, x2: number, y2: number): Rect => ({
++  x: Math.min(x1, x2),
++  y: Math.min(y1, y2),
++  width: Math.abs(x2 - x1),
++  height: Math.abs(y2 - y1)
++});
++
++/** 节点与框选矩形是否相交；只要碰到就算选中，不要求完全包住。 */
++export const isNodeInRect = (node: CanvasNode, rect: Rect) => {
++  const height = getNodeHeight(node.kind);
++  return (
++    node.x < rect.x + rect.width &&
++    node.x + node.width > rect.x &&
++    node.y < rect.y + rect.height &&
++    node.y + height > rect.y
++  );
++};
