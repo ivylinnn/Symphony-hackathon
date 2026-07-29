@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/api": ["./src/_stubs/api/index.ts"],
+      "@/api/typings": ["./src/_stubs/api/typings.ts"],
+      "@/api/bff-gen/i2v": ["./src/_stubs/api/bff-gen/i2v.ts"],
+      "@/api/bff-gen/t2v": ["./src/_stubs/api/bff-gen/t2v.ts"],
+      "@fe-infra/keystone-icons-react": ["./src/_stubs/keystone-icons.tsx"],
+      "@edenx/runtime/router": ["./src/_stubs/edenx-router.ts"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
