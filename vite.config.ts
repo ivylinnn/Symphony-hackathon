@@ -17,6 +17,9 @@ const srcRoot = fileURLToPath(new URL('./src', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    port: 3000,
+  },
   resolve: {
     alias: [
       { find: '@/api/typings', replacement: stub('api/typings.ts') },
