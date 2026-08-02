@@ -94,6 +94,66 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
     outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
   },
 
+  // —— Inspiration：围绕 Top Ads 趋势复刻的输入件与分镜 ——
+  'product-images': {
+    category: 'inspiration',
+    label: 'Product images',
+    body: 'product-images',
+    height: 300,
+    description: 'Product shots that ground the remake in your own catalog — up to 20 images.',
+    inputs: [],
+    outputs: [{ id: 'out', label: 'Images', type: 'image' }]
+  },
+  'brand-kit': {
+    category: 'inspiration',
+    label: 'Brand kit',
+    body: 'brand-kit',
+    height: 310,
+    description: 'Logo, colors and type — upload from your computer or pick from the library.',
+    inputs: [],
+    outputs: [{ id: 'out', label: 'Brand assets', type: 'image' }]
+  },
+  'product-brief': {
+    category: 'inspiration',
+    label: 'Product brief',
+    body: 'product-brief',
+    height: 440,
+    description: 'Who the product is for and what the ad must say.',
+    inputs: [{ id: 'image', label: 'Images', type: 'image', max: 20 }],
+    outputs: [{ id: 'out', label: 'Brief', type: 'prompt' }]
+  },
+  'tiktok-trend': {
+    category: 'inspiration',
+    label: 'TikTok trend',
+    body: 'tiktok-trend',
+    height: 500,
+    description: 'The Top Ads trend being replicated, with its creative formula.',
+    inputs: [],
+    outputs: [{ id: 'out', label: 'Trend video', type: 'video' }]
+  },
+  'audio-clips': {
+    category: 'inspiration',
+    label: 'Audio Clips Generation',
+    body: 'audio-clips',
+    height: 250,
+    description: 'ElevenLabs voiceover clips generated from the connected brief, one clip per storyboard frame.',
+    inputs: [{ id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 }],
+    outputs: [{ id: 'out', label: 'Audio', type: 'audio' }]
+  },
+  storyboard: {
+    category: 'inspiration',
+    label: 'Storyboard',
+    body: 'storyboard',
+    height: 460,
+    description: 'Scene-by-scene plan with voiceover, drafted from every connected input.',
+    inputs: [
+      { id: 'prompt', label: 'Brief', type: 'prompt', max: 1 },
+      { id: 'image', label: 'Image', type: 'image', max: 9 },
+      { id: 'video', label: 'Video', type: 'video', max: 3 }
+    ],
+    outputs: [{ id: 'out', label: 'Plan', type: 'prompt' }]
+  },
+
   // —— Creative：素材形态 ——
   text: {
     category: 'creative',
@@ -241,15 +301,17 @@ export const INITIAL_TIMELINE_TRACKS: TimelineTrack[] = [
 
 export const CATEGORY_LABEL: Record<CanvasNodeCategory, string> = {
   'ads-native': 'Ads-native',
+  inspiration: 'Inspiration',
   creative: 'Creative',
   edit: 'Edit'
 };
 
 /** 工具栏分组顺序，也是新增节点的展示顺序。 */
-export const CATEGORY_ORDER: CanvasNodeCategory[] = ['ads-native', 'creative', 'edit'];
+export const CATEGORY_ORDER: CanvasNodeCategory[] = ['ads-native', 'inspiration', 'creative', 'edit'];
 
 export const KINDS_BY_CATEGORY: Record<CanvasNodeCategory, CanvasNodeKind[]> = {
   'ads-native': ['hook', 'body', 'cta'],
+  inspiration: ['product-images', 'brand-kit', 'product-brief', 'tiktok-trend', 'storyboard', 'audio-clips'],
   creative: ['text', 'image', 'video', 'audio', 'avatar', 'import'],
   edit: ['split-av', 'split-tracks', 'timeline', 'batch']
 };

@@ -22,7 +22,7 @@ export const buildNode = (kind: CanvasNodeKind, x: number, y: number, title?: st
 
 /** 以卡片中心为基准放置节点。 */
 export const buildNodeAtCenter = (kind: CanvasNodeKind, centerX: number, centerY: number, title?: string) =>
-  buildNode(kind, centerX - NODE_DEFAULT_WIDTH / 2, centerY - getNodeHeight(kind) / 2, title);
+  buildNode(kind, centerX - NODE_DEFAULT_WIDTH / 2, centerY - getNodeHeight({ kind }) / 2, title);
 
 /** 追加一条连线；同源同目标同输入的重复连线会被忽略。 */
 export const appendEdge = (

@@ -9,6 +9,7 @@ import {
   KsIconSplit,
   KsIconTextFile,
   KsIconTips,
+  KsIconToolbox,
   KsIconUpload,
   KsIconVideoClip
 } from '@fe-infra/keystone-icons-react';
@@ -32,6 +33,12 @@ export const NODE_KIND_ICON: Record<CanvasNodeKind, ReactNode> = {
   hook: <KsIconTips size={ICON_SIZE} />,
   body: <KsIconCampaignList size={ICON_SIZE} />,
   cta: <KsIconSend size={ICON_SIZE} />,
+  'product-images': <KsIconImageCollection size={ICON_SIZE} />,
+  'brand-kit': <KsIconToolbox size={ICON_SIZE} />,
+  'product-brief': <KsIconTextFile size={ICON_SIZE} />,
+  'tiktok-trend': <KsIconTips size={ICON_SIZE} />,
+  storyboard: <KsIconShowTimeline size={ICON_SIZE} />,
+  'audio-clips': <KsIconSound size={ICON_SIZE} />,
   text: <KsIconTextFile size={ICON_SIZE} />,
   image: <KsIconImageCollection size={ICON_SIZE} />,
   video: <KsIconVideoClip size={ICON_SIZE} />,

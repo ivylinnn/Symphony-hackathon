@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { INITIAL_EDGES, INITIAL_NODES, NODE_KIND_CONFIG } from '../const';
+import { NODE_KIND_CONFIG } from '../const';
 import { appendEdge, buildNode, buildNodeAtCenter, buildScriptNodes, createId } from '../graph-ops';
 import type { AdsNativeNodeKind, CanvasEdge, CanvasNode, CanvasNodeKind, EditNodeKind, LibraryAsset } from '../types';
 import { findMatchingInput } from '../utils';
@@ -20,8 +20,15 @@ const DUPLICATE_OFFSET = 32;
  * 从页面组件里拆出来，避免 index.tsx 同时扛交互和数据两件事。
  */
 export const useCanvasGraph = () => {
-  const [nodes, setNodes] = useState<CanvasNode[]>(INITIAL_NODES);
-  const [edges, setEdges] = useState<CanvasEdge[]>(INITIAL_EDGES);
+  // 画布从空态开始：首屏由内容策略弹层引导，选中策略后落一张预置工作流
+  const [nodes, setNodes] = useState<CanvasNode[]>([]);
+  const [edges, setEdges] = useState<CanvasEdge[]>([]);
+
+  /** 把一组预构建的节点和连线整体落到画布上（内容策略模板用）。 */
+  const addPrebuiltGraph = useCallback((newNodes: CanvasNode[], newEdges: CanvasEdge[]) => {
+    setNodes((current) => [...current, ...newNodes]);
+    setEdges((current) => [...current, ...newEdges]);
+  }, []);
 
   /** 在指定世界坐标上新增节点，坐标按卡片尺寸居中。 */
   const addNodeAt = useCallback((kind: CanvasNodeKind, centerX: number, centerY: number, title?: string) => {
@@ -139,6 +146,7 @@ export const useCanvasGraph = () => {
   return {
     nodes,
     edges,
+    addPrebuiltGraph,
     addNodeAt,
     addConnectedNode,
     addConnectedNodeAt,

@@ -1,7 +1,9 @@
 import { FIT_VIEW_PADDING, MAX_ZOOM, MIN_ZOOM, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from './const';
 import type { CanvasEdge, CanvasNode, CanvasNodeKind, NodePortSpec, Viewport } from './types';
 
-export const getNodeHeight = (kind: CanvasNodeKind) => NODE_KIND_CONFIG[kind].height;
+/** 节点实际高度：允许单个节点覆盖类型默认值（如 9:16 视频卡）。 */
+export const getNodeHeight = (node: Pick<CanvasNode, 'kind'> & { height?: number }) =>
+  node.height ?? NODE_KIND_CONFIG[node.kind].height;
 
 export const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
@@ -21,8 +23,8 @@ export const screenToWorld = (x: number, y: number, viewport: Viewport) => ({
  * 端口行相对卡片顶部的偏移。
  * 多个端口以卡片竖直中线为基准均分，和 Flora 的挂边排布一致。
  */
-export const getPortOffsetY = (index: number, total: number, kind: CanvasNodeKind) => {
-  const center = getNodeHeight(kind) / 2;
+export const getPortOffsetY = (index: number, total: number, node: Pick<CanvasNode, 'kind'> & { height?: number }) => {
+  const center = getNodeHeight(node) / 2;
   return center + (index - (total - 1) / 2) * PORT_ROW_HEIGHT;
 };
 
@@ -35,7 +37,7 @@ export const getSourcePort = (node: CanvasNode, outputId: string) => {
   );
   return {
     x: node.x + node.width,
-    y: node.y + getPortOffsetY(index, outputs.length, node.kind)
+    y: node.y + getPortOffsetY(index, outputs.length, node)
   };
 };
 
@@ -48,7 +50,7 @@ export const getTargetPort = (node: CanvasNode, inputId: string) => {
   );
   return {
     x: node.x,
-    y: node.y + getPortOffsetY(index, Math.max(inputs.length, 1), node.kind)
+    y: node.y + getPortOffsetY(index, Math.max(inputs.length, 1), node)
   };
 };
 
@@ -99,7 +101,7 @@ export const getFitViewport = (nodes: CanvasNode[], containerWidth: number, cont
   const minX = Math.min(...nodes.map((node) => node.x));
   const minY = Math.min(...nodes.map((node) => node.y));
   const maxX = Math.max(...nodes.map((node) => node.x + node.width));
-  const maxY = Math.max(...nodes.map((node) => node.y + getNodeHeight(node.kind)));
+  const maxY = Math.max(...nodes.map((node) => node.y + getNodeHeight(node)));
 
   const contentWidth = maxX - minX;
   const contentHeight = maxY - minY;
@@ -135,7 +137,7 @@ export const rectFromPoints = (x1: number, y1: number, x2: number, y2: number): 
 
 /** 节点与框选矩形是否相交；只要碰到就算选中，不要求完全包住。 */
 export const isNodeInRect = (node: CanvasNode, rect: Rect) => {
-  const height = getNodeHeight(node.kind);
+  const height = getNodeHeight(node);
   return (
     node.x < rect.x + rect.width &&
     node.x + node.width > rect.x &&

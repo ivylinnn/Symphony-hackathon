@@ -1,10 +1,18 @@
-import { KsIconArrowRight, KsIconPlus } from '@fe-infra/keystone-icons-react';
+import { KsIconArrowRight, KsIconChevronDown, KsIconCut, KsIconPlus } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import type React from 'react';
 
 import { BATCH_PREVIEW_ITEMS, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from '../const';
 import type { CanvasEdge, CanvasNode, EditNodeKind, NodePortSpec, PortType } from '../types';
-import { countInputConnections, getPortOffsetY } from '../utils';
+import { countInputConnections, getNodeHeight, getPortOffsetY } from '../utils';
+import {
+  AudioClipsBody,
+  BrandKitBody,
+  ProductBriefBody,
+  ProductImagesBody,
+  StoryboardBody,
+  TikTokTrendBody
+} from './InspirationNodes';
 import NodeHoverToolbar from './NodeHoverToolbar';
 import { PORT_TYPE_ICON } from './nodeIcons';
 
@@ -200,32 +208,128 @@ function PromptField({
   );
 }
 
-function NodeBody({ node, onTextChange }: { node: CanvasNode; onTextChange: (text: string) => void }) {
+function NodeBody({
+  node,
+  isHovered,
+  onTextChange,
+  onOpenEditor
+}: {
+  node: CanvasNode;
+  isHovered: boolean;
+  onTextChange: (text: string) => void;
+  onOpenEditor: (nodeId: string) => void;
+}) {
   const config = NODE_KIND_CONFIG[node.kind];
+
+  if (config.body === 'product-images') {
+    return <ProductImagesBody />;
+  }
+  if (config.body === 'brand-kit') {
+    return <BrandKitBody />;
+  }
+  if (config.body === 'product-brief') {
+    return <ProductBriefBody />;
+  }
+  if (config.body === 'tiktok-trend') {
+    return <TikTokTrendBody />;
+  }
+  if (config.body === 'storyboard') {
+    return <StoryboardBody />;
+  }
+  if (config.body === 'audio-clips') {
+    return <AudioClipsBody />;
+  }
 
   if (config.body === 'media') {
     return (
       <>
         <div
           className={clsx(
-            'flex h-[136px] w-full items-center justify-center overflow-hidden rounded-xl',
-            config.placeholder
+            'relative flex items-center justify-center overflow-hidden rounded-xl',
+            // 视频铺满卡片内容区（9:16 竖版占满全宽）；图片保持原有固定高度
+            node.videoUrl ? 'aspect-[9/16] w-full bg-neutral-fillHigh' : ['h-[136px] w-full', config.placeholder]
           )}
         >
-          {node.assetUrl ? (
+          {node.videoUrl ? (
+            // 真实视频产物：可直接播放，封面用 assetUrl；拦住 pointerdown 才能操作播放条
+            <video
+              src={node.videoUrl}
+              poster={node.assetUrl}
+              controls
+              muted
+              playsInline
+              loop
+              preload="metadata"
+              onPointerDown={(event) => event.stopPropagation()}
+              className="size-full object-cover"
+            />
+          ) : node.assetUrl ? (
             <img src={node.assetUrl} alt={node.title} className="size-full object-cover" />
           ) : (
             <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{node.title}</span>
           )}
+          {/* 悬停时的剪辑入口，点开进全屏编辑器 */}
+          {node.kind === 'video' && isHovered ? (
+            <button
+              type="button"
+              title="Open the editor"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => onOpenEditor(node.id)}
+              className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-neutral-fillHigh/85 px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill shadow-[0_4px_12px_rgba(16,24,40,0.30)] transition-transform hover:scale-105"
+            >
+              <KsIconCut size={13} />
+              Edit
+            </button>
+          ) : null}
         </div>
-        <div className="mt-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
-          <PromptField
-            value={node.text ?? ''}
-            rows={2}
-            placeholder="Describe what to generate…"
-            onChange={onTextChange}
-          />
-        </div>
+        {/* 已产出真实视频的卡片不再显示提示词框，编辑走两个剪辑入口 */}
+        {!node.videoUrl ? (
+          <div className="mt-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
+            <PromptField
+              value={node.text ?? ''}
+              rows={2}
+              placeholder="Describe what to generate…"
+              onChange={onTextChange}
+            />
+          </div>
+        ) : null}
+        {node.kind === 'video' ? (
+          // 生成配置：模型 / 时长 / 画幅 / 剪辑入口
+          <div className="mt-2 flex items-center gap-1" onPointerDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              title="Select model"
+              className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-full bg-neutral-surface1 px-1.5 text-[9px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              <span className="truncate">Dreamina Seedance 2.5</span>
+              <KsIconChevronDown size={9} className="shrink-0" />
+            </button>
+            <button
+              type="button"
+              title="Duration"
+              className="flex h-6 shrink-0 items-center gap-0.5 rounded-full bg-neutral-surface1 px-1.5 text-[9px] font-medium tabular-nums text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              30s
+              <KsIconChevronDown size={9} />
+            </button>
+            <button
+              type="button"
+              title="Aspect ratio"
+              className="flex h-6 shrink-0 items-center gap-0.5 rounded-full bg-neutral-surface1 px-1.5 text-[9px] font-medium tabular-nums text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              9:16
+              <KsIconChevronDown size={9} />
+            </button>
+            <button
+              type="button"
+              title="Open editor"
+              onClick={() => onOpenEditor(node.id)}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-surface1 text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              <KsIconCut size={11} />
+            </button>
+          </div>
+        ) : null}
       </>
     );
   }
@@ -364,7 +468,7 @@ function NodeCard({
   return (
     <div
       className="absolute"
-      style={{ left: node.x, top: node.y, width: node.width, height: config.height }}
+      style={{ left: node.x, top: node.y, width: node.width, height: getNodeHeight(node) }}
       onPointerEnter={() => onHoverChange(node.id)}
       onPointerLeave={() => onHoverChange(null)}
       onPointerUp={() => onDropOnCard(node.id)}
@@ -403,7 +507,12 @@ function NodeCard({
         </div>
 
         <div className="px-3 pb-9">
-          <NodeBody node={node} onTextChange={(text) => onTextChange(node.id, text)} />
+          <NodeBody
+            node={node}
+            isHovered={isHovered}
+            onTextChange={(text) => onTextChange(node.id, text)}
+            onOpenEditor={onOpenEditor}
+          />
         </div>
 
         <RunFooter node={node} onRun={onRun} />
@@ -415,7 +524,7 @@ function NodeCard({
           key={port.id}
           port={port}
           used={countInputConnections(edges, node.id, port.id)}
-          offsetY={getPortOffsetY(index, config.inputs.length, node.kind)}
+          offsetY={getPortOffsetY(index, config.inputs.length, node)}
           showLabel={isActive}
           isCandidate={connectingType === port.type}
           onPointerUp={(event) => onInputPointerUp(event, node.id, port.id)}
@@ -426,7 +535,7 @@ function NodeCard({
         <OutputRow
           key={port.id}
           port={port}
-          offsetY={getPortOffsetY(index, config.outputs.length, node.kind)}
+          offsetY={getPortOffsetY(index, config.outputs.length, node)}
           showLabel={isActive && config.outputs.length > 1}
           onPointerDown={(event) => onOutputPointerDown(event, node.id, port.id)}
         />
@@ -441,7 +550,7 @@ function NodeCard({
           onClick={() => onOpenAddPanel(node.id, config.outputs[lastOutputIndex]?.id ?? 'out')}
           className="absolute left-full z-20 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-solid border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:border-primary-fill hover:text-primary-fill"
           style={{
-            top: getPortOffsetY(lastOutputIndex, config.outputs.length, node.kind) + PORT_ROW_HEIGHT,
+            top: getPortOffsetY(lastOutputIndex, config.outputs.length, node) + PORT_ROW_HEIGHT,
             marginLeft: 10
           }}
         >
