@@ -71,9 +71,12 @@ export interface TimelineClip {
   sourceDuration?: number;
 }
 
+/** 轨道类型，决定轨道头的标签和片段配色。 */
+export type TimelineTrackKind = 'video' | 'transition' | 'audio' | 'caption';
+
 export interface TimelineTrack {
   id: string;
-  kind: 'video' | 'audio';
+  kind: TimelineTrackKind;
   visible: boolean;
   muted: boolean;
   clips: TimelineClip[];

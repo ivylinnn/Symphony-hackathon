@@ -5,8 +5,11 @@ import type {
   TimelineEditOp,
   TimelineEditOperation,
   TimelineEditPlan,
-  TimelineTrack
+  TimelineTrack,
+  TimelineTrackKind
 } from '../types';
+
+const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption'];
 
 /** 接口返回的原始操作，字段是平铺的可选值，需要收窄成 TimelineEditOp。 */
 interface WireOperation {
@@ -62,7 +65,7 @@ const toTrack = (wire: WireTrack | undefined): TimelineTrack | undefined => {
   }
   return {
     id: wire.TrackId,
-    kind: wire.Kind === 'audio' ? 'audio' : 'video',
+    kind: TRACK_KINDS.find((kind) => kind === wire.Kind) ?? 'video',
     visible: wire.Visible ?? true,
     muted: wire.Muted ?? false,
     clips: (wire.Clips ?? []).map(toClip).filter((clip): clip is TimelineClip => Boolean(clip))

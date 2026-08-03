@@ -24,7 +24,7 @@ import {
   summarizePreview,
   timelineDuration
 } from '../timeline-ops';
-import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack } from '../types';
+import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack, TimelineTrackKind } from '../types';
 import TimelineAgentBar from './TimelineAgentBar';
 
 interface TimelineEditorProps {
@@ -46,6 +46,31 @@ const PLAYBACK_TICK_MS = 100;
 const DRIFT_TOLERANCE = 0.4;
 /** 读不到素材时长时（解码失败等）建轨道用的兜底时长。 */
 const FALLBACK_MEDIA_SECONDS = 6;
+/** 每段分镜的目标时长（秒），用来决定把素材切成几段。 */
+const TARGET_SEGMENT_SECONDS = 7;
+const MIN_SEGMENTS = 2;
+/** 转场元素的时长，跨在两段分镜的接缝上。 */
+const TRANSITION_SECONDS = 0.5;
+
+/** 分镜按广告结构命名，和画布上的 Hook / Body / CTA 节点对齐。 */
+const SEGMENT_LABELS = ['Hook', 'Body', 'Proof', 'CTA', 'Outro'];
+const TRANSITION_LABELS = ['Cross dissolve', 'Whip pan', 'Dip to black', 'Cross dissolve'];
+
+/** 轨道头上的短标签，比纯序号更容易分辨这一行是什么。 */
+const TRACK_TAG: Record<TimelineTrackKind, string> = {
+  video: 'VID',
+  transition: 'TRN',
+  audio: 'MUS',
+  caption: 'TXT'
+};
+
+/** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
+const TRACK_TONE: Record<TimelineTrackKind, string> = {
+  video: 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3',
+  transition: 'border-primary-fill/40 bg-primary-surface3 hover:bg-primary-surface2',
+  audio: 'border-success-fill/40 bg-success-fill/10 hover:bg-success-fill/20',
+  caption: 'border-neutral-fill/40 bg-neutral-surface3 hover:bg-neutral-surface2'
+};
 
 /** 预览态下片段的描边样式，全用虚线以便和「选中」的实线区分开。 */
 const DIFF_CLASS: Record<ClipDiffStatus, string> = {
@@ -204,27 +229,60 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       return;
     }
     seededRef.current = true;
+
+    /*
+     * 一整条视频摊成一个片段没法剪，所以按目标段长切成若干分镜，
+     * 接缝上放转场，底下铺一条音乐。每段都带自己的素材入点，
+     * 因此拖动、切分、删除任意一段都只影响那一段的画面。
+     */
+    const segments = Math.max(
+      MIN_SEGMENTS,
+      Math.min(SEGMENT_LABELS.length, Math.round(mediaDuration / TARGET_SEGMENT_SECONDS))
+    );
+    const segmentLength = mediaDuration / segments;
+
+    const videoClips = Array.from({ length: segments }, (_, index) => ({
+      id: `clip-scene-${index + 1}`,
+      label: SEGMENT_LABELS[index] ?? `Scene ${index + 1}`,
+      start: index * segmentLength,
+      duration: segmentLength,
+      hasAudio: true,
+      sourceUrl: videoUrl,
+      sourceStart: index * segmentLength,
+      sourceDuration: segmentLength
+    }));
+
+    // 转场跨在接缝上，所以起点要往前挪半个转场长度
+    const transitionClips = Array.from({ length: segments - 1 }, (_, index) => ({
+      id: `clip-transition-${index + 1}`,
+      label: TRANSITION_LABELS[index % TRANSITION_LABELS.length],
+      start: Math.max(0, (index + 1) * segmentLength - TRANSITION_SECONDS / 2),
+      duration: TRANSITION_SECONDS,
+      hasAudio: false
+    }));
+
     setTracks([
+      { id: 'track-video', kind: 'video', visible: true, muted: false, clips: videoClips },
+      ...(transitionClips.length
+        ? [{ id: 'track-transition', kind: 'transition' as const, visible: true, muted: false, clips: transitionClips }]
+        : []),
       {
-        id: 'track-video',
-        kind: 'video',
+        id: 'track-music',
+        kind: 'audio',
         visible: true,
         muted: false,
         clips: [
           {
-            id: 'clip-source',
-            label: sourceLabel,
+            id: 'clip-music',
+            label: 'Brand BGM — upbeat',
             start: 0,
             duration: mediaDuration,
-            hasAudio: true,
-            sourceUrl: videoUrl,
-            sourceStart: 0,
-            sourceDuration: mediaDuration
+            hasAudio: true
           }
         ]
       }
     ]);
-    setSelectedClipId('clip-source');
+    setSelectedClipId(videoClips[0].id);
   };
 
   const handleMetadata = () => {
@@ -494,7 +552,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
             <div className="flex border-t border-solid border-neutral-fillLow">
               {/* 轨道头 */}
-              <div className="w-[112px] shrink-0 border-r border-solid border-neutral-fillLow">
+              <div className="w-[136px] shrink-0 border-r border-solid border-neutral-fillLow">
                 <div className="h-7 border-b border-solid border-neutral-fillLow" />
                 {trackPreviews.map(({ track, isNewTrack }, index) => (
                   <div
@@ -506,12 +564,18 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   >
                     <span
                       className={clsx(
-                        'w-4 text-[11px] tabular-nums',
+                        'w-3 shrink-0 text-[11px] tabular-nums',
                         isNewTrack ? 'text-success-onSurface' : 'text-neutral-lowOnSurface'
                       )}
                       title={isNewTrack ? 'New track from the pending AI edit' : undefined}
                     >
                       {isNewTrack ? '+' : index + 1}
+                    </span>
+                    <span
+                      className="shrink-0 rounded bg-neutral-surface2 px-1 text-[9px] font-semibold tracking-wide text-neutral-mediumOnSurface"
+                      title={`${track.kind} track`}
+                    >
+                      {TRACK_TAG[track.kind]}
                     </span>
                     <button
                       type="button"
@@ -573,7 +637,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             status === 'unchanged' && selectedClipId === clip.id
                               ? 'border-primary-fill bg-primary-surface2'
                               : status === 'unchanged'
-                                ? 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3'
+                                ? TRACK_TONE[track.kind]
                                 : DIFF_CLASS[status],
                             !track.visible && 'opacity-40'
                           )}

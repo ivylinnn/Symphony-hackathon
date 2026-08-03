@@ -27,8 +27,15 @@ Batch) surface `No backend wired for this node yet`, exactly as in the real app.
 ## AI editing in the timeline
 
 Open a video node's **Edit** button to get the full-screen timeline editor. The timeline is
-built from that node's actual video — one clip spanning the real media, at its real
-duration — so every edit below changes what plays, not just what's drawn.
+built from that node's actual video and broken into editable elements rather than one
+opaque block:
+
+- a **video track** cut into scenes (Hook / Body / Proof / CTA), one per ~7s of source
+- a **transition track** with a cross dissolve or whip pan straddling each seam
+- a **music track** carrying a bed under the whole cut
+
+Every scene keeps its own in-point into the source, so dragging, splitting or deleting any
+one of them changes only that stretch of picture.
 
 Clips carry a source mapping (`sourceStart` / `sourceDuration`) alongside their timeline
 position, which is what makes the editing real: splitting divides the in-points so each

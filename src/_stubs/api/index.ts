@@ -76,7 +76,7 @@ export interface WireClip {
 
 export interface WireTrack {
   TrackId: string;
-  Kind: 'video' | 'audio';
+  Kind: 'video' | 'transition' | 'audio' | 'caption';
   Clips: WireClip[];
 }
 
@@ -220,7 +220,7 @@ export async function planTimelineEdit(args: {
             Type: 'add-track',
             Track: {
               TrackId: nextId('track-captions'),
-              Kind: 'video',
+              Kind: 'caption',
               Visible: true,
               Muted: false,
               Clips: source.map((clip, index) => ({
