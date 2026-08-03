@@ -1,6 +1,7 @@
 import { KsIconArrowRight, KsIconChevronDown, KsIconCut, KsIconPlus } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import type React from 'react';
+import { useRef, useState } from 'react';
 
 import { BATCH_PREVIEW_ITEMS, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from '../const';
 import type { CanvasEdge, CanvasNode, EditNodeKind, NodePortSpec, PortType } from '../types';
@@ -13,7 +14,7 @@ import {
   StoryboardBody,
   TikTokTrendBody
 } from './InspirationNodes';
-import NodeHoverToolbar from './NodeHoverToolbar';
+import NodeHoverToolbar, { VideoHoverToolbar } from './NodeHoverToolbar';
 import { PORT_TYPE_ICON } from './nodeIcons';
 
 interface NodeCardProps {
@@ -34,7 +35,8 @@ interface NodeCardProps {
   onOpenAddPanel: (nodeId: string, outputId: string) => void;
   /** 在卡片任意位置松手：自动挑一个类型匹配的输入完成连线。 */
   onDropOnCard: (nodeId: string) => void;
-  onOpenEditor: (nodeId: string) => void;
+  /** 打开全屏编辑器；launch 可带一条指令（进门就交给 agent）或直接进入圈选模式。 */
+  onOpenEditor: (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => void;
   onRunTool: (nodeId: string, kind: EditNodeKind) => void;
   /** 执行本节点，调用平台的生成能力。 */
   onRun: (nodeId: string) => void;
@@ -211,11 +213,17 @@ function PromptField({
 function NodeBody({
   node,
   isHovered,
+  videoRotation = 0,
+  isEnhanced = false,
   onTextChange,
   onOpenEditor
 }: {
   node: CanvasNode;
   isHovered: boolean;
+  /** 悬浮工具条的「Rotate」：视频在卡片里转的角度。 */
+  videoRotation?: number;
+  /** 悬浮工具条的「Enhance」：叠加一层画质增强滤镜。 */
+  isEnhanced?: boolean;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
 }) {
@@ -261,7 +269,11 @@ function NodeBody({
               loop
               preload="metadata"
               onPointerDown={(event) => event.stopPropagation()}
-              className="size-full object-cover"
+              style={{
+                transform: videoRotation ? `rotate(${videoRotation}deg)` : undefined,
+                filter: isEnhanced ? 'contrast(1.06) saturate(1.12) brightness(1.02)' : undefined
+              }}
+              className="size-full object-cover transition-transform"
             />
           ) : node.assetUrl ? (
             <img src={node.assetUrl} alt={node.title} className="size-full object-cover" />
@@ -465,8 +477,54 @@ function NodeCard({
   const isActive = isHovered || isSelected || isConnecting;
   const lastOutputIndex = config.outputs.length - 1;
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  // 视频卡片工具条的就地操作状态：旋转角度 + 画质增强开关
+  const [videoRotation, setVideoRotation] = useState(0);
+  const [isEnhanced, setIsEnhanced] = useState(false);
+
+  const findVideo = () => rootRef.current?.querySelector('video') ?? null;
+
+  /** 抽帧：抓当前画面写进 canvas 存 PNG；跨域素材取不了帧就退回下载封面。 */
+  const extractFrame = () => {
+    const video = findVideo();
+    if (!video) {
+      return;
+    }
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 720;
+      canvas.height = video.videoHeight || 1280;
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = `${node.title || 'frame'}.png`;
+      link.click();
+    } catch {
+      if (node.assetUrl) {
+        const link = document.createElement('a');
+        link.href = node.assetUrl;
+        link.download = `${node.title || 'frame'}.jpg`;
+        link.target = '_blank';
+        link.click();
+      }
+    }
+  };
+
+  const downloadVideo = () => {
+    if (!node.videoUrl) {
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = node.videoUrl;
+    link.download = `${node.title || 'video'}.mp4`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.click();
+  };
+
   return (
     <div
+      ref={rootRef}
       className="absolute"
       style={{ left: node.x, top: node.y, width: node.width, height: getNodeHeight(node) }}
       onPointerEnter={() => onHoverChange(node.id)}
@@ -476,11 +534,28 @@ function NodeCard({
       data-node-kind={node.kind}
     >
       {isHovered || isSoleSelection ? (
-        <NodeHoverToolbar
-          onRunTool={(kind) => onRunTool(node.id, kind)}
-          onDuplicate={() => onDuplicate(node.id)}
-          onDelete={() => onDelete(node.id)}
-        />
+        node.kind === 'video' && node.videoUrl ? (
+          <VideoHoverToolbar
+            onExtractFrame={extractFrame}
+            onToggleEnhance={() => setIsEnhanced((on) => !on)}
+            isEnhanced={isEnhanced}
+            onSeparateAudio={() => onRunTool(node.id, 'split-av')}
+            onRotate={() => setVideoRotation((deg) => (deg + 90) % 360)}
+            onOpenEditor={() => onOpenEditor(node.id)}
+            onEditorPrompt={(prompt) => onOpenEditor(node.id, { prompt })}
+            onEditorDraw={() => onOpenEditor(node.id, { draw: true })}
+            onDownload={downloadVideo}
+            onFullscreen={() => void findVideo()?.requestFullscreen()}
+            onDuplicate={() => onDuplicate(node.id)}
+            onDelete={() => onDelete(node.id)}
+          />
+        ) : (
+          <NodeHoverToolbar
+            onRunTool={(kind) => onRunTool(node.id, kind)}
+            onDuplicate={() => onDuplicate(node.id)}
+            onDelete={() => onDelete(node.id)}
+          />
+        )
       ) : null}
 
       <div
@@ -510,6 +585,8 @@ function NodeCard({
           <NodeBody
             node={node}
             isHovered={isHovered}
+            videoRotation={videoRotation}
+            isEnhanced={isEnhanced}
             onTextChange={(text) => onTextChange(node.id, text)}
             onOpenEditor={onOpenEditor}
           />

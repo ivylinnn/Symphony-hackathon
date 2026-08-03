@@ -193,3 +193,40 @@ export const KsIconPen = base(
     <path d="M13.5 6.5l4 4" />
   </>
 );
+export const KsIconCamera = base(
+  <>
+    <path d="M3 8a2 2 0 0 1 2-2h2l2-2.5h6L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <circle cx="12" cy="12.5" r="3.5" />
+  </>
+);
+export const KsIconHd = base(
+  <>
+    <rect x="2.5" y="5" width="19" height="14" rx="3" />
+    <path d="M7 9.5v5M10 9.5v5M7 12h3M13.5 9.5v5h1.6a2.5 2.5 0 0 0 0-5z" />
+  </>
+);
+export const KsIconCrop = base(
+  <>
+    <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+    <path d="M2 6h14a2 2 0 0 1 2 2v14" />
+  </>
+);
+export const KsIconRotate = base(
+  <>
+    <path d="M20 12a8 8 0 1 1-2.6-5.9" />
+    <path d="M20 3v4h-4" />
+  </>
+);
+export const KsIconSpeed = base(
+  <>
+    <path d="M4.5 17a8.5 8.5 0 1 1 15 0" />
+    <path d="M12 14l4.2-4.8" />
+    <circle cx="12" cy="14.5" r="1.4" />
+  </>
+);
+export const KsIconSection = base(
+  <>
+    <path d="M8 3H4v18h4M16 3h4v18h-4" />
+    <path d="M10 12h1.2M13 12h1.2" />
+  </>
+);

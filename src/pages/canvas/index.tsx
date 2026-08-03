@@ -112,6 +112,8 @@ function CanvasPage() {
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>(null);
   const [addPanelAnchor, setAddPanelAnchor] = useState<AddPanelAnchor | null>(null);
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
+  /** 打开编辑器时携带的启动动作：一条直接交给 agent 的指令，或直接进入圈选模式。 */
+  const [editorLaunch, setEditorLaunch] = useState<{ prompt?: string; draw?: boolean } | null>(null);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -635,7 +637,10 @@ function CanvasPage() {
               onInputPointerUp={handleInputPointerUp}
               onOpenAddPanel={openAddPanel}
               onDropOnCard={handleDropOnCard}
-              onOpenEditor={setEditorNodeId}
+              onOpenEditor={(nodeId, launch) => {
+                setEditorLaunch(launch ?? null);
+                setEditorNodeId(nodeId);
+              }}
               onRunTool={runTool}
               onRun={executeNode}
               onTextChange={handleTextChange}
@@ -828,7 +833,12 @@ function CanvasPage() {
           sourceLabel={editorNode.title}
           videoUrl={editorNode.videoUrl}
           posterUrl={editorNode.assetUrl}
-          onClose={() => setEditorNodeId(null)}
+          initialPrompt={editorLaunch?.prompt}
+          initialDraw={editorLaunch?.draw}
+          onClose={() => {
+            setEditorNodeId(null);
+            setEditorLaunch(null);
+          }}
         />
       ) : null}
 

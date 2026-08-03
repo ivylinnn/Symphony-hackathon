@@ -1,12 +1,26 @@
 import {
   KsIconAiGeneration,
+  KsIconArrowRight,
+  KsIconCamera,
   KsIconChevronDown,
   KsIconCopyContent,
+  KsIconCrop,
+  KsIconCut,
   KsIconDelete,
   KsIconDownload,
   KsIconExpand,
   KsIconFilledLock,
-  KsIconToolbox
+  KsIconFullScreen,
+  KsIconHd,
+  KsIconPeople,
+  KsIconRedo,
+  KsIconRotate,
+  KsIconSection,
+  KsIconSeperateAudio,
+  KsIconSpeed,
+  KsIconTextFile,
+  KsIconToolbox,
+  KsIconUndo
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useState } from 'react';
@@ -143,3 +157,162 @@ function NodeHoverToolbar({ onRunTool, onDuplicate, onDelete }: NodeHoverToolbar
 }
 
 export default NodeHoverToolbar;
+
+interface VideoHoverToolbarProps {
+  /** 抽帧：抓当前画面存成 PNG。 */
+  onExtractFrame: () => void;
+  /** 高清：切换画质增强滤镜。 */
+  onToggleEnhance: () => void;
+  isEnhanced: boolean;
+  /** 音频分离：走真实的 Split A/V 编辑节点。 */
+  onSeparateAudio: () => void;
+  /** 旋转：卡片内视频转 90°。 */
+  onRotate: () => void;
+  onOpenEditor: () => void;
+  /** 打开剪辑器并把一条指令直接交给编辑 agent。 */
+  onEditorPrompt: (prompt: string) => void;
+  /** 打开剪辑器并直接进入圈选（Draw to edit）模式。 */
+  onEditorDraw: () => void;
+  onDownload: () => void;
+  onFullscreen: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}
+
+/**
+ * 视频卡片专属的悬浮操作条（剪映风格，文案已译成英文）。
+ * 画布上能就地完成的（抽帧/高清/旋转/下载/全屏/音频分离）直接执行，
+ * 需要剪辑能力的动作则带着对应指令跳进全屏编辑器。
+ */
+export function VideoHoverToolbar({
+  onExtractFrame,
+  onToggleEnhance,
+  isEnhanced,
+  onSeparateAudio,
+  onRotate,
+  onOpenEditor,
+  onEditorPrompt,
+  onEditorDraw,
+  onDownload,
+  onFullscreen,
+  onDuplicate,
+  onDelete
+}: VideoHoverToolbarProps) {
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+
+  const mainActions: Array<{
+    label: string;
+    hint: string;
+    icon: React.ReactNode;
+    active?: boolean;
+    onClick: () => void;
+  }> = [
+    { label: 'Extract frame', hint: 'Save the current frame as an image', icon: <KsIconCamera size={ICON_SIZE} />, onClick: onExtractFrame },
+    { label: 'Enhance', hint: 'Boost clarity and color (HD)', icon: <KsIconHd size={ICON_SIZE} />, active: isEnhanced, onClick: onToggleEnhance },
+    { label: 'Trim', hint: 'Tighten the cut in the editor', icon: <KsIconSection size={ICON_SIZE} />, onClick: () => onEditorPrompt('Trim the cut tighter') },
+    { label: 'Separate audio', hint: 'Split the audio track from the video', icon: <KsIconSeperateAudio size={ICON_SIZE} />, onClick: onSeparateAudio },
+    { label: 'Crop', hint: 'Reframe for another placement', icon: <KsIconCrop size={ICON_SIZE} />, onClick: () => onEditorPrompt('Reformat this video for another social platform') },
+    { label: 'Analyze', hint: 'Open the transcript and scene breakdown', icon: <KsIconTextFile size={ICON_SIZE} />, onClick: onOpenEditor },
+    { label: 'Smart cutout', hint: 'Circle an object and replace or remove it', icon: <KsIconPeople size={ICON_SIZE} />, onClick: onEditorDraw },
+    { label: 'Reshoot clip', hint: 'Regenerate the opening with AI', icon: <KsIconRedo size={ICON_SIZE} />, onClick: () => onEditorPrompt('Swap the hook for a fresh opening') },
+    { label: 'Rotate', hint: 'Rotate the video 90°', icon: <KsIconRotate size={ICON_SIZE} />, onClick: onRotate }
+  ];
+
+  const moreActions: Array<{ label: string; icon: React.ReactNode; onClick: () => void }> = [
+    { label: 'Open in editor', icon: <KsIconCut size={13} />, onClick: onOpenEditor },
+    { label: 'Remove subtitles', icon: <KsIconTextFile size={13} />, onClick: () => onEditorPrompt('Remove the captions') },
+    { label: 'Extend clip', icon: <KsIconArrowRight size={13} />, onClick: () => onEditorPrompt('Extend the cut to 20 seconds') },
+    { label: 'Reverse', icon: <KsIconUndo size={13} />, onClick: () => onEditorPrompt('Play the cut in reverse') },
+    { label: 'Speed', icon: <KsIconSpeed size={13} />, onClick: () => onEditorPrompt('Speed up the whole cut') }
+  ];
+
+  return (
+    <div
+      className="absolute bottom-full left-0 z-30 mb-2"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center gap-0.5 whitespace-nowrap rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+        {mainActions.map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            title={action.hint}
+            onClick={action.onClick}
+            className={clsx(
+              'flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium transition-colors',
+              action.active
+                ? 'bg-neutral-onFill/20 text-neutral-onFill'
+                : 'text-neutral-onFill/90 hover:bg-neutral-onFill/15'
+            )}
+          >
+            {action.icon}
+            {action.label}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          title="More"
+          onClick={() => setIsMoreOpen((open) => !open)}
+          className={clsx(
+            'flex h-7 items-center rounded-md px-1.5 text-[13px] font-semibold transition-colors',
+            isMoreOpen ? 'bg-neutral-onFill/20 text-neutral-onFill' : 'text-neutral-onFill/90 hover:bg-neutral-onFill/15'
+          )}
+        >
+          ⋯
+        </button>
+
+        <span className="mx-0.5 h-4 w-px bg-neutral-onFill/20" />
+
+        <IconButton title="Download video" onClick={onDownload}>
+          <KsIconDownload size={ICON_SIZE} />
+        </IconButton>
+        <IconButton title="Full screen" onClick={onFullscreen}>
+          <KsIconFullScreen size={ICON_SIZE} />
+        </IconButton>
+      </div>
+
+      {isMoreOpen ? (
+        <div className="absolute right-0 top-full mt-1 w-[196px] rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface p-1 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+          {moreActions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => {
+                action.onClick();
+                setIsMoreOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              <span className="text-neutral-mediumOnSurface">{action.icon}</span>
+              {action.label}
+            </button>
+          ))}
+          <div className="my-1 h-px bg-neutral-fillLow" />
+          <button
+            type="button"
+            onClick={() => {
+              onDuplicate();
+              setIsMoreOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+          >
+            <span className="text-neutral-mediumOnSurface"><KsIconCopyContent size={13} /></span>
+            Duplicate node
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onDelete();
+              setIsMoreOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-error-fill transition-colors hover:bg-neutral-surface2"
+          >
+            <span><KsIconDelete size={13} /></span>
+            Delete node
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

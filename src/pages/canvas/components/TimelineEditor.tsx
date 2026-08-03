@@ -60,6 +60,10 @@ interface TimelineEditorProps {
   videoUrl?: string;
   /** 视频封面，也用作没有 videoUrl 时的静态预览图。 */
   posterUrl?: string;
+  /** 画布工具条带进来的指令：编辑器一打开就交给 agent 执行。 */
+  initialPrompt?: string;
+  /** 画布「Smart cutout」入口：打开编辑器就直接进入圈选模式。 */
+  initialDraw?: boolean;
   onClose: () => void;
 }
 
@@ -212,7 +216,7 @@ function ToolButton({
  * 全屏时间线编辑器，参考 Flora 的 Timeline Editor。
  * 上方预览、下方多轨时间线、右侧属性面板。
  */
-function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineEditorProps) {
+function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initialDraw, onClose }: TimelineEditorProps) {
   /*
    * 有真实视频时，时间线从这条视频建起来（等 loadedmetadata 拿到真实时长）；
    * 没有视频的节点仍然用示例轨道，保持原有 demo 行为。
@@ -401,6 +405,25 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     ].filter(Boolean);
     void runAgent(`Cutting ${parts.join(' · ')}`, answers);
   };
+
+  /*
+   * 画布工具条的启动动作：打开编辑器就执行带进来的指令，或直接进入圈选。
+   * ref 保证只跑一次（StrictMode 的模拟卸载重挂不会重置 ref）。
+   */
+  const launchedRef = useRef(false);
+  useEffect(() => {
+    if (launchedRef.current) {
+      return;
+    }
+    launchedRef.current = true;
+    if (initialDraw) {
+      setIsPenMode(true);
+    }
+    if (initialPrompt) {
+      void runAgent(initialPrompt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** 回答澄清问题：把选项接在原始诉求后面重跑，答案因此真的会改变结果。 */
   const answerQuestion = (messageId: string, option: string) => {
