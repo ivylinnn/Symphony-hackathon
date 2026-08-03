@@ -1,58 +1,137 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" preserveAspectRatio="xMidYMid slice">
   <defs>
-    <linearGradient id="alley" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#3b3630"/>
-      <stop offset="0.35" stop-color="#241f1b"/>
-      <stop offset="1" stop-color="#0d0b0a"/>
+    <!-- 左墙：暖调水泥，越往下越暗 -->
+    <linearGradient id="wallL" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#4a423a"/>
+      <stop offset="0.5" stop-color="#2b251f"/>
+      <stop offset="1" stop-color="#14100d"/>
     </linearGradient>
-    <linearGradient id="skyGap" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#8fa3b8"/>
-      <stop offset="1" stop-color="#2f3238"/>
+    <!-- 右墙：更深，几乎剪影 -->
+    <linearGradient id="wallR" x1="1" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#2a241e"/>
+      <stop offset="1" stop-color="#0c0a08"/>
     </linearGradient>
-    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1a1613"/>
-      <stop offset="1" stop-color="#2a2521"/>
+    <!-- 巷口天光 -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7d8fa0"/>
+      <stop offset="0.6" stop-color="#a9a496"/>
+      <stop offset="1" stop-color="#c9b189"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.2" cy="0.42" r="0.5">
-      <stop offset="0" stop-color="#c9b48d" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#c9b48d" stop-opacity="0"/>
+    <!-- 地面沥青，中央有一滩暖光 -->
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b6055"/>
+      <stop offset="0.45" stop-color="#3a322b"/>
+      <stop offset="1" stop-color="#1b1713"/>
+    </linearGradient>
+    <radialGradient id="pool" cx="0.42" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#d8b784" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#d8b784" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="shutter" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a332b"/>
+      <stop offset="1" stop-color="#1d1814"/>
+    </linearGradient>
+    <linearGradient id="vig" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.45"/>
+      <stop offset="0.35" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.62"/>
+    </linearGradient>
   </defs>
 
-  <rect width="1080" height="1920" fill="url(#alley)"/>
-  <!-- 远处的天光缝隙 -->
-  <polygon points="120,0 300,0 250,980 150,980" fill="url(#skyGap)" opacity="0.5"/>
-  <!-- 右侧墙面与卷帘门 -->
-  <polygon points="1080,0 1080,1920 700,1500 760,120" fill="#141110" opacity="0.85"/>
-  <g opacity="0.18" stroke="#c8c2ba" stroke-width="3">
-    <path d="M810 520 L1060 470"/><path d="M812 590 L1062 542"/><path d="M814 660 L1064 614"/>
-    <path d="M816 730 L1066 686"/><path d="M818 800 L1068 758"/><path d="M820 870 L1070 830"/>
+  <!-- 远端天光与楼影 -->
+  <rect width="1080" height="1920" fill="url(#sky)"/>
+  <g opacity="0.55" fill="#59626b">
+    <rect x="118" y="690" width="86" height="330"/>
+    <rect x="196" y="754" width="62" height="266"/>
+    <rect x="96" y="800" width="34" height="220"/>
   </g>
+
+  <!-- 左墙 -->
+  <polygon points="0,0 262,0 300,1058 0,1290" fill="url(#wallL)"/>
+  <g opacity="0.16" stroke="#d8cbb8" stroke-width="2">
+    <path d="M14 250 L250 232"/><path d="M18 470 L262 452"/><path d="M22 700 L272 686"/>
+  </g>
+  <!-- 左侧远处的门洞 -->
+  <rect x="196" y="836" width="70" height="188" fill="#100d0b" opacity="0.75"/>
+
+  <!-- 右墙 + 卷帘门 -->
+  <polygon points="1080,0 1080,1920 620,1420 686,0" fill="url(#wallR)"/>
+  <polygon points="1080,300 1080,1400 812,1236 832,362" fill="url(#shutter)"/>
+  <g opacity="0.22" stroke="#b9ad9a" stroke-width="3">
+    <path d="M836 420 L1078 396"/><path d="M838 486 L1078 462"/><path d="M840 552 L1078 528"/>
+    <path d="M842 618 L1078 594"/><path d="M844 684 L1078 660"/><path d="M846 750 L1078 726"/>
+    <path d="M848 816 L1078 792"/><path d="M850 882 L1078 858"/><path d="M852 948 L1078 924"/>
+    <path d="M854 1014 L1078 990"/><path d="M856 1080 L1078 1056"/><path d="M858 1146 L1078 1122"/>
+  </g>
+  <!-- 墙上的灯管 -->
+  <path d="M708 330 L748 286" stroke="#6c6157" stroke-width="9" stroke-linecap="round"/>
+
   <!-- 地面 -->
-  <polygon points="0,1240 1080,1400 1080,1920 0,1920" fill="url(#ground)"/>
-  <rect width="1080" height="1920" fill="url(#glow)"/>
+  <polygon points="0,1290 620,1420 1080,1920 0,1920" fill="url(#road)"/>
+  <rect y="1180" width="1080" height="740" fill="url(#pool)"/>
+  <!-- 柔化墙与地的接缝，避免一条生硬的直线横穿画面 -->
+  <polygon points="0,1180 620,1310 1080,1810 1080,1920 0,1920" fill="#120f0c" opacity="0.28"/>
 
-  <!-- 品牌字标 -->
-  <text x="540" y="200" text-anchor="middle" fill="#f4efe7" font-family="Helvetica, Arial, sans-serif"
-        font-size="76" font-weight="600" letter-spacing="26">AURAK</text>
+  <!-- 滑手剪影：背对镜头，前倾，站在滑板上 -->
+  <g fill="#0f0c0a">
+    <!-- 影子 -->
+    <ellipse cx="612" cy="1512" rx="220" ry="34" opacity="0.55"/>
+    <!-- 帽兜与头 -->
+    <path d="M470 470 q46 -78 122 -66 q66 12 74 78 q6 54 -30 86 q-52 36 -108 14 q-56 -22 -58 -112 z"/>
+    <!-- 上身：短袖套头，肩线宽 -->
+    <path d="M436 556 q98 -46 208 -14 q64 20 84 74 l26 118 q-14 26 -52 20 l-30 -96 l-12 214
+             q-102 34 -204 4 l-14 -206 l-30 92 q-38 8 -50 -20 l24 -116 q18 -50 50 -70 z"/>
+    <!-- 前伸的手臂 -->
+    <path d="M420 690 q-32 78 -20 152 q6 34 30 44 q22 8 30 -14 q8 -26 -8 -44 q-14 -60 4 -128 z"/>
+    <!-- 工装裤：宽松直筒 -->
+    <path d="M470 940 q106 26 200 2 l30 250 q-8 130 -46 226 l-74 -6 l-14 -206 l-40 4 l-24 208
+             l-72 -8 q-24 -128 -12 -246 z"/>
+    <!-- 鞋 -->
+    <path d="M498 1414 q60 -8 78 4 l6 46 q-52 16 -96 2 z"/>
+    <path d="M628 1400 q62 -10 82 4 l4 48 q-54 16 -98 0 z"/>
+  </g>
+  <!-- 边缘高光：右上方的天光打在肩背上 -->
+  <g fill="none" stroke="#c2a882" stroke-width="4" opacity="0.5" stroke-linecap="round">
+    <path d="M596 486 q54 22 62 84"/>
+    <path d="M666 610 q34 34 44 92"/>
+    <path d="M660 986 q26 116 12 218"/>
+  </g>
+  <!-- 内搭白 T 露出的一线 -->
+  <path d="M486 922 q94 22 176 2 l3 15 q-88 22 -178 0 z" fill="#cfc7bb" opacity="0.55"/>
 
-  <!-- 主标题 -->
-  <text x="110" y="1300" fill="#f0e9de" font-family="Georgia, 'Times New Roman', serif" font-size="118">Crafted</text>
-  <text x="110" y="1420" fill="#f0e9de" font-family="Georgia, 'Times New Roman', serif" font-size="118">for Motion</text>
-  <rect x="112" y="1476" width="72" height="3" fill="#f0e9de"/>
+  <!-- 滑板 -->
+  <g>
+    <path d="M446 1470 q170 -30 330 -4 q14 4 6 16 q-166 30 -332 4 q-12 -4 -4 -16 z" fill="#171310"/>
+    <circle cx="516" cy="1502" r="17" fill="#b39a72"/>
+    <circle cx="716" cy="1494" r="17" fill="#b39a72"/>
+  </g>
 
-  <!-- 副文案 -->
-  <text x="112" y="1566" fill="#ded6ca" font-family="Helvetica, Arial, sans-serif" font-size="34"
-        letter-spacing="5">PREMIUM MATERIALS.</text>
-  <text x="112" y="1622" fill="#ded6ca" font-family="Helvetica, Arial, sans-serif" font-size="34"
-        letter-spacing="5">TIMELESS DESIGN.</text>
+  <rect width="1080" height="1920" fill="url(#vig)"/>
 
-  <!-- CTA -->
-  <rect x="330" y="1690" width="420" height="86" fill="none" stroke="#c9a86a" stroke-width="2"/>
-  <text x="500" y="1745" text-anchor="middle" fill="#e8cf9e" font-family="Helvetica, Arial, sans-serif"
-        font-size="32" letter-spacing="9">SHOP NOW</text>
-  <path d="M636 1733 L672 1733 M660 1721 L672 1733 L660 1745" stroke="#e8cf9e" stroke-width="2.5" fill="none"/>
+  <!-- ── 排版 ────────────────────────────────────────────── -->
+  <text x="540" y="196" text-anchor="middle" fill="#f6f2ec"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="60" font-weight="500"
+        letter-spacing="27">AURAK</text>
 
-  <text x="540" y="1858" text-anchor="middle" fill="#cfc7bb" font-family="Helvetica, Arial, sans-serif"
-        font-size="26" letter-spacing="8">AURAK.COM</text>
+  <text x="118" y="1108" fill="#efe7d9" font-family="Georgia, 'Times New Roman', serif"
+        font-size="108" letter-spacing="1">Crafted</text>
+  <text x="118" y="1212" fill="#efe7d9" font-family="Georgia, 'Times New Roman', serif"
+        font-size="108" letter-spacing="1">for Motion</text>
+  <rect x="120" y="1276" width="66" height="4" fill="#efe7d9"/>
+
+  <text x="120" y="1340" fill="#e2dacd" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="30" letter-spacing="5.5">PREMIUM MATERIALS.</text>
+  <text x="120" y="1404" fill="#e2dacd" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="30" letter-spacing="5.5">TIMELESS DESIGN.</text>
+
+  <rect x="344" y="1672" width="392" height="80" fill="none" stroke="#c6a06a" stroke-width="2"/>
+  <text x="498" y="1721" text-anchor="middle" fill="#dfbc85"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="29" letter-spacing="9">SHOP NOW</text>
+  <path d="M626 1712 L672 1712 M656 1698 L672 1712 L656 1726" stroke="#dfbc85" stroke-width="2.6"
+        fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="540" y="1812" text-anchor="middle" fill="#d4ccc0"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="25"
+        letter-spacing="8">AURAK.COM</text>
 </svg>
