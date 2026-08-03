@@ -105,8 +105,12 @@ const TRACK_NAME: Record<TimelineTrackKind, string> = {
 interface DemoAsset {
   id: string;
   name: string;
-  kind: 'video' | 'image';
-  url: string;
+  kind: 'video' | 'image' | 'graphics';
+  url?: string;
+  /** graphics 资产：点它会定位并选中这个片段，方便继续用 @pill 改。 */
+  refClipId?: string;
+  /** graphics 资产的缩略文案。 */
+  preview?: string;
 }
 
 /** My assets 面板的示例素材，全部来自 public/ 下的真实文件。 */
@@ -276,19 +280,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
    * 最后落地成一个澄清问题或一份待确认的计划。
    */
   const runAgent = async (prompt: string, intake?: IntakeAnswers, region?: { path: string }) => {
+    // 选中的元素作为定向上下文一起交给 agent；圈选/问卷流不叠加
+    const target = !region && !intake && selectedClipMeta ? selectedClipMeta : undefined;
     // 两个 id 都先算好，别在 setState 更新函数里取，那会被 StrictMode 重复调用
     const userId = nextMessageId();
     const thinkingId = nextMessageId();
     setMessages((current) => [
       ...current,
-      { id: userId, role: 'user', text: prompt },
+      { id: userId, role: 'user', text: target ? `@${target.label} — ${prompt}` : prompt },
       { id: thinkingId, role: 'thinking', steps: [], revealed: 0 }
     ]);
     setIsPlanning(true);
     setPendingPlanId(null);
 
     try {
-      const reply = await planEdit(prompt, tracks, currentTime, intake, region);
+      const reply = await planEdit(prompt, tracks, currentTime, intake, region, target);
       patchMessage(thinkingId, { steps: reply.thinking, revealed: 0 });
       // 逐条揭示，让处理过程可见而不是一次性糊上来
       for (let step = 1; step <= reply.thinking.length; step += 1) {
@@ -407,6 +413,23 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         })
       ]);
     }
+    // 生成的动态图形登记进 My assets，之后可以点它回来继续改
+    const graphicsTracks = acceptedOperations
+      .filter((operation) => operation.op.type === 'add-track')
+      .map((operation) => (operation.op as Extract<typeof operation.op, { type: 'add-track' }>).track)
+      .filter((track) => track.kind === 'graphics' && track.clips.length > 0);
+    if (graphicsTracks.length > 0) {
+      setUploadedAssets((current) => [
+        ...graphicsTracks.map((track) => ({
+          id: `asset-fx-${version}-${track.id}`,
+          name: `Motion graphics v${version}`,
+          kind: 'graphics' as const,
+          refClipId: track.clips[0].id,
+          preview: track.clips[0].text ?? track.clips[0].label
+        })),
+        ...current
+      ]);
+    }
     // 这轮圈选已经落地，清掉画面上的虚线
     setDrawnPath(null);
     setIsPenMode(false);
@@ -520,7 +543,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         ]
       }
     ]);
-    setSelectedClipId(videoClips[0].id);
   };
 
   const handleMetadata = () => {
@@ -582,6 +604,17 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       video.muted = active.track.muted;
     }
   }, [active]);
+
+  /** 选中片段的元数据，供 composer 的 @pill 和定向编辑使用。 */
+  const selectedClipMeta = useMemo(() => {
+    if (!selectedClipId) {
+      return null;
+    }
+    const clip = findClip(tracks, selectedClipId);
+    const trackId = findTrackIdOfClip(tracks, selectedClipId);
+    const kind = tracks.find((track) => track.id === trackId)?.kind;
+    return clip && kind ? { id: clip.id, label: clip.label, kind } : null;
+  }, [selectedClipId, tracks]);
 
   /** 圈选路径：0-100 归一化坐标，随画幅缩放。 */
   const penPathFrom = (points: Array<[number, number]>) =>
@@ -769,6 +802,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
   /** 点素材缩略图：接到视频轨末尾成为新片段，视频素材带自己的画面。 */
   const addAssetToTimeline = (asset: DemoAsset) => {
+    // graphics 资产是「引用」：跳到它的片段并选中，@pill 立刻可用
+    if (asset.kind === 'graphics') {
+      const clip = asset.refClipId ? findClip(tracks, asset.refClipId) : undefined;
+      if (clip) {
+        seekTo(clip.start);
+        setSelectedClipId(clip.id);
+        setActiveTool('agent');
+      } else {
+        setMessages((current) => [
+          ...current,
+          { id: nextMessageId(), role: 'note', text: `“${asset.name}” is no longer on the timeline.` }
+        ]);
+      }
+      return;
+    }
     const videoTrack = tracks.find((track) => track.kind === 'video');
     if (!videoTrack) {
       return;
@@ -924,6 +972,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             pendingPlanId={pendingPlanId}
             skippedOpIds={skippedOpIds}
             onSubmit={runAgent}
+            selectedClip={selectedClipMeta}
+            onClearSelection={() => setSelectedClipId(null)}
             onUpload={uploadAssets}
             onSubmitIntake={submitIntake}
             onAnswer={answerQuestion}
@@ -991,19 +1041,34 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                         <button
                           key={asset.id}
                           type="button"
-                          title={`Add “${asset.name}” to the end of the video track`}
+                          title={
+                            asset.kind === 'graphics'
+                              ? `Select “${asset.name}” on the timeline to keep editing it`
+                              : `Add “${asset.name}” to the end of the video track`
+                          }
                           onClick={() => addAssetToTimeline(asset)}
                           className="text-left"
                         >
                           <span className="relative block aspect-square overflow-hidden rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface2 transition-transform hover:-translate-y-0.5">
                             {asset.kind === 'image' ? (
                               <img src={asset.url} alt={asset.name} className="size-full object-cover" />
-                            ) : (
+                            ) : asset.kind === 'video' ? (
                               <video src={asset.url} muted playsInline preload="metadata" className="size-full object-cover" />
+                            ) : (
+                              <span className="flex size-full flex-col justify-end bg-neutral-fillHigh p-1.5">
+                                <span className="line-clamp-3 text-left text-[9px] font-extrabold uppercase leading-[11px] text-neutral-onFill">
+                                  {asset.preview}
+                                </span>
+                              </span>
                             )}
                             {asset.kind === 'video' ? (
                               <span className="absolute bottom-1 right-1 rounded bg-neutral-fillHigh/70 px-1 text-[9px] text-neutral-onFill">
                                 ▶
+                              </span>
+                            ) : null}
+                            {asset.kind === 'graphics' ? (
+                              <span className="absolute right-1 top-1 rounded bg-primary-fill px-1 text-[8px] font-bold text-neutral-onFill">
+                                FX
                               </span>
                             ) : null}
                           </span>

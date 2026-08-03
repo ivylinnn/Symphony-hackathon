@@ -145,13 +145,16 @@ export const planEdit = async (
   /** 开场问卷答案；有值时后端直接给一份复合首刀计划。 */
   intake?: Record<string, string | string[]>,
   /** 用户在画面上圈出的区域（归一化路径）；有值时按局部编辑处理。 */
-  region?: { path: string }
+  region?: { path: string },
+  /** 时间线上选中的元素；有值时指令优先定向到它。 */
+  target?: { id: string; label: string; kind: TimelineTrackKind }
 ): Promise<AgentReply> => {
   const resp = await planTimelineEdit({
     prompt,
     playhead,
     ...(intake ? { intake } : {}),
     ...(region ? { region: { Path: region.path } } : {}),
+    ...(target ? { target: { ClipId: target.id, Label: target.label, Kind: target.kind } } : {}),
     tracks: tracks.map((track) => ({
       TrackId: track.id,
       Kind: track.kind,

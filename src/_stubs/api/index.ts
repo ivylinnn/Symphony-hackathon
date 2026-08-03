@@ -255,6 +255,8 @@ export async function planTimelineEdit(args: {
   };
   /** 用户在画面上圈出的区域，路径是 0-100 归一化坐标。 */
   region?: { Path: string };
+  /** 时间线上当前选中的元素；有值时优先把指令理解为对它的编辑。 */
+  target?: { ClipId: string; Label: string; Kind: WireTrack['Kind'] };
 }): Promise<WireAgentReply> {
   await delay(900);
 
@@ -299,6 +301,85 @@ export async function planTimelineEdit(args: {
         },
       ],
     };
+  }
+
+  /* -0.5) 选中元素的定向编辑：能定向的吃掉，不能定向的落回通用意图 */
+  if (args.target) {
+    const target = allClips(tracks).find((c) => c.ClipId === args.target?.ClipId);
+    if (target) {
+      const name = `@${target.Label}`;
+      const targetThinking = [survey, `“${target.Label}” is selected — reading the instruction against it first.`];
+
+      if (has(prompt, 'remove', 'delete', 'get rid of', '删', '去掉')) {
+        const trailing = allClips(tracks).filter((c) => c.Start > target.Start);
+        return {
+          Kind: 'plan',
+          Thinking: [...targetThinking, trailing.length ? `Pulling the ${trailing.length} following clip${trailing.length > 1 ? 's' : ''} up to close the gap.` : 'Nothing follows it.'],
+          Summary: `Removed ${name}${trailing.length ? ' and closed the gap behind it' : ''}.`,
+          Operations: [
+            { Label: `Delete "${target.Label}"`, Type: 'delete', ClipId: target.ClipId },
+            ...trailing.map<WireOperation>((c) => ({
+              Label: `Pull "${c.Label}" ${target.Duration.toFixed(1)}s earlier`,
+              Type: 'set-timing',
+              ClipId: c.ClipId,
+              Start: Math.max(0, c.Start - target.Duration),
+              Duration: c.Duration,
+            })),
+          ],
+        };
+      }
+
+      const explicit = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second|秒)/);
+      if (explicit) {
+        const duration = Math.max(0.2, Number(explicit[1]));
+        return {
+          Kind: 'plan',
+          Thinking: [...targetThinking, `Retiming just this clip to ${duration.toFixed(1)}s; nothing else moves.`],
+          Summary: `Set ${name} to ${duration.toFixed(1)}s.`,
+          Operations: [
+            { Label: `Fit "${target.Label}" to ${duration.toFixed(1)}s`, Type: 'set-timing', ClipId: target.ClipId, Start: target.Start, Duration: duration },
+          ],
+        };
+      }
+
+      if (has(prompt, 'shorter', 'tighten', '短')) {
+        const duration = Math.max(0.3, target.Duration * 0.7);
+        return {
+          Kind: 'plan',
+          Thinking: [...targetThinking, `Tightening it 30% → ${duration.toFixed(1)}s.`],
+          Summary: `Tightened ${name} to ${duration.toFixed(1)}s.`,
+          Operations: [
+            { Label: `Tighten "${target.Label}" to ${duration.toFixed(1)}s`, Type: 'set-timing', ClipId: target.ClipId, Start: target.Start, Duration: duration },
+          ],
+        };
+      }
+      if (has(prompt, 'longer', 'extend', '长')) {
+        const duration = target.Duration * 1.3;
+        return {
+          Kind: 'plan',
+          Thinking: [...targetThinking, `Extending it 30% → ${duration.toFixed(1)}s.`],
+          Summary: `Extended ${name} to ${duration.toFixed(1)}s.`,
+          Operations: [
+            { Label: `Extend "${target.Label}" to ${duration.toFixed(1)}s`, Type: 'set-timing', ClipId: target.ClipId, Start: target.Start, Duration: duration },
+          ],
+        };
+      }
+
+      // 改文案：update to X / say X / change to X / 改成 X（仅字幕与图形有文案）
+      const rewrite = (args.prompt ?? '').match(/(?:update to|change to|rewrite to|say|改成|改为)\s*[:：]?\s*(.+)$/i);
+      if (rewrite && (args.target.Kind === 'caption' || args.target.Kind === 'graphics')) {
+        const text = args.target.Kind === 'graphics' ? rewrite[1].trim().toUpperCase() : rewrite[1].trim();
+        return {
+          Kind: 'plan',
+          Thinking: [...targetThinking, 'Rewriting its on-screen copy in place — timing untouched.'],
+          Summary: `Rewrote ${name} to “${text}”.`,
+          Operations: [
+            { Label: `Rewrite "${target.Label}" → “${text}”`, Type: 'set-text', ClipId: target.ClipId, Text: text },
+          ],
+        };
+      }
+      // 没读出定向意图 → 落回通用意图，选中只是上下文而不是牢笼
+    }
   }
 
   /* 0) 开场问卷：一次性把时长、字幕、音乐、标题条组合成首刀 */

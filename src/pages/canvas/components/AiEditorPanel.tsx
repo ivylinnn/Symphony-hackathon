@@ -26,6 +26,9 @@ interface AiEditorPanelProps {
   pendingPlanId: string | null;
   skippedOpIds: Set<string>;
   onSubmit: (prompt: string) => void;
+  /** 时间线上选中的元素；有值时 composer 显示 @pill，指令定向到它。 */
+  selectedClip: { id: string; label: string } | null;
+  onClearSelection: () => void;
   /** 从输入区上传素材，落进 My assets。 */
   onUpload: (files: FileList) => void;
   onSubmitIntake: (messageId: string, answers: IntakeAnswers) => void;
@@ -210,6 +213,8 @@ function AiEditorPanel({
   pendingPlanId,
   skippedOpIds,
   onSubmit,
+  selectedClip,
+  onClearSelection,
   onUpload,
   onSubmitIntake,
   onAnswer,
@@ -455,11 +460,35 @@ function AiEditorPanel({
             isBusy ? 'border-primary-fill/40' : 'border-neutral-fillLow focus-within:border-primary-fill'
           )}
         >
+          {selectedClip ? (
+            <div className="mb-1.5 flex">
+              <span
+                data-target-pill
+                className="flex items-center gap-1 rounded-full bg-primary-surface2 py-0.5 pl-2 pr-1 text-[11px] font-medium text-primary-onSurface"
+              >
+                @{selectedClip.label}
+                <button
+                  type="button"
+                  title="Clear selection"
+                  onClick={onClearSelection}
+                  className="flex size-4 items-center justify-center rounded-full text-primary-onSurface/70 transition-colors hover:bg-primary-surface3"
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ) : null}
           <textarea
             value={draft}
             rows={3}
             disabled={isBusy}
-            placeholder={isBusy ? 'Working…' : 'Ask for an edit — “trim to 15s”, “add captions”…'}
+            placeholder={
+              isBusy
+                ? 'Working…'
+                : selectedClip
+                  ? `Edit @${selectedClip.label} — “remove it”, “update to …”, “2 seconds”…`
+                  : 'Ask for an edit — “trim to 15s”, “add captions”…'
+            }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               // Enter 发送，Shift+Enter 换行
