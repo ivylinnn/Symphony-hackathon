@@ -49,7 +49,7 @@ export type NodeBodyShape =
   | 'audio-clips';
 
 /** 动态图形的种类，决定渲染的版式。 */
-export type GraphicKind = 'headline' | 'lower-third' | 'banner' | 'badge' | 'logo';
+export type GraphicKind = 'headline' | 'lower-third' | 'banner' | 'badge' | 'logo' | 'scribble';
 
 /**
  * 图形不是像素而是结构化对象：种类、位置、缩放、配色、CTA 都是字段，

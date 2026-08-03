@@ -1550,14 +1550,45 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                 {/* 动态图形卖点：大标题 + 展开细线 + 角标 + 进度条，跟着播放头切换 */}
                 {graphicsCues.length > 0 ? (
                   <span data-graphics-overlay className="pointer-events-none absolute inset-0">
-                    {/* 画面亮的时候白字会糊，压一层自下而上的暗角 */}
-                    <span className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-black/45 via-black/20 to-transparent" />
+                    {/* 画面亮的时候白字会糊，压一层自下而上的暗角；只有霓虹线时不压暗 */}
+                    {graphicsCues.some(({ clip }) => (clip.graphic?.kind ?? 'headline') !== 'scribble') ? (
+                      <span className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-black/45 via-black/20 to-transparent" />
+                    ) : null}
                     {graphicsCues.map(({ clip, index, total }) => {
                       const g = clip.graphic ?? { kind: 'headline' as const };
                       const scale = g.scale ?? 1;
                       const fg = g.fg ?? '#ffffff';
                       const accent = g.accent ?? '#ffffff';
                       const y = g.y;
+                      if (g.kind === 'scribble') {
+                        /*
+                         * 手绘霓虹线：一条松弛的 S 形曲线，从画面上缘进入、顺着路面方向
+                         * 绕过主体身侧、再流向下缘。pathLength=1 + dashoffset 动画 = 逐段画出来。
+                         * 曲线走画面两侧和中带，避开面部（上 1/3 中央）与产品细节。
+                         */
+                        return (
+                          <svg
+                            key={clip.id}
+                            data-scribble
+                            viewBox="0 0 100 178"
+                            preserveAspectRatio="xMidYMid slice"
+                            className="absolute inset-0 size-full"
+                          >
+                            <path
+                              d="M 38 -6 C 31 20, 58 26, 67 46 C 74 62, 34 64, 27 84 C 21 102, 76 98, 73 120 C 70 139, 47 146, 41 184"
+                              fill="none"
+                              stroke={g.accent ?? '#e6ff35'}
+                              strokeWidth={3.4}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              pathLength={1}
+                              strokeDasharray="1"
+                              className="animate-draw-path"
+                              style={{ opacity: 0.92 }}
+                            />
+                          </svg>
+                        );
+                      }
                       if (g.kind === 'lower-third') {
                         return (
                           <span key={clip.id} className="absolute inset-x-0 block px-4" style={{ top: `${y ?? 76}%` }}>

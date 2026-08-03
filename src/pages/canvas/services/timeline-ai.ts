@@ -15,7 +15,7 @@ import type {
 } from '../types';
 
 const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption', 'graphics'];
-const GRAPHIC_KINDS = ['headline', 'lower-third', 'banner', 'badge', 'logo'] as const;
+const GRAPHIC_KINDS = ['headline', 'lower-third', 'banner', 'badge', 'logo', 'scribble'] as const;
 
 /** 宽松收窄图形样式：认识的字段留下，kind 必须命中枚举。 */
 const toGraphic = (raw: Record<string, unknown> | undefined): GraphicStyle | undefined => {

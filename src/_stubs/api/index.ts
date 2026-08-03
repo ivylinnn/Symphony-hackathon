@@ -1081,6 +1081,8 @@ async function planTimelineEditInner(args: {
         defaults: { text: 'SUMMER EXCLUSIVE — 20% OFF', duration: 3 }, title: 'Stamping the badge' },
       { match: ['logo reveal', 'animate our logo', 'animate the logo', 'logo animation'], kind: 'logo', label: 'Logo',
         defaults: { text: 'AURAK', duration: 3, start: 0 }, title: 'Revealing the logo' },
+      { match: ['neon line', 'hand-drawn line', 'scribble', 'yellow line', 'draw a line', '霓虹线'], kind: 'scribble', label: 'Neon line',
+        defaults: { text: 'Neon path', duration: 6, graphic: { accent: '#e6ff35' } }, title: 'Tracing the neon line' },
     ];
     const intent = graphicIntents.find((g) => has(prompt, ...g.match));
     if (intent) {
@@ -1142,7 +1144,7 @@ async function planTimelineEditInner(args: {
           : `Pulling ${graphicsClips.length} product selling points from the brief.`,
         `Spacing them across the ${total.toFixed(1)}s cut so each gets a clear beat on screen.`,
       ],
-      Summary: `Added motion graphics promoting ${graphicsClips.length} selling points — headline, rule and progress marker over the footage.`,
+      Summary: `Added motion graphics promoting ${graphicsClips.length} selling points — headline, rule and progress marker over the footage, plus a hand-drawn neon line flowing through the scene.`,
       Operations: [
         {
           Label: `Add motion graphics (${graphicsClips.length} selling points)`,
@@ -1153,6 +1155,28 @@ async function planTimelineEditInner(args: {
             Visible: true,
             Muted: false,
             Clips: graphicsClips,
+          },
+        },
+        {
+          // 手绘霓虹线：独立图层铺满整条片子，从上缘顺着场景绕过主体流向下缘，逐段画出
+          Label: 'Add hand-drawn neon line (draws on progressively)',
+          Type: 'add-track',
+          Track: {
+            TrackId: nextId('track-fx-line'),
+            Kind: 'graphics',
+            Visible: true,
+            Muted: false,
+            Clips: [
+              {
+                ClipId: nextId('clip-fx-line'),
+                Label: 'Neon line',
+                Start: 0.4,
+                Duration: Math.max(1, total - 0.4),
+                HasAudio: false,
+                Text: 'Neon path',
+                Graphic: { kind: 'scribble', accent: '#e6ff35' },
+              },
+            ],
           },
         },
       ],
