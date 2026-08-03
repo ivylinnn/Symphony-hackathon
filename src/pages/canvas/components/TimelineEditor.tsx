@@ -40,6 +40,7 @@ import type {
   VideoFormatRatio
 } from '../types';
 import AiEditorPanel from './AiEditorPanel';
+import { ToolPanel, ToolRail, type EditorTool } from './EditorToolPanels';
 
 interface TimelineEditorProps {
   /** 编辑对象的名称，展示在标题和预览占位上。 */
@@ -190,6 +191,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 中栏素材面板的页签与搜索词。 */
   const [assetsTab, setAssetsTab] = useState<'assets' | 'library' | 'transcript'>('assets');
   const [assetSearch, setAssetSearch] = useState('');
+  /** 左侧工具栏当前停留的条目，默认是编辑 agent。 */
+  const [activeTool, setActiveTool] = useState<EditorTool>('agent');
   /** 用户从输入区上传的素材，排在示例素材前面。 */
   const [uploadedAssets, setUploadedAssets] = useState<DemoAsset[]>([]);
   const assetSeqRef = useRef(0);
@@ -789,16 +792,36 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* 左：AI 会话面板 */}
+        {/* 最左：工具栏 */}
+        <ToolRail active={activeTool} onSelect={setActiveTool} />
+
+        {/* 左：当前工具的面板，agent 是默认项 */}
         <aside
           data-ai-sidebar
           className="flex w-[340px] shrink-0 flex-col overflow-hidden border-r border-solid border-neutral-fillLow bg-neutral-surface"
         >
+          {activeTool !== 'agent' ? (
+            <ToolPanel
+              tool={activeTool}
+              tracks={tracks}
+              onSeek={seekTo}
+              onSelectClip={setSelectedClipId}
+              onToggleTrackFlag={toggleTrackFlag}
+              onAsk={(prompt) => {
+                // 面板里的动作也走同一个会话，切回 agent 才看得到思考和计划
+                setActiveTool('agent');
+                void runAgent(prompt);
+              }}
+            />
+          ) : (
+            <>
           <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
             <span className="flex size-5 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
               <KsIconAiAssistant size={12} />
             </span>
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">AI</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+              Editing agent
+            </span>
           </div>
           <AiEditorPanel
             isBusy={isPlanning}
@@ -814,6 +837,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             onDiscard={discardPlan}
             onRestore={restoreVersion}
           />
+            </>
+          )}
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
