@@ -6,6 +6,7 @@ import type {
   LibraryAsset,
   NodeBodyShape,
   NodePortSpec,
+  IntakeField,
   TimelineTrack
 } from './types';
 
@@ -418,4 +419,44 @@ export const INITIAL_EDGES: CanvasEdge[] = [
   { id: 'edge-4', source: 'node-avatar-1', sourceOutput: 'out', target: 'node-video-1', targetInput: 'video' },
   { id: 'edge-5', source: 'node-video-1', sourceOutput: 'out', target: 'node-split-1', targetInput: 'video' },
   { id: 'edge-6', source: 'node-split-1', sourceOutput: 'audio', target: 'node-tracks-1', targetInput: 'audio' }
+];
+
+/**
+ * 打开编辑器时先问清的几件事：素材完整度、投放平台、切几条、每条多长、要什么包装。
+ * 答案会被组合成一份复合编辑计划，而不是只当作一句 prompt。
+ */
+export const INTAKE_FIELDS: IntakeField[] = [
+  {
+    id: 'source',
+    label: 'Is this the full video, or part of a longer recording?',
+    kind: 'single',
+    required: true,
+    options: ['This is the full video', 'This is a clip — I have more footage to upload']
+  },
+  {
+    id: 'platform',
+    label: 'Which platform are you cutting for?',
+    kind: 'single',
+    required: true,
+    options: ['TikTok', 'Instagram Reels', 'Xiaohongshu (小红书)', 'YouTube Shorts', 'Other']
+  },
+  {
+    id: 'clipCount',
+    label: 'How many short clips do you want to create?',
+    kind: 'text',
+    placeholder: 'e.g. 3'
+  },
+  {
+    id: 'targetLength',
+    label: 'Target length per clip',
+    kind: 'single',
+    required: true,
+    options: ['~15 seconds', '~30 seconds', '~60 seconds', '~90 seconds']
+  },
+  {
+    id: 'packaging',
+    label: 'What packaging do you want on each clip? (multi-select)',
+    kind: 'multi',
+    options: ['Captions', 'Title text overlay', 'Background music', 'Light motion graphics', 'Other']
+  }
 ];

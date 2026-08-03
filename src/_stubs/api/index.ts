@@ -180,6 +180,14 @@ export async function planTimelineEdit(args: {
   prompt: string;
   playhead: number;
   tracks: WireTrack[];
+  /** 开场问卷的结构化答案；有值时直接组合成一份复合首刀计划。 */
+  intake?: {
+    source?: string;
+    platform?: string;
+    clipCount?: string;
+    targetLength?: string;
+    packaging?: string[];
+  };
 }): Promise<WireAgentReply> {
   await delay(900);
 
@@ -190,6 +198,124 @@ export async function planTimelineEdit(args: {
   const total = endOf(tracks);
   const survey = surveyLine(tracks);
   const durationMatch = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)/);
+
+  /* 0) 开场问卷：一次性把时长、字幕、音乐、标题条组合成首刀 */
+  if (args.intake) {
+    const { platform, clipCount, targetLength, packaging = [] } = args.intake;
+    const target = Number(targetLength?.match(/(\d+)/)?.[1] ?? 0);
+    const factor = target > 0 && total > 0 ? target / total : 1;
+    const finalTotal = target > 0 ? target : total;
+    const wants = (item: string) => packaging.includes(item);
+
+    const thinking = [survey];
+    const operations: WireOperation[] = [];
+
+    if (target > 0 && Math.abs(factor - 1) > 0.01) {
+      thinking.push(`Target is ${target}s per clip against ${total.toFixed(1)}s — retiming ${factor.toFixed(2)}×.`);
+      operations.push(
+        ...allClips(tracks).map<WireOperation>((c) => ({
+          Label: `Fit "${c.Label}" to ${(c.Duration * factor).toFixed(2)}s`,
+          Type: 'set-timing',
+          ClipId: c.ClipId,
+          Start: c.Start * factor,
+          Duration: c.Duration * factor,
+        }))
+      );
+    } else if (target > 0) {
+      thinking.push(`Already ${total.toFixed(1)}s, which matches the ${target}s target — no retime needed.`);
+    }
+
+    // 分镜按 retime 后的时间算，字幕/标题才能对上
+    const scenes = (videoTracks[0]?.Clips ?? []).map((c) => ({
+      ...c,
+      Start: c.Start * factor,
+      Duration: c.Duration * factor,
+    }));
+
+    if (wants('Captions') && scenes.length > 0) {
+      thinking.push(`Writing ${scenes.length} caption cue${scenes.length > 1 ? 's' : ''}, one per scene.`);
+      operations.push({
+        Label: `Add captions (${scenes.length} cues)`,
+        Type: 'add-track',
+        Track: {
+          TrackId: nextId('track-captions'),
+          Kind: 'caption',
+          Visible: true,
+          Muted: false,
+          Clips: scenes.map((clip) => ({
+            ClipId: nextId('clip-caption'),
+            Label: `Caption — ${clip.Label}`,
+            Start: clip.Start,
+            Duration: clip.Duration,
+            HasAudio: false,
+            Text: captionLine(clip.Label),
+          })),
+        },
+      });
+    }
+
+    if (wants('Title text overlay')) {
+      const titleLength = Math.min(2.5, finalTotal);
+      thinking.push(`Adding a ${titleLength.toFixed(1)}s title card over the opening.`);
+      operations.push({
+        Label: `Add title overlay (${titleLength.toFixed(1)}s)`,
+        Type: 'add-track',
+        Track: {
+          TrackId: nextId('track-title'),
+          Kind: 'caption',
+          Visible: true,
+          Muted: false,
+          Clips: [
+            {
+              ClipId: nextId('clip-title'),
+              Label: 'Title card',
+              Start: 0,
+              Duration: titleLength,
+              HasAudio: false,
+              Text: 'THE ONLY STEP YOUR ROUTINE NEEDS',
+            },
+          ],
+        },
+      });
+    }
+
+    if (wants('Background music')) {
+      thinking.push(`Laying a music bed across the full ${finalTotal.toFixed(1)}s.`);
+      operations.push({
+        Label: `Add music bed (${finalTotal.toFixed(1)}s)`,
+        Type: 'add-track',
+        Track: {
+          TrackId: nextId('track-music'),
+          Kind: 'audio',
+          Visible: true,
+          Muted: false,
+          Clips: [
+            {
+              ClipId: nextId('clip-music'),
+              Label: 'AI music bed — upbeat',
+              Start: 0,
+              Duration: finalTotal,
+              HasAudio: true,
+            },
+          ],
+        },
+      });
+    }
+
+    if (wants('Light motion graphics')) {
+      thinking.push('Motion graphics have no timeline primitive yet — flagging rather than faking it.');
+    }
+
+    const packagingText = packaging.length ? packaging.join(', ').toLowerCase() : 'no extra packaging';
+    const countText = clipCount ? `${clipCount} clip${clipCount === '1' ? '' : 's'}` : 'this cut';
+    const summary = operations.length
+      ? `First pass for ${platform ?? 'your platform'} — ${countText} at ${
+          target > 0 ? `~${target}s` : 'current length'
+        } with ${packagingText}.${wants('Light motion graphics') ? ' Motion graphics aren’t wired yet, so I left those out.' : ''}`
+      : `Noted: ${platform ?? 'your platform'}, ${countText}, ${packagingText}. Nothing to change on the timeline yet — tell me what to cut.`;
+
+    return { Kind: 'plan', Thinking: thinking, Summary: summary, Operations: operations };
+  }
 
   /* 1) 静音 / 取消静音 —— 要排在 "music" 之前，否则 "mute the music" 会被当成加音乐 */
   if (has(prompt, 'mute', 'silence the', 'unmute')) {

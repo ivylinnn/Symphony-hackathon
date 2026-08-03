@@ -134,11 +134,14 @@ export type AgentReply =
 export const planEdit = async (
   prompt: string,
   tracks: TimelineTrack[],
-  playhead: number
+  playhead: number,
+  /** 开场问卷答案；有值时后端直接给一份复合首刀计划。 */
+  intake?: Record<string, string | string[]>
 ): Promise<AgentReply> => {
   const resp = await planTimelineEdit({
     prompt,
     playhead,
+    ...(intake ? { intake } : {}),
     tracks: tracks.map((track) => ({
       TrackId: track.id,
       Kind: track.kind,

@@ -125,8 +125,23 @@ export interface TimelineEditPlan {
  * AI editor 会话里的一条消息。
  * plan 消息带着应用前的时间线快照，所以每一次编辑都留有一份可回滚的旧版本。
  */
+/** 开场问卷的一道题。 */
+export interface IntakeField {
+  id: string;
+  label: string;
+  kind: 'single' | 'multi' | 'text';
+  options?: string[];
+  placeholder?: string;
+  /** 必答题没填完就不能提交。 */
+  required?: boolean;
+}
+
+/** 问卷答案：单选/文本存字符串，多选存数组。 */
+export type IntakeAnswers = Record<string, string | string[]>;
+
 export type AiEditorMessage =
   | { id: string; role: 'user'; text: string }
+  | { id: string; role: 'form'; fields: IntakeField[]; answers: IntakeAnswers; submitted: boolean }
   | { id: string; role: 'thinking'; steps: string[]; revealed: number }
   | { id: string; role: 'answer'; text: string }
   | { id: string; role: 'question'; text: string; options: string[]; answer?: string }

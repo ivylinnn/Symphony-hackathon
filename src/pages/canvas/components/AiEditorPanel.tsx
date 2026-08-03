@@ -2,35 +2,12 @@ import {
   KsIconAiAssistant,
   KsIconChevronRight,
   KsIconSend,
-  KsIconTips,
   KsIconUndo
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
-import type { AiEditorMessage } from '../types';
-
-/** 空状态下的引导词，点一下直接发出去。 */
-const SUGGESTIONS = [
-  'Trim to 15 seconds',
-  'Add captions',
-  'Lay in a music bed',
-  'Make the hook punchier',
-  'Remove a clip'
-];
-
-/**
- * 变体生成工具（Generate & Edit Video Variants）：
- * 在优质素材上快速产出变体，延长素材生命周期、拓展版位。
- * 每个工具就是一条预置诉求，走同一个 agent 会话，该问的照样会问。
- */
-const VARIANT_TOOLS: Array<{ label: string; prompt: string; hint: string }> = [
-  { label: 'Uncrop', prompt: 'uncrop the video for more placements', hint: 'AI-extend the frame to fit new placements' },
-  { label: 'Dubbing', prompt: 'dub the video into another language', hint: 'Replace the dialogue with an AI dub' },
-  { label: 'Voiceover', prompt: 'add an AI voiceover', hint: 'Narrate the cut from the ad script' },
-  { label: 'Subtitles', prompt: 'add subtitles', hint: 'Generate subtitles timed to the scenes' },
-  { label: 'Hook swap', prompt: 'swap the hook for a new variant', hint: 'Rebuild the opening, keep the rest' }
-];
+import type { AiEditorMessage, IntakeAnswers, IntakeField } from '../types';
 
 export interface DiffCounts {
   added: number;
@@ -49,6 +26,7 @@ interface AiEditorPanelProps {
   skippedOpIds: Set<string>;
   diff: DiffCounts | null;
   onSubmit: (prompt: string) => void;
+  onSubmitIntake: (messageId: string, answers: IntakeAnswers) => void;
   onAnswer: (messageId: string, option: string) => void;
   onToggleOp: (operationId: string) => void;
   onApply: () => void;
@@ -80,6 +58,108 @@ function DiffPill({ counts }: { counts: DiffCounts }) {
 }
 
 /** 思考过程：进行中逐条揭示，结束后折叠成一行摘要，可再展开。 */
+/**
+ * 开场问卷：一次问清平台、条数、时长和包装，答案会被组合成一份复合计划。
+ * 提交前答案只留在这条消息里，不影响时间线。
+ */
+function IntakeForm({
+  fields,
+  answers,
+  submitted,
+  isBusy,
+  onSubmit
+}: {
+  fields: IntakeField[];
+  answers: IntakeAnswers;
+  submitted: boolean;
+  isBusy: boolean;
+  onSubmit: (answers: IntakeAnswers) => void;
+}) {
+  const [draft, setDraft] = useState<IntakeAnswers>(answers);
+  const locked = submitted || isBusy;
+
+  const toggle = (field: IntakeField, option: string) =>
+    setDraft((current) => {
+      if (field.kind === 'multi') {
+        const selected = Array.isArray(current[field.id]) ? (current[field.id] as string[]) : [];
+        return {
+          ...current,
+          [field.id]: selected.includes(option)
+            ? selected.filter((item) => item !== option)
+            : [...selected, option]
+        };
+      }
+      // 单选再点一次取消，避免选错了没法改
+      return { ...current, [field.id]: current[field.id] === option ? '' : option };
+    });
+
+  const isSelected = (field: IntakeField, option: string) =>
+    field.kind === 'multi'
+      ? Array.isArray(draft[field.id]) && (draft[field.id] as string[]).includes(option)
+      : draft[field.id] === option;
+
+  const isComplete = fields.every((field) => !field.required || draft[field.id]);
+
+  return (
+    <div data-intake-form className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-3">
+      {fields.map((field) => (
+        <div key={field.id} className="mb-3 last:mb-0">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-mediumOnSurface">
+            {field.label}
+          </p>
+          {field.kind === 'text' ? (
+            <input
+              value={typeof draft[field.id] === 'string' ? (draft[field.id] as string) : ''}
+              placeholder={field.placeholder}
+              disabled={locked}
+              onChange={(event) => setDraft((current) => ({ ...current, [field.id]: event.target.value }))}
+              className="w-full rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface px-2 py-1.5 text-[12px] text-neutral-highOnSurface outline-none focus:border-primary-fill disabled:opacity-60"
+            />
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {(field.options ?? []).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={locked}
+                  onClick={() => toggle(field, option)}
+                  className={clsx(
+                    'rounded-lg border border-solid px-2 py-1 text-[11px] transition-colors',
+                    isSelected(field, option)
+                      ? 'border-primary-fill bg-primary-surface2 font-medium text-primary-onSurface'
+                      : 'border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface hover:bg-neutral-surface2',
+                    locked && 'cursor-default'
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {!submitted ? (
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            disabled={!isComplete || isBusy}
+            onClick={() => onSubmit(draft)}
+            className={clsx(
+              'rounded-lg px-3.5 py-1.5 text-[12px] font-semibold transition-colors',
+              isComplete && !isBusy
+                ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
+                : 'cursor-not-allowed bg-neutral-surface3 text-neutral-lowOnSurface'
+            )}
+          >
+            Submit
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ThinkingBlock({ steps, revealed }: { steps: string[]; revealed: number }) {
   // steps 还没回来时 revealed/length 都是 0，不能算「思考完」，否则请求期间会显示 "Thought for 0 steps"
   const isDone = steps.length > 0 && revealed >= steps.length;
@@ -132,6 +212,7 @@ function AiEditorPanel({
   skippedOpIds,
   diff,
   onSubmit,
+  onSubmitIntake,
   onAnswer,
   onToggleOp,
   onApply,
@@ -168,32 +249,6 @@ function AiEditorPanel({
 
   return (
     <div data-ai-editor className="flex min-h-0 flex-1 flex-col">
-      {/* 变体生成入口常驻顶部：一键发起 Uncrop / Dub / Voiceover / Subtitles / Hook swap */}
-      <div className="shrink-0 border-b border-solid border-neutral-fillLow px-3 py-2">
-        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
-          Variants
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {VARIANT_TOOLS.map((tool) => (
-            <button
-              key={tool.label}
-              type="button"
-              title={tool.hint}
-              disabled={isBusy}
-              onClick={() => submit(tool.prompt)}
-              className={clsx(
-                'rounded-full border border-solid border-neutral-fillLow bg-neutral-surface1 px-2.5 py-1 text-[11px] font-medium transition-colors',
-                isBusy
-                  ? 'cursor-wait text-neutral-lowOnSurface'
-                  : 'text-neutral-mediumOnSurface hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface'
-              )}
-            >
-              {tool.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
@@ -215,6 +270,19 @@ function AiEditorPanel({
                   {message.text}
                 </div>
               </div>
+            );
+          }
+
+          if (message.role === 'form') {
+            return (
+              <IntakeForm
+                key={message.id}
+                fields={message.fields}
+                answers={message.answers}
+                submitted={message.submitted}
+                isBusy={isBusy}
+                onSubmit={(answers) => onSubmitIntake(message.id, answers)}
+              />
             );
           }
 
@@ -388,22 +456,6 @@ function AiEditorPanel({
 
       {/* 输入区常驻底部 */}
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
-        {messages.length === 0 && !isBusy ? (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => submit(suggestion)}
-                className="flex items-center gap-1 rounded-full border border-solid border-neutral-fillLow bg-neutral-surface1 px-2.5 py-1 text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-              >
-                <KsIconTips size={11} />
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',

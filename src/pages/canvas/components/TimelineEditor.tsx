@@ -16,7 +16,7 @@ import {
 import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { INITIAL_TIMELINE_TRACKS } from '../const';
+import { INITIAL_TIMELINE_TRACKS, INTAKE_FIELDS } from '../const';
 import { planEdit } from '../services/timeline-ai';
 import {
   activeCaptionClip,
@@ -31,7 +31,14 @@ import {
   summarizePreview,
   timelineDuration
 } from '../timeline-ops';
-import type { AiEditorMessage, ClipDiffStatus, TimelineTrack, TimelineTrackKind, VideoFormatRatio } from '../types';
+import type {
+  AiEditorMessage,
+  ClipDiffStatus,
+  IntakeAnswers,
+  TimelineTrack,
+  TimelineTrackKind,
+  VideoFormatRatio
+} from '../types';
 import AiEditorPanel from './AiEditorPanel';
 
 interface TimelineEditorProps {
@@ -194,6 +201,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [isPlanning, setIsPlanning] = useState(false);
   const msgSeqRef = useRef(0);
   const versionSeqRef = useRef(0);
+  /** 开场问候+问卷只落一次。 */
+  const introSeededRef = useRef(false);
 
   const nextMessageId = () => {
     msgSeqRef.current += 1;
@@ -253,7 +262,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
    * 跑一轮 agent：先落用户消息和思考占位，拿到回复后逐条揭示推理，
    * 最后落地成一个澄清问题或一份待确认的计划。
    */
-  const runAgent = async (prompt: string) => {
+  const runAgent = async (prompt: string, intake?: IntakeAnswers) => {
     // 两个 id 都先算好，别在 setState 更新函数里取，那会被 StrictMode 重复调用
     const userId = nextMessageId();
     const thinkingId = nextMessageId();
@@ -266,7 +275,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setPendingPlanId(null);
 
     try {
-      const reply = await planEdit(prompt, tracks, currentTime);
+      const reply = await planEdit(prompt, tracks, currentTime, intake);
       patchMessage(thinkingId, { steps: reply.thinking, revealed: 0 });
       // 逐条揭示，让处理过程可见而不是一次性糊上来
       for (let step = 1; step <= reply.thinking.length; step += 1) {
@@ -293,6 +302,41 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     } finally {
       setIsPlanning(false);
     }
+  };
+
+  /* 打开编辑器先问清诉求：一条问候 + 一份问卷，答完再动时间线。 */
+  useEffect(() => {
+    if (introSeededRef.current) {
+      return;
+    }
+    introSeededRef.current = true;
+    setMessages([
+      {
+        id: nextMessageId(),
+        role: 'answer',
+        text: `“${sourceLabel}” is loaded. A few quick questions so the first cut lands close to what you need.`
+      },
+      { id: nextMessageId(), role: 'form', fields: INTAKE_FIELDS, answers: {}, submitted: false }
+    ]);
+    // 只在挂载时跑一次；sourceLabel 变化意味着换了节点，编辑器会整体重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 把问卷答案压成一句可读的诉求，同时把结构化答案交给 agent。 */
+  const submitIntake = (messageId: string, answers: IntakeAnswers) => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId && message.role === 'form' ? { ...message, answers, submitted: true } : message
+      )
+    );
+    const packaging = Array.isArray(answers.packaging) ? answers.packaging : [];
+    const parts = [
+      typeof answers.platform === 'string' && answers.platform ? answers.platform : null,
+      typeof answers.clipCount === 'string' && answers.clipCount ? `${answers.clipCount} clips` : null,
+      typeof answers.targetLength === 'string' && answers.targetLength ? `${answers.targetLength} each` : null,
+      packaging.length ? packaging.join(', ') : null
+    ].filter(Boolean);
+    void runAgent(`Cutting for ${parts.join(' · ')}`, answers);
   };
 
   /** 回答澄清问题：把选项接在原始诉求后面重跑，答案因此真的会改变结果。 */
@@ -708,6 +752,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             skippedOpIds={skippedOpIds}
             diff={diffCounts}
             onSubmit={runAgent}
+            onSubmitIntake={submitIntake}
             onAnswer={answerQuestion}
             onToggleOp={toggleOperation}
             onApply={applyPlan}
@@ -719,7 +764,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
             {/* 中：素材面板 */}
-            <section className="flex min-w-0 flex-1 flex-col border-r border-solid border-neutral-fillLow bg-neutral-surface">
+            <section className="flex w-[380px] shrink-0 flex-col border-r border-solid border-neutral-fillLow bg-neutral-surface">
               <div className="flex shrink-0 items-center gap-4 border-b border-solid border-neutral-fillLow px-4 pt-3">
                 {(
                   [
@@ -835,7 +880,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             </section>
 
             {/* 右：预览 Viewer */}
-            <section className="flex w-[38%] min-w-[320px] shrink-0 flex-col">
+            <section className="flex min-w-0 flex-1 flex-col">
               <div className="shrink-0 px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
                 Viewer
               </div>
@@ -846,7 +891,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               <div
                 data-preview-frame={previewFormat}
                 className={clsx(
-                  'relative flex h-full max-h-[420px] items-center justify-center overflow-hidden rounded-xl bg-neutral-fillHigh',
+                  'relative flex h-full max-h-full items-center justify-center overflow-hidden rounded-xl bg-neutral-fillHigh',
                   // 画幅超出原始 9:16 的部分由 AI 扩画补齐，先用渐变示意；待确认时画虚线框
                   previewFormat !== '9:16' && 'bg-gradient-to-r from-primary-surface3/60 via-neutral-fillHigh to-primary-surface3/60',
                   pendingFormat && pendingFormat !== format && 'border border-dashed border-primary-fill'
@@ -900,10 +945,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               <img
                 src={posterUrl}
                 alt={sourceLabel}
-                className="h-full max-h-[420px] rounded-xl bg-neutral-fillHigh object-contain"
+                className="h-full max-h-full rounded-xl bg-neutral-fillHigh object-contain"
               />
             ) : (
-              <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
+              <div className="flex h-full max-h-full w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
                 <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
               </div>
             )}
