@@ -952,38 +952,23 @@ async function planTimelineEditInner(args: {
     }
   }
 
-  /* 4c-2) 品牌元素 / 片尾卡：把 End card 接到视频轨末尾，再打一条品牌字幕 */
+  /* 4c-2) 品牌元素 / 片尾卡：把用户的 summer-sale 片尾视频接到视频轨末尾收尾 */
   if (has(prompt, 'branding', 'brand element', 'end card', 'endcard', '品牌', '片尾')) {
     const track = videoTracks[0];
     if (track) {
       const at = endOf([track]);
-      const cardLength = 3;
-      const preset = matchStylePreset(prompt);
-      const style = preset?.style ?? { fg: '#f2ece1', accent: '#c6a06a' };
+      const cardLength = 5;
       return {
         Kind: 'plan',
         Thinking: [
           survey,
-          { Title: 'Building the end scene', Body: `A ${cardLength}s branded close at ${at.toFixed(1)}s: dark background, logo, tagline, CTA and promo — each its own editable layer, not a flattened image.` },
-          { Title: 'Choosing the look', Body: preset ? `Styled ${preset.label}, per the instruction.` : 'Defaulting to the brand’s premium cream-and-gold on black.' },
+          { Title: 'Generating the end card', Body: `Composing a ${cardLength}s branded close from the logo, 20% summer offer and shop CTA, appended at ${at.toFixed(1)}s.` },
+          { Title: 'Keeping it editable', Body: 'It lands as a normal clip on the video track — trim it, retime it or drag it like any other scene — and shows up in My assets as “Generated end card”.' },
         ],
-        Summary: 'Added an end card scene — logo, tagline, Shop now CTA and promo badge as separate editable layers.',
+        Summary: 'Generated the branded end card — the summer-sale cut now closes the video.',
         Operations: [
-          { Label: `Add end-card background (${cardLength}s)`, Type: 'add-clip', TrackId: track.TrackId,
-            Clip: { ClipId: nextId('clip-endbg'), Label: 'End card bg', Start: at, Duration: cardLength, HasAudio: false, SourceUrl: DARK_BG } },
-          { Label: 'Add logo layer', Type: 'add-track',
-            Track: { TrackId: nextId('track-ec-logo'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-logo'), Label: 'Logo', Start: at, Duration: cardLength, HasAudio: false, Text: 'AURAK', Graphic: { kind: 'logo', y: 30, ...style } }] } },
-          { Label: 'Add tagline layer', Type: 'add-track',
-            Track: { TrackId: nextId('track-ec-tag'), Kind: 'graphics', Visible: true, Muted: false,
-              // 副标走小号 logo lockup：居中、细体、宽字距，比大标题更衬品牌收尾
-              Clips: [{ ClipId: nextId('clip-ec-tag'), Label: 'Tagline', Start: at + 0.3, Duration: cardLength - 0.3, HasAudio: false, Text: 'CRAFTED FOR MOTION', Graphic: { kind: 'logo', y: 45, scale: 0.42, ...style } }] } },
-          { Label: 'Add CTA layer', Type: 'add-track',
-            Track: { TrackId: nextId('track-ec-cta'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-cta'), Label: 'CTA', Start: at + 0.5, Duration: cardLength - 0.5, HasAudio: false, Text: 'AURAK.COM', Graphic: { kind: 'banner', y: 72, cta: 'Shop now', ...style } }] } },
-          { Label: 'Add promo badge', Type: 'add-track',
-            Track: { TrackId: nextId('track-ec-promo'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-promo'), Label: 'Promo', Start: at + 0.7, Duration: cardLength - 0.7, HasAudio: false, Text: '20% OFF — SUMMER', Graphic: { kind: 'badge', y: 12, ...style } }] } },
+          { Label: `Add generated end card (${cardLength}s)`, Type: 'add-clip', TrackId: track.TrackId,
+            Clip: { ClipId: nextId('clip-endcard'), Label: 'Generated end card', Start: at, Duration: cardLength, HasAudio: true, SourceUrl: '/end-card-v2.mp4' } },
         ],
       };
     }

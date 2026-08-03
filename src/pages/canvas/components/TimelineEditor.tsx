@@ -157,9 +157,7 @@ const DEMO_ASSETS: DemoAsset[] = [
   { id: 'asset-garlic', name: 'garlic paste ad', kind: 'video', url: '/garlic-paste-ad.mp4' },
   { id: 'asset-front', name: 'hoodie — front', kind: 'image', url: '/hoodie-front.webp' },
   { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
-  { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' },
-  { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' },
-  { id: 'asset-endcard-v2', name: 'End card v2', kind: 'video', url: '/end-card-v2.mp4', seconds: 5 }
+  { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' }
 ];
 
 /** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
@@ -486,6 +484,24 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
             label: operation.label
           };
         })
+      ]);
+    }
+    // 生成的片尾卡登记进 My assets，名字就叫 Generated end card
+    const endCardOp = acceptedOperations.find(
+      (operation) =>
+        operation.op.type === 'add-clip' && operation.op.clip.label === 'Generated end card'
+    );
+    if (endCardOp) {
+      const op = endCardOp.op as Extract<typeof endCardOp.op, { type: 'add-clip' }>;
+      setUploadedAssets((current) => [
+        {
+          id: `asset-endcard-${version}`,
+          name: 'Generated end card',
+          kind: 'video' as const,
+          url: op.clip.sourceUrl,
+          seconds: op.clip.duration
+        },
+        ...current.filter((asset) => asset.name !== 'Generated end card')
       ]);
     }
     // 生成的动态图形登记进 My assets，之后可以点它回来继续改
