@@ -1,23 +1,31 @@
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import CanvasPage from './pages/canvas';
+import HomePage from './pages/home';
 import './styles.css';
 
 /**
  * Standalone demo entry.
  *
- * Renders the real `CanvasPage` full-screen. Every internal dependency the feature
- * expects (platform APIs, router, icon set, design tokens) is provided by the stubs
- * wired up in `vite.config.ts` and `tailwind.config.cjs` — the feature source itself
- * is untouched.
+ * Hash 路由：`#/` 是 Symphony 首页，`#/canvas` 是画布页。
+ * 画布内部的依赖（平台 API、路由、图标、设计 token）由 vite.config.ts 里的 stubs 提供。
  */
-function DemoBadge() {
-  return (
-    <div className="pointer-events-none fixed left-16 top-4 z-40 flex items-center gap-2 rounded-full border border-solid border-neutral-fillLow bg-neutral-surface/90 px-3 py-1.5 text-[11px] font-medium text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.12)] backdrop-blur">
-      <span className="inline-block size-1.5 rounded-full bg-success-fill" />
-      Symphony Canvas · live UI demo — backend mocked
-    </div>
-  );
+const getRoute = () => (window.location.hash.startsWith('#/canvas') ? 'canvas' : 'home');
+
+function App() {
+  const [route, setRoute] = useState(getRoute);
+
+  useEffect(() => {
+    const handleHashChange = () => setRoute(getRoute());
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (route === 'canvas') {
+    return <CanvasPage />;
+  }
+  return <HomePage />;
 }
 
 const container = document.getElementById('root');
@@ -25,9 +33,4 @@ if (!container) {
   throw new Error('Root container #root not found');
 }
 
-createRoot(container).render(
-  <>
-    <CanvasPage />
-    <DemoBadge />
-  </>
-);
+createRoot(container).render(<App />);

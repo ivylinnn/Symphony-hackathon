@@ -1,8 +1,17 @@
-/** 节点分类：广告原生结构件 / 通用创意素材件 / 编辑处理件。 */
-export type CanvasNodeCategory = 'ads-native' | 'creative' | 'edit';
+/** 节点分类：广告原生结构件 / 灵感复刻件 / 通用创意素材件 / 编辑处理件。 */
+export type CanvasNodeCategory = 'ads-native' | 'inspiration' | 'creative' | 'edit';
 
 /** 广告原生节点，对应一条广告的脚本结构。 */
 export type AdsNativeNodeKind = 'hook' | 'body' | 'cta';
+
+/** 灵感复刻节点：围绕一条 Top Ads 趋势拆解出的输入件与分镜。 */
+export type InspirationNodeKind =
+  | 'product-images'
+  | 'brand-kit'
+  | 'product-brief'
+  | 'tiktok-trend'
+  | 'storyboard'
+  | 'audio-clips';
 
 /** 创意节点，对应素材形态。 */
 export type CreativeNodeKind = 'text' | 'image' | 'video' | 'audio' | 'avatar' | 'import';
@@ -10,7 +19,7 @@ export type CreativeNodeKind = 'text' | 'image' | 'video' | 'audio' | 'avatar' |
 /** 编辑节点，对素材做拆分/加工/批处理，通常多输入或多输出。 */
 export type EditNodeKind = 'split-av' | 'split-tracks' | 'timeline' | 'batch';
 
-export type CanvasNodeKind = AdsNativeNodeKind | CreativeNodeKind | EditNodeKind;
+export type CanvasNodeKind = AdsNativeNodeKind | InspirationNodeKind | CreativeNodeKind | EditNodeKind;
 
 /** 端口承载的数据类型，决定图标与连线校验。 */
 export type PortType = 'prompt' | 'image' | 'video' | 'audio';
@@ -25,7 +34,19 @@ export interface NodePortSpec {
 }
 
 /** 卡片主体的展示形态，决定 NodeCard 渲染哪一种 body。 */
-export type NodeBodyShape = 'text' | 'media' | 'audio' | 'operation' | 'batch' | 'timeline';
+export type NodeBodyShape =
+  | 'text'
+  | 'media'
+  | 'audio'
+  | 'operation'
+  | 'batch'
+  | 'timeline'
+  | 'product-images'
+  | 'brand-kit'
+  | 'product-brief'
+  | 'tiktok-trend'
+  | 'storyboard'
+  | 'audio-clips';
 
 /** 时间线上的一段素材。 */
 export interface TimelineClip {
@@ -56,11 +77,15 @@ export interface CanvasNode {
   x: number;
   y: number;
   width: number;
+  /** 覆盖类型默认卡片高度（如 9:16 竖版视频卡）；缺省用 NODE_KIND_CONFIG 的值。 */
+  height?: number;
   title: string;
   text?: string;
   status: CanvasNodeStatus;
   /** 运行产物地址（图/视频/音频）。 */
   assetUrl?: string;
+  /** 可直接播放的视频地址；存在时 media 卡渲染 <video>，assetUrl 退化为封面。 */
+  videoUrl?: string;
   /** 运行失败时的原因，展示在卡片上。 */
   error?: string;
   /** 补充说明，例如用到的模型名。 */

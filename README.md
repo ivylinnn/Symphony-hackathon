@@ -34,6 +34,7 @@ src/pages/canvas/
 ├── const.ts                      NODE_KIND_CONFIG (per-kind ports, body, height), seed graph
 ├── utils.ts                      coordinate math, port geometry, bezier, fitView
 ├── graph-ops.ts                  pure node/edge builders
+├── content-strategies.ts         TikTok strategy presets + graph instantiation
 ├── hooks/
 │   ├── use-canvas-viewport.ts    wheel/pinch zoom, pan
 │   ├── use-canvas-graph.ts       graph CRUD
@@ -54,24 +55,53 @@ src/pages/canvas/
     ├── EdgeLayer.tsx             bezier connections
     ├── SelectionToolbar.tsx      top toolbar shown while nodes are selected
     ├── AgentPanel.tsx            right chat panel, collapses to FAB
+    ├── ContentStrategiesPopover.tsx  empty-canvas strategy picker (6 preset workflows)
+    ├── Minimap.tsx               bottom-right overview map, click/drag to navigate
     ├── TimelineEditor.tsx        full-screen multi-track video editor
     └── nodeIcons.tsx             per-kind and per-port-type icons
 ```
+
+## Demo shell
+
+The standalone demo now boots into a **Symphony Creative Studio home page** (`#/`): dark top
+bar, icon side navigation (with a **Canvas** entry placed above Agent), quick-start cards,
+recent projects (real video thumbnails), and a Top Ads trends strip sharing data with the
+canvas trend node. The Canvas nav item and every card route to the canvas page (`#/canvas`);
+the canvas Close button routes back home. Routing is a tiny hash router in `src/main.tsx`;
+the home page lives in `src/pages/home/index.tsx`.
 
 ## Canvas interaction
 
 | Input | Action |
 |---|---|
-| drag on empty canvas | marquee select (intersecting nodes) |
-| space + drag / middle drag | pan |
+| drag on empty canvas | marquee select with hand cursor (intersecting nodes; then edit/delete via toolbar) |
+| shift + drag | add intersecting nodes to the existing selection |
+| space + drag / middle drag | pan (grab → grabbing cursor) |
 | trackpad two-finger | pan |
-| ctrl/⌘ + wheel | zoom at pointer |
-| shift + drag / shift + click | add to selection |
+| ctrl/⌘ + wheel | smooth zoom at pointer (time-based exponential easing) |
+| shift + click | add to selection |
 | ⌘/ctrl + A | select all |
-| Esc | clear selection |
+| Esc | clear selection / close strategies popover |
 | Backspace / Delete | delete selection |
 | drag from an output port | draw a connection; release on a card, a port, or empty canvas |
 | double-click a Timeline node | open the timeline editor |
+| minimap (bottom-right) | click / drag to move the viewport; blue frame is the visible area |
+
+The canvas opens empty with the **TikTok Content Strategies** popover: six preset workflows
+(Inspiration Video Replication, Product Swap, Hook/CTA Replacement, Character Swap, Clothing
+Try-On, Seasonal Refresh). Picking one drops a pre-wired, fully editable node graph onto the
+canvas and animates the view to fit. The popover reopens whenever the canvas becomes empty,
+or via the "TikTok Content Strategies" pill (top-right). Zoom buttons and fit-view animate
+with the same easing as the wheel zoom.
+
+**Inspiration Video Replication** spawns a worked example modeled on a real Top Ads trend
+(Don Quijote's garlic-paste ad): Product images (real hoodie shots, up to 20 images from the
+computer or asset library) feed the Product brief; the brief, Brand kit, and TikTok trend
+feed a Storyboard node (scene-by-scene frames with voiceover, scrollable, "+ Add frame"),
+which feeds the final Video node playing the real 9:16 hoodie ad (`public/hoodie-ad.mp4`).
+The Brand kit also uploads from the local computer or the asset library; the TikTok trend
+node opens a Top Ads modal to swap in a different trend. These five "inspiration" node kinds
+are also available from the ＋ palette under the Inspiration group.
 
 Selecting anything reveals a top toolbar: `N selected · Save as template · Duplicate · Select all · Export · Lock · Delete`.
 

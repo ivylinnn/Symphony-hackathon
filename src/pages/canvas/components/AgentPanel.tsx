@@ -74,7 +74,7 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend }: AgentPanelPr
   }
 
   return (
-    <aside className="absolute inset-y-4 right-4 z-20 flex w-[320px] flex-col overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+    <aside className="absolute bottom-4 right-4 z-20 flex h-[50vh] w-[320px] flex-col overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3">
         <span className="flex size-7 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
           <KsIconAiAssistant size={16} />
