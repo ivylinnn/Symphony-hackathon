@@ -528,8 +528,9 @@ function AiEditorPanel({
           );
         })}
 
-        {/* 五大核心用例：作为会话的一部分，跟在 agent 最新的内容后面；问卷答完才出现 */}
-        {messages.some((message) => message.role === 'form' && message.submitted) && !isBusy ? (
+        {/* 五大核心用例：作为会话的一部分，跟在 agent 最新的内容后面；
+            问卷答完才出现，且计划待确认（Apply/Discard 未点）时先让位 */}
+        {messages.some((message) => message.role === 'form' && message.submitted) && !isBusy && !pendingPlanId ? (
           <div className="flex items-start gap-2">
             {/* 占位对齐 agent 头像列，pill 和 agent 正文同一条基线 */}
             <span className="size-6 shrink-0" />
