@@ -10,6 +10,7 @@ import {
   KsIconAiGeneration,
   KsIconPen,
   KsIconPlus,
+  KsIconRotate,
   KsIconSearch,
   KsIconSend,
   KsIconShare,
@@ -51,7 +52,6 @@ import type {
 } from '../types';
 import AiEditorPanel from './AiEditorPanel';
 import { ToolPanel, ToolRail, type EditorTool } from './EditorToolPanels';
-import { getClaudeKey, setClaudeKey } from '../services/claude-client';
 
 interface TimelineEditorProps {
   /** 编辑对象的名称，展示在标题和预览占位上。 */
@@ -72,6 +72,9 @@ const BASE_PX_PER_SECOND = 104;
 /** 标尺至少画这么多秒，内容更长时按内容延展。 */
 const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
+/** 用户上传的片尾卡视频：默认接在正片末尾。 */
+const END_CARD_VIDEO_URL = '/end-card.mp4';
+const END_CARD_VIDEO_SECONDS = 5.1;
 /** 预览视频与播放头允许的最大偏差（秒），超过才回拉。 */
 const DRIFT_TOLERANCE = 0.4;
 /** 思考步骤逐条揭示的间隔（毫秒）。 */
@@ -260,6 +263,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
   const videoRef = useRef<HTMLVideoElement>(null);
   /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
   const seededRef = useRef(false);
+  /** 记住素材时长，顶栏刷新时用它把时间线重建回初始状态。 */
+  const mediaSecondsRef = useRef<number | null>(null);
   /** 复制片段的自增后缀，保证 id 唯一。 */
   const copySeqRef = useRef(1);
 
@@ -271,10 +276,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
   const versionSeqRef = useRef(0);
   /** 开场问候+问卷只落一次。 */
   const introSeededRef = useRef(false);
-  /* Connect Claude：key 只存本浏览器 localStorage，绝不进代码或构建产物。 */
-  const [claudeConnected, setClaudeConnected] = useState(() => Boolean(getClaudeKey()));
-  const [showClaudeRow, setShowClaudeRow] = useState(false);
-  const [claudeKeyDraft, setClaudeKeyDraft] = useState('');
   /* 拖素材 + 品牌元素识别 */
   const [dragAssetId, setDragAssetId] = useState<string | null>(null);
   const brandDropsRef = useRef(0);
@@ -589,6 +590,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
       return;
     }
     seededRef.current = true;
+    mediaSecondsRef.current = mediaDuration;
 
     /*
      * 一整条视频摊成一个片段没法剪，所以按目标段长切成若干分镜，
@@ -611,6 +613,18 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
       sourceStart: index * segmentLength,
       sourceDuration: segmentLength
     }));
+
+    // 用户上传的片尾卡视频（public/end-card.mp4，约 5.1s）固定接在正片之后收尾
+    videoClips.push({
+      id: 'clip-endcard-video',
+      label: 'End card video',
+      start: mediaDuration,
+      duration: END_CARD_VIDEO_SECONDS,
+      hasAudio: true,
+      sourceUrl: END_CARD_VIDEO_URL,
+      sourceStart: 0,
+      sourceDuration: END_CARD_VIDEO_SECONDS
+    });
 
     // 转场跨在接缝上，所以起点要往前挪半个转场长度
     const transitionClips = Array.from({ length: segments - 1 }, (_, index) => ({
@@ -642,6 +656,36 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
         ]
       }
     ]);
+  };
+
+  /** 顶栏 +：清空会话，从问候和问卷重新开始（时间线保持现状）。 */
+  const startNewChat = () => {
+    setPendingPlanId(null);
+    setMessages([
+      {
+        id: nextMessageId(),
+        role: 'answer',
+        text: `“${sourceLabel}” is loaded. A few quick questions so the first cut lands close to what you need.`
+      },
+      { id: nextMessageId(), role: 'form', fields: INTAKE_FIELDS, answers: {}, submitted: false }
+    ]);
+  };
+
+  /** 顶栏刷新：会话与时间线一起回到打开时的状态。 */
+  const resetSession = () => {
+    exitPenMode();
+    setSelectedClipId(null);
+    setRegionEdits([]);
+    setFormat('9:16');
+    setCurrentTime(0);
+    setIsPlaying(false);
+    if (videoUrl) {
+      seededRef.current = false;
+      seedFromMedia(mediaSecondsRef.current ?? FALLBACK_MEDIA_SECONDS);
+    } else {
+      setTracks(INITIAL_TIMELINE_TRACKS);
+    }
+    startNewChat();
   };
 
   const handleMetadata = () => {
@@ -1203,74 +1247,30 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
             />
           ) : (
             <>
-          <div className="flex shrink-0 items-center gap-2 px-3.5 py-3">
+          <div className="flex shrink-0 items-center gap-1 px-3.5 py-3">
             <span className="text-[15px] font-bold text-primary-onSurface">Editing agent</span>
             <span className="flex-1" />
             <button
               type="button"
-              data-claude-connect
-              title={claudeConnected ? 'Prompts run through your Claude account' : 'Connect your Claude account (Anthropic API key)'}
-              onClick={() => setShowClaudeRow((v) => !v)}
-              className={clsx(
-                'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
-                claudeConnected
-                  ? 'border-success-fill/40 bg-success-fill/10 text-success-onSurface'
-                  : 'border-neutral-fillLow text-neutral-mediumOnSurface hover:bg-neutral-surface2'
-              )}
+              data-agent-new
+              title="New chat"
+              disabled={isPlanning}
+              onClick={startNewChat}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 disabled:opacity-50"
             >
-              {claudeConnected ? 'Claude ✓' : 'Connect Claude'}
+              <KsIconPlus size={15} />
+            </button>
+            <button
+              type="button"
+              data-agent-refresh
+              title="Start over — reset the timeline and the chat"
+              disabled={isPlanning}
+              onClick={resetSession}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 disabled:opacity-50"
+            >
+              <KsIconRotate size={15} />
             </button>
           </div>
-          {showClaudeRow ? (
-            <div className="shrink-0 border-b border-solid border-neutral-fillLow px-3.5 pb-3">
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="password"
-                  value={claudeKeyDraft}
-                  placeholder="sk-ant-…"
-                  onChange={(event) => setClaudeKeyDraft(event.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface1 px-2 py-1.5 text-[12px] text-neutral-highOnSurface outline-none focus:border-primary-fill"
-                />
-                <button
-                  type="button"
-                  disabled={!claudeKeyDraft.trim()}
-                  onClick={() => {
-                    setClaudeKey(claudeKeyDraft.trim());
-                    setClaudeConnected(true);
-                    setClaudeKeyDraft('');
-                    setShowClaudeRow(false);
-                    setMessages((current) => [
-                      ...current,
-                      { id: nextMessageId(), role: 'note', text: 'Connected — prompts now run through your Claude account (claude-sonnet-5). Falls back to the local planner if the call fails.' }
-                    ]);
-                  }}
-                  className="rounded-lg bg-primary-fill px-2.5 py-1.5 text-[12px] font-semibold text-neutral-onFill disabled:opacity-50"
-                >
-                  Save
-                </button>
-                {claudeConnected ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClaudeKey(null);
-                      setClaudeConnected(false);
-                      setShowClaudeRow(false);
-                      setMessages((current) => [
-                        ...current,
-                        { id: nextMessageId(), role: 'note', text: 'Disconnected — back to the local planner.' }
-                      ]);
-                    }}
-                    className="rounded-lg px-2 py-1.5 text-[12px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
-                  >
-                    Disconnect
-                  </button>
-                ) : null}
-              </div>
-              <p className="mt-1.5 text-[10px] leading-[14px] text-neutral-lowOnSurface">
-                Your API key is stored only in this browser and sent straight to Anthropic — never to our servers or the repo.
-              </p>
-            </div>
-          ) : null}
           <AiEditorPanel
             isBusy={isPlanning}
             messages={messages}

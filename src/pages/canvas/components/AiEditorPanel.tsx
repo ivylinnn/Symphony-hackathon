@@ -531,21 +531,23 @@ function AiEditorPanel({
 
       {/* 输入区常驻底部 */}
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
-        {/* 五大核心用例 pill：随时可选，不依赖上一份计划 */}
-        <div data-use-cases className="mb-2 flex flex-wrap gap-1.5">
-          {USE_CASES.map((useCase) => (
-            <button
-              key={useCase.label}
-              type="button"
-              title={useCase.hint}
-              disabled={isBusy}
-              onClick={() => (useCase.action === 'draw' ? onStartDraw() : onSubmit(useCase.prompt ?? useCase.label))}
-              className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3 py-1 text-[11px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
-            >
-              {useCase.label}
-            </button>
-          ))}
-        </div>
+        {/* 五大核心用例 pill：问卷答完之后常驻可选 */}
+        {messages.some((message) => message.role === 'form' && message.submitted) ? (
+          <div data-use-cases className="mb-2 flex flex-wrap gap-1.5">
+            {USE_CASES.map((useCase) => (
+              <button
+                key={useCase.label}
+                type="button"
+                title={useCase.hint}
+                disabled={isBusy}
+                onClick={() => (useCase.action === 'draw' ? onStartDraw() : onSubmit(useCase.prompt ?? useCase.label))}
+                className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3 py-1 text-[11px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
+              >
+                {useCase.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',
