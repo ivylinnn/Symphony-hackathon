@@ -1,5 +1,6 @@
 import { KsIconArrowRight, KsIconChevronDown, KsIconPlus } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
+import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 
 import {
@@ -425,7 +426,8 @@ function MasonrySection({
           <div key={columnIndex} className="flex flex-col gap-3">
             {ratios.map((ratio, slotIndex) => {
               if (columnIndex === 0 && slotIndex === 0) {
-                return promo;
+                // promo 由父组件传入，本身不带 key；包一层 Fragment 补上列表项需要的 key
+                return <Fragment key="promo">{promo}</Fragment>;
               }
               cardIndex += 1;
               const card = cards[cardIndex];
