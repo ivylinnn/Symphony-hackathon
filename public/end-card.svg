@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+  <defs>
+    <linearGradient id="alley" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#3b3630"/>
+      <stop offset="0.35" stop-color="#241f1b"/>
+      <stop offset="1" stop-color="#0d0b0a"/>
+    </linearGradient>
+    <linearGradient id="skyGap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fa3b8"/>
+      <stop offset="1" stop-color="#2f3238"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1613"/>
+      <stop offset="1" stop-color="#2a2521"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.2" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#c9b48d" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#c9b48d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1080" height="1920" fill="url(#alley)"/>
+  <!-- 远处的天光缝隙 -->
+  <polygon points="120,0 300,0 250,980 150,980" fill="url(#skyGap)" opacity="0.5"/>
+  <!-- 右侧墙面与卷帘门 -->
+  <polygon points="1080,0 1080,1920 700,1500 760,120" fill="#141110" opacity="0.85"/>
+  <g opacity="0.18" stroke="#c8c2ba" stroke-width="3">
+    <path d="M810 520 L1060 470"/><path d="M812 590 L1062 542"/><path d="M814 660 L1064 614"/>
+    <path d="M816 730 L1066 686"/><path d="M818 800 L1068 758"/><path d="M820 870 L1070 830"/>
+  </g>
+  <!-- 地面 -->
+  <polygon points="0,1240 1080,1400 1080,1920 0,1920" fill="url(#ground)"/>
+  <rect width="1080" height="1920" fill="url(#glow)"/>
+
+  <!-- 品牌字标 -->
+  <text x="540" y="200" text-anchor="middle" fill="#f4efe7" font-family="Helvetica, Arial, sans-serif"
+        font-size="76" font-weight="600" letter-spacing="26">AURAK</text>
+
+  <!-- 主标题 -->
+  <text x="110" y="1300" fill="#f0e9de" font-family="Georgia, 'Times New Roman', serif" font-size="118">Crafted</text>
+  <text x="110" y="1420" fill="#f0e9de" font-family="Georgia, 'Times New Roman', serif" font-size="118">for Motion</text>
+  <rect x="112" y="1476" width="72" height="3" fill="#f0e9de"/>
+
+  <!-- 副文案 -->
+  <text x="112" y="1566" fill="#ded6ca" font-family="Helvetica, Arial, sans-serif" font-size="34"
+        letter-spacing="5">PREMIUM MATERIALS.</text>
+  <text x="112" y="1622" fill="#ded6ca" font-family="Helvetica, Arial, sans-serif" font-size="34"
+        letter-spacing="5">TIMELESS DESIGN.</text>
+
+  <!-- CTA -->
+  <rect x="330" y="1690" width="420" height="86" fill="none" stroke="#c9a86a" stroke-width="2"/>
+  <text x="500" y="1745" text-anchor="middle" fill="#e8cf9e" font-family="Helvetica, Arial, sans-serif"
+        font-size="32" letter-spacing="9">SHOP NOW</text>
+  <path d="M636 1733 L672 1733 M660 1721 L672 1733 L660 1745" stroke="#e8cf9e" stroke-width="2.5" fill="none"/>
+
+  <text x="540" y="1858" text-anchor="middle" fill="#cfc7bb" font-family="Helvetica, Arial, sans-serif"
+        font-size="26" letter-spacing="8">AURAK.COM</text>
+</svg>

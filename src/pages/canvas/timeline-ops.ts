@@ -205,6 +205,29 @@ export const activeCaptionClip = (tracks: TimelineTrack[], time: number): Timeli
 export const activeCaptionText = (tracks: TimelineTrack[], time: number): string | undefined =>
   activeCaptionClip(tracks, time)?.text;
 
+/**
+ * 播放头处命中的动态图形卖点，附带它在整条卖点序列里的序号，
+ * 好在画面上渲染 01/05 这样的计数和进度条。
+ */
+export const activeGraphicsCue = (
+  tracks: TimelineTrack[],
+  time: number
+): { clip: TimelineClip; index: number; total: number } | undefined => {
+  for (const track of tracks) {
+    if (track.kind !== 'graphics' || !track.visible) {
+      continue;
+    }
+    const ordered = [...track.clips].sort((a, b) => a.start - b.start);
+    const index = ordered.findIndex(
+      (clip) => time >= clip.start && time < clip.start + clip.duration && clip.text
+    );
+    if (index >= 0) {
+      return { clip: ordered[index], index, total: ordered.length };
+    }
+  }
+  return undefined;
+};
+
 /** 片段被拉长/压缩后的播放速率，= 消耗的素材长度 / 时间线上的长度。 */
 export const clipPlaybackRate = (clip: TimelineClip): number => {
   const sourceDuration = clip.sourceDuration ?? clip.duration;

@@ -77,7 +77,7 @@ export interface WireClip {
 
 export interface WireTrack {
   TrackId: string;
-  Kind: 'video' | 'transition' | 'audio' | 'caption';
+  Kind: 'video' | 'transition' | 'audio' | 'caption' | 'graphics';
   Clips: WireClip[];
 }
 
@@ -160,6 +160,34 @@ const CAPTION_COPY: Array<[RegExp, string]> = [
 ];
 const captionLine = (sceneLabel: string) =>
   CAPTION_COPY.find(([re]) => re.test(sceneLabel))?.[1] ?? `${sceneLabel} — on-screen line.`;
+
+/**
+ * 动态图形要打的产品卖点。真实端点会从 product brief / brand kit 里抽，
+ * demo 里用一组成衣卖点，配合角标和进度条构成一段轻量的图形包装。
+ */
+const SELLING_POINTS: Array<{ tag: string; headline: string }> = [
+  { tag: 'Lifestyle', headline: 'BREATHABLE FABRIC' },
+  { tag: 'Details', headline: 'FUNCTIONAL KANGAROO POCKET' },
+  { tag: 'Fit', headline: 'RELAXED COMFORTABLE FIT' },
+  { tag: 'Styling', headline: 'VERSATILE LAYERING' },
+  { tag: 'Movement', headline: 'BUILT FOR MOVEMENT' },
+];
+
+/** 把卖点均匀铺在整条片子上，每条留一点间隔，避免首尾贴边。 */
+const buildGraphicsClips = (total: number, count: number): WireClip[] => {
+  const slots = Math.max(1, Math.min(count, SELLING_POINTS.length));
+  const slotLength = total / slots;
+  // 每条卖点占本段的 70%，剩下的留白让画面喘口气
+  const hold = Math.max(0.8, slotLength * 0.7);
+  return SELLING_POINTS.slice(0, slots).map((point, index) => ({
+    ClipId: nextId('clip-graphic'),
+    Label: point.tag,
+    Start: index * slotLength + (slotLength - hold) / 2,
+    Duration: hold,
+    HasAudio: false,
+    Text: point.headline,
+  }));
+};
 
 /** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
 const surveyLine = (tracks: WireTrack[]) => {
@@ -303,7 +331,21 @@ export async function planTimelineEdit(args: {
     }
 
     if (wants('Light motion graphics')) {
-      thinking.push('Motion graphics have no timeline primitive yet — flagging rather than faking it.');
+      const graphicsClips = buildGraphicsClips(finalTotal, Math.max(3, scenes.length));
+      thinking.push(
+        `Pulling ${graphicsClips.length} selling points and spacing them across the ${finalTotal.toFixed(1)}s cut.`
+      );
+      operations.push({
+        Label: `Add motion graphics (${graphicsClips.length} selling points)`,
+        Type: 'add-track',
+        Track: {
+          TrackId: nextId('track-graphics'),
+          Kind: 'graphics',
+          Visible: true,
+          Muted: false,
+          Clips: graphicsClips,
+        },
+      });
     }
 
     const packagingText = packaging.length ? packaging.join(', ').toLowerCase() : 'no extra packaging';
@@ -311,7 +353,7 @@ export async function planTimelineEdit(args: {
     const summary = operations.length
       ? `First pass for ${platform ?? 'your platform'} — ${countText} at ${
           target > 0 ? `~${target}s` : 'current length'
-        } with ${packagingText}.${wants('Light motion graphics') ? ' Motion graphics aren’t wired yet, so I left those out.' : ''}`
+        } with ${packagingText}.`
       : `Noted: ${platform ?? 'your platform'}, ${countText}, ${packagingText}. Nothing to change on the timeline yet — tell me what to cut.`;
 
     return { Kind: 'plan', Thinking: thinking, Summary: summary, Operations: operations };
@@ -557,6 +599,33 @@ export async function planTimelineEdit(args: {
         ],
       };
     }
+  }
+
+  /* 4e) 动态图形卖点 */
+  if (has(prompt, 'motion graphic', 'selling point', 'product feature', 'graphics', '卖点', '动效')) {
+    const graphicsClips = buildGraphicsClips(Math.max(1, total), 4);
+    return {
+      Kind: 'plan',
+      Thinking: [
+        survey,
+        `Pulling ${graphicsClips.length} product selling points from the brief.`,
+        `Spacing them across the ${total.toFixed(1)}s cut so each gets a clear beat on screen.`,
+      ],
+      Summary: `Added motion graphics promoting ${graphicsClips.length} selling points — headline, rule and progress marker over the footage.`,
+      Operations: [
+        {
+          Label: `Add motion graphics (${graphicsClips.length} selling points)`,
+          Type: 'add-track',
+          Track: {
+            TrackId: nextId('track-graphics'),
+            Kind: 'graphics',
+            Visible: true,
+            Muted: false,
+            Clips: graphicsClips,
+          },
+        },
+      ],
+    };
   }
 
   /* 4) 字幕轨 */

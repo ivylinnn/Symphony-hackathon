@@ -1,6 +1,7 @@
 import {
   KsIconAiAssistant,
   KsIconChevronRight,
+  KsIconPlus,
   KsIconSend,
   KsIconUndo
 } from '@fe-infra/keystone-icons-react';
@@ -26,6 +27,8 @@ interface AiEditorPanelProps {
   skippedOpIds: Set<string>;
   diff: DiffCounts | null;
   onSubmit: (prompt: string) => void;
+  /** 从输入区上传素材，落进 My assets。 */
+  onUpload: (files: FileList) => void;
   onSubmitIntake: (messageId: string, answers: IntakeAnswers) => void;
   onAnswer: (messageId: string, option: string) => void;
   onToggleOp: (operationId: string) => void;
@@ -212,6 +215,7 @@ function AiEditorPanel({
   skippedOpIds,
   diff,
   onSubmit,
+  onUpload,
   onSubmitIntake,
   onAnswer,
   onToggleOp,
@@ -221,6 +225,7 @@ function AiEditorPanel({
 }: AiEditorPanelProps) {
   const [draft, setDraft] = useState('');
   const threadRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   /* 新消息进来时滚到底部 */
   useEffect(() => {
@@ -477,7 +482,30 @@ function AiEditorPanel({
             }}
             className="w-full resize-none bg-transparent text-[13px] leading-[18px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface disabled:cursor-wait"
           />
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              hidden
+              onChange={(event) => {
+                if (event.target.files?.length) {
+                  onUpload(event.target.files);
+                }
+                // 清空 value，选同一个文件两次也能触发 change
+                event.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              title="Upload an image or video into My assets"
+              onClick={() => fileRef.current?.click()}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              <KsIconPlus size={15} />
+            </button>
+            <span className="flex-1" />
             <button
               type="button"
               title="Send"

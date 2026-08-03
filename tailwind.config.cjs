@@ -43,6 +43,26 @@ module.exports = {
           fillLow: '#fbe9ea',
         },
       },
+      /* 动态图形卖点的入场动效：标题上浮淡入，下方细线横向展开。 */
+      keyframes: {
+        'graphic-in': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'rule-in': {
+          '0%': { transform: 'scaleX(0)' },
+          '100%': { transform: 'scaleX(1)' },
+        },
+        'hud-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '0.75' },
+        },
+      },
+      animation: {
+        'graphic-in': 'graphic-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'rule-in': 'rule-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'hud-in': 'hud-in 500ms ease-out both',
+      },
     },
   },
   plugins: [],

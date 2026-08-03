@@ -10,7 +10,7 @@ import type {
   VideoFormatRatio
 } from '../types';
 
-const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption'];
+const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption', 'graphics'];
 const FORMAT_RATIOS: VideoFormatRatio[] = ['9:16', '1:1', '16:9', '4:5'];
 
 /** 接口返回的原始操作，字段是平铺的可选值，需要收窄成 TimelineEditOp。 */

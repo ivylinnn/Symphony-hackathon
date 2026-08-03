@@ -21,6 +21,7 @@ import { planEdit } from '../services/timeline-ai';
 import {
   activeCaptionClip,
   activeCaptionText,
+  activeGraphicsCue,
   activeVideoClip,
   applyOperations,
   buildPreview,
@@ -85,7 +86,8 @@ const TRACK_TAG: Record<TimelineTrackKind, string> = {
   video: 'VID',
   transition: 'TRN',
   audio: 'MUS',
-  caption: 'TXT'
+  caption: 'TXT',
+  graphics: 'FX'
 };
 
 /** 轨道头第二行的可读名称。 */
@@ -93,7 +95,8 @@ const TRACK_NAME: Record<TimelineTrackKind, string> = {
   video: 'Video',
   transition: 'Transition',
   audio: 'Music',
-  caption: 'Captions'
+  caption: 'Captions',
+  graphics: 'Graphics'
 };
 
 interface DemoAsset {
@@ -109,7 +112,8 @@ const DEMO_ASSETS: DemoAsset[] = [
   { id: 'asset-garlic', name: 'garlic paste ad', kind: 'video', url: '/garlic-paste-ad.mp4' },
   { id: 'asset-front', name: 'hoodie — front', kind: 'image', url: '/hoodie-front.webp' },
   { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
-  { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' }
+  { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' },
+  { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' }
 ];
 
 /** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
@@ -117,7 +121,8 @@ const TRACK_TONE: Record<TimelineTrackKind, string> = {
   video: 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3',
   transition: 'border-primary-fill/40 bg-primary-surface3 hover:bg-primary-surface2',
   audio: 'border-success-fill/40 bg-success-fill/10 hover:bg-success-fill/20',
-  caption: 'border-neutral-fill/40 bg-neutral-surface3 hover:bg-neutral-surface2'
+  caption: 'border-neutral-fill/40 bg-neutral-surface3 hover:bg-neutral-surface2',
+  graphics: 'border-primary-onSurface/40 bg-primary-surface2 hover:bg-primary-surface3'
 };
 
 /** 预览态下片段的描边样式，全用虚线以便和「选中」的实线区分开。 */
@@ -186,7 +191,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 中栏素材面板的页签与搜索词。 */
   const [assetsTab, setAssetsTab] = useState<'assets' | 'library' | 'transcript'>('assets');
   const [assetSearch, setAssetSearch] = useState('');
+  /** 用户从输入区上传的素材，排在示例素材前面。 */
+  const [uploadedAssets, setUploadedAssets] = useState<DemoAsset[]>([]);
   const assetSeqRef = useRef(0);
+  const uploadSeqRef = useRef(0);
   const rulerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
@@ -419,6 +427,9 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 当前时间点应叠在画面上的字幕；用 previewTracks，待确认的字幕也能先看到。 */
   const captionText = useMemo(() => activeCaptionText(previewTracks, currentTime), [previewTracks, currentTime]);
 
+  /** 当前时间点的动态图形卖点，同样用 previewTracks 以便未应用时先看到。 */
+  const graphicsCue = useMemo(() => activeGraphicsCue(previewTracks, currentTime), [previewTracks, currentTime]);
+
   /*
    * 拿到真实时长后，用整条视频建一条视频轨；只建一次，后续编辑不再被覆盖。
    * 解码失败时也要建（用兜底时长），否则时间线会一直空着，编辑器直接不可用。
@@ -596,10 +607,39 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const allAssets = useMemo<DemoAsset[]>(
     () => [
       ...(videoUrl ? [{ id: 'asset-source', name: sourceLabel, kind: 'video' as const, url: videoUrl }] : []),
+      ...uploadedAssets,
       ...DEMO_ASSETS
     ],
-    [videoUrl, sourceLabel]
+    [videoUrl, sourceLabel, uploadedAssets]
   );
+
+  /** 从输入区上传：转成 object URL 进 My assets，并切到该页签让用户看到结果。 */
+  const uploadAssets = (files: FileList) => {
+    const added: DemoAsset[] = Array.from(files).map((file) => {
+      uploadSeqRef.current += 1;
+      return {
+        id: `asset-upload-${uploadSeqRef.current}`,
+        // 去掉扩展名，列表里更干净
+        name: file.name.replace(/\.[^.]+$/, ''),
+        kind: file.type.startsWith('video') ? ('video' as const) : ('image' as const),
+        url: URL.createObjectURL(file)
+      };
+    });
+    if (added.length === 0) {
+      return;
+    }
+    setUploadedAssets((current) => [...added, ...current]);
+    setAssetsTab('assets');
+    setAssetSearch('');
+    setMessages((current) => [
+      ...current,
+      {
+        id: nextMessageId(),
+        role: 'note',
+        text: `Added ${added.map((asset) => `“${asset.name}”`).join(', ')} to My assets.`
+      }
+    ]);
+  };
   const visibleAssets = allAssets.filter((asset) =>
     asset.name.toLowerCase().includes(assetSearch.trim().toLowerCase())
   );
@@ -752,6 +792,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             skippedOpIds={skippedOpIds}
             diff={diffCounts}
             onSubmit={runAgent}
+            onUpload={uploadAssets}
             onSubmitIntake={submitIntake}
             onAnswer={answerQuestion}
             onToggleOp={toggleOperation}
@@ -911,6 +952,40 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="size-full cursor-pointer object-contain"
                 />
+                {/* 动态图形卖点：大标题 + 展开细线 + 角标 + 进度条，跟着播放头切换 */}
+                {graphicsCue ? (
+                  <span data-graphics-overlay className="pointer-events-none absolute inset-0">
+                    <span className="absolute right-3 top-3 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
+                      #{graphicsCue.clip.label.split(' ')[0]}
+                    </span>
+                    <span className="absolute left-3 top-1/2 -translate-y-6 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
+                      {String(graphicsCue.index + 1).padStart(2, '0')}/{String(graphicsCue.total).padStart(2, '0')}
+                    </span>
+                    <span className="absolute right-3 top-1/2 -translate-y-6 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
+                      Details
+                    </span>
+
+                    {/* key 带 clip id，切换卖点时重新播放入场动效 */}
+                    <span key={graphicsCue.clip.id} className="absolute inset-x-4 top-1/2 block">
+                      <span className="block animate-graphic-in text-[26px] font-extrabold uppercase leading-[30px] tracking-tight text-neutral-onFill drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
+                        {graphicsCue.clip.text}
+                      </span>
+                      <span className="mt-2 block h-px w-10 origin-left animate-rule-in bg-neutral-onFill" />
+                    </span>
+
+                    <span className="absolute inset-x-0 bottom-3 flex justify-center gap-1">
+                      {Array.from({ length: graphicsCue.total }, (_, dot) => (
+                        <span
+                          key={dot}
+                          className={clsx(
+                            'h-px transition-all',
+                            dot === graphicsCue.index ? 'w-4 bg-neutral-onFill' : 'w-2 bg-neutral-onFill/40'
+                          )}
+                        />
+                      ))}
+                    </span>
+                  </span>
+                ) : null}
                 {/* 字幕叠层：跟着播放头换行；双击直接进入该条字幕的内联编辑 */}
                 {captionText ? (
                   <span
