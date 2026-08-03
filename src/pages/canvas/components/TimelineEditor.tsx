@@ -12,6 +12,7 @@ import {
   KsIconPlus,
   KsIconSearch,
   KsIconSend,
+  KsIconShare,
   KsIconTips,
   KsIconSound,
   KsIconSplit,
@@ -1000,8 +1001,22 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         </button>
         <button
           type="button"
+          title="Share"
+          className="flex size-8 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconShare size={15} />
+        </button>
+        <button
+          type="button"
+          title="Sync this cut to TikTok Ads Manager"
+          className="ml-1 rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface px-3.5 py-1.5 text-[12px] font-semibold text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          Sync to TTAM
+        </button>
+        <button
+          type="button"
           title="Export (demo)"
-          className="ml-1 rounded-lg bg-primary-fill px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
+          className="rounded-lg bg-primary-fill px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
         >
           Export
         </button>

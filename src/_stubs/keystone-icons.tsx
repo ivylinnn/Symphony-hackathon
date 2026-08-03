@@ -179,6 +179,14 @@ export const KsIconAiGeneration = base(
     <path d="M18 4l.6 1.6L20 6l-1.4.6L18 8l-.6-1.4L16 6l1.4-.4z" />
   </>
 );
+export const KsIconShare = base(
+  <>
+    <circle cx="18" cy="5.5" r="2.5" />
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="18.5" r="2.5" />
+    <path d="M8.2 10.8l7.6-4M8.2 13.2l7.6 4" />
+  </>
+);
 export const KsIconPen = base(
   <>
     <path d="M4 20l3.4-.8L19.2 7.4a1.9 1.9 0 0 0-2.6-2.6L4.8 16.6 4 20z" />
