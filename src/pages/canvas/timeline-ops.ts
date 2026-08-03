@@ -103,7 +103,8 @@ export const applyOperation = (
       );
 
     case 'set-format':
-      // 画幅不属于轨道数据，由编辑器状态在 apply 时承接；这里保持轨道不变
+    case 'region-edit':
+      // 画幅与圈选编辑不属于轨道数据，由编辑器状态在 apply 时承接；这里保持轨道不变
       return tracks;
 
     default:

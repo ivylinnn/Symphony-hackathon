@@ -103,7 +103,18 @@ export type TimelineEditOp =
   /** 改写字幕片段的文案（内联编辑与 AI 改稿共用）。 */
   | { type: 'set-text'; clipId: string; text: string }
   /** 智能扩画：改画幅不改轨道，由编辑器状态承接。 */
-  | { type: 'set-format'; ratio: VideoFormatRatio };
+  | { type: 'set-format'; ratio: VideoFormatRatio }
+  /** 圈选区域的局部改动（重上色等）；path 是 0-100 归一化坐标的 SVG 路径。 */
+  | { type: 'region-edit'; path: string; color: string };
+
+/** 已应用到画面上的圈选编辑。 */
+export interface RegionEdit {
+  id: string;
+  /** viewBox 0 0 100 100 下的闭合路径，跟随画幅缩放。 */
+  path: string;
+  color: string;
+  label: string;
+}
 
 export interface TimelineEditOperation {
   id: string;
@@ -161,6 +172,8 @@ export type AiEditorMessage =
       snapshot?: TimelineTrack[];
       /** 应用前的画幅，和 snapshot 一起回滚。 */
       snapshotFormat?: VideoFormatRatio;
+      /** 应用前的圈选编辑，同样随 snapshot 回滚。 */
+      snapshotRegions?: RegionEdit[];
       /** 展示用的版本号，从 1 开始。 */
       version?: number;
     }

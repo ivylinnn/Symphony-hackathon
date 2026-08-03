@@ -83,7 +83,7 @@ export interface WireTrack {
 
 export interface WireOperation {
   Label: string;
-  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-text' | 'set-format';
+  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-text' | 'set-format' | 'region-edit';
   ClipId?: string;
   TrackId?: string;
   Start?: number;
@@ -93,6 +93,8 @@ export interface WireOperation {
   Value?: boolean;
   Ratio?: string;
   Text?: string;
+  Path?: string;
+  Color?: string;
   Clip?: WireClip;
   Track?: WireTrack & { Visible?: boolean; Muted?: boolean };
 }
@@ -206,6 +208,22 @@ const buildGraphicsClips = (
   }));
 };
 
+/** 圈选重上色认识的颜色词；真实端点是任意 prompt 的生成式局部编辑。 */
+const REGION_COLORS: Array<{ names: string[]; label: string; hex: string }> = [
+  { names: ['blue', '蓝'], label: 'blue', hex: '#2f6bff' },
+  { names: ['red', '红'], label: 'red', hex: '#e5484d' },
+  { names: ['green', '绿'], label: 'green', hex: '#12a06a' },
+  { names: ['black', '黑'], label: 'black', hex: '#16181d' },
+  { names: ['white', '白'], label: 'white', hex: '#f2f3f5' },
+  { names: ['yellow', '黄'], label: 'yellow', hex: '#eab308' },
+  { names: ['orange', '橙'], label: 'orange', hex: '#f97316' },
+  { names: ['purple', '紫'], label: 'purple', hex: '#7c3aed' },
+  { names: ['pink', '粉'], label: 'pink', hex: '#ec4899' },
+  { names: ['gold', '金'], label: 'gold', hex: '#c9a86a' },
+];
+const matchRegionColor = (prompt: string) =>
+  REGION_COLORS.find((color) => color.names.some((name) => prompt.includes(name)));
+
 /** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
 const surveyLine = (tracks: WireTrack[]) => {
   const clips = allClips(tracks).length;
@@ -235,6 +253,8 @@ export async function planTimelineEdit(args: {
     /** 用户在「Light motion graphics」下写的卖点文案。 */
     graphicsBrief?: string;
   };
+  /** 用户在画面上圈出的区域，路径是 0-100 归一化坐标。 */
+  region?: { Path: string };
 }): Promise<WireAgentReply> {
   await delay(900);
 
@@ -245,6 +265,41 @@ export async function planTimelineEdit(args: {
   const total = endOf(tracks);
   const survey = surveyLine(tracks);
   const durationMatch = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)/);
+
+  /* -1) 圈选局部编辑：优先级最高，用户明确指着画面某处 */
+  if (args.region?.Path) {
+    const color = matchRegionColor(prompt);
+    if (!color) {
+      return {
+        Kind: 'question',
+        Thinking: [
+          survey,
+          'A region is circled on the frame, but the instruction does not name a change I can stage here.',
+          'The demo pipeline supports recolors — the production model takes any edit.',
+        ],
+        Question: 'What should happen to the circled area?',
+        Options: ['turn it blue', 'turn it red', 'turn it black'],
+      };
+    }
+    return {
+      Kind: 'plan',
+      Thinking: [
+        survey,
+        'A region is circled on the frame — treating this as a localized edit.',
+        `The instruction reads as a recolor → ${color.label}.`,
+        'Masking to the drawn path and carrying the change across the cut.',
+      ],
+      Summary: `Recolored the circled area ${color.label} — masked to your drawing, applied across the cut.`,
+      Operations: [
+        {
+          Label: `Recolor circled area → ${color.label}`,
+          Type: 'region-edit',
+          Path: args.region.Path,
+          Color: color.hex,
+        },
+      ],
+    };
+  }
 
   /* 0) 开场问卷：一次性把时长、字幕、音乐、标题条组合成首刀 */
   if (args.intake) {

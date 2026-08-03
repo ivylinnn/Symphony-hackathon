@@ -7,7 +7,9 @@ import {
   KsIconDelete,
   KsIconDownload,
   KsIconFolder,
+  KsIconPen,
   KsIconSearch,
+  KsIconSend,
   KsIconSound,
   KsIconUpload,
   KsIconZoomIn,
@@ -35,6 +37,7 @@ import type {
   AiEditorMessage,
   ClipDiffStatus,
   IntakeAnswers,
+  RegionEdit,
   TimelineTrack,
   TimelineTrackKind,
   VideoFormatRatio
@@ -193,6 +196,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [assetSearch, setAssetSearch] = useState('');
   /** 左侧工具栏当前停留的条目，默认是编辑 agent。 */
   const [activeTool, setActiveTool] = useState<EditorTool>('agent');
+  /* 圈选编辑：pen 模式下在画面上画一个闭合区域，配一句指令交给 agent。 */
+  const [isPenMode, setIsPenMode] = useState(false);
+  const [penPoints, setPenPoints] = useState<Array<[number, number]> | null>(null);
+  const [drawnPath, setDrawnPath] = useState<string | null>(null);
+  const [regionPrompt, setRegionPrompt] = useState('');
+  /** 已应用的圈选编辑，渲染成画面上的调色蒙版。 */
+  const [regionEdits, setRegionEdits] = useState<RegionEdit[]>([]);
+  const regionSeqRef = useRef(0);
   /** 用户从输入区上传的素材，排在示例素材前面。 */
   const [uploadedAssets, setUploadedAssets] = useState<DemoAsset[]>([]);
   const assetSeqRef = useRef(0);
@@ -264,7 +275,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
    * 跑一轮 agent：先落用户消息和思考占位，拿到回复后逐条揭示推理，
    * 最后落地成一个澄清问题或一份待确认的计划。
    */
-  const runAgent = async (prompt: string, intake?: IntakeAnswers) => {
+  const runAgent = async (prompt: string, intake?: IntakeAnswers, region?: { path: string }) => {
     // 两个 id 都先算好，别在 setState 更新函数里取，那会被 StrictMode 重复调用
     const userId = nextMessageId();
     const thinkingId = nextMessageId();
@@ -277,7 +288,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setPendingPlanId(null);
 
     try {
-      const reply = await planEdit(prompt, tracks, currentTime, intake);
+      const reply = await planEdit(prompt, tracks, currentTime, intake, region);
       patchMessage(thinkingId, { steps: reply.thinking, revealed: 0 });
       // 逐条揭示，让处理过程可见而不是一次性糊上来
       for (let step = 1; step <= reply.thinking.length; step += 1) {
@@ -351,7 +362,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setMessages((current) =>
       current.map((message) => (message.id === messageId ? { ...message, answer: option } : message))
     );
-    void runAgent(origin && origin.role === 'user' ? `${origin.text} ${option}` : option);
+    void runAgent(
+      origin && origin.role === 'user' ? `${origin.text} ${option}` : option,
+      undefined,
+      drawnPath ? { path: drawnPath } : undefined
+    );
   };
 
   const toggleOperation = (operationId: string) => {
@@ -372,16 +387,33 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     }
     const snapshot = tracks;
     const snapshotFormat = format;
+    const snapshotRegions = regionEdits;
     versionSeqRef.current += 1;
     const version = versionSeqRef.current;
     setTracks(applyOperations(tracks, acceptedOperations));
     if (pendingFormat) {
       setFormat(pendingFormat);
     }
+    const regionOps = acceptedOperations.filter(
+      (operation) => operation.op.type === 'region-edit'
+    );
+    if (regionOps.length > 0) {
+      setRegionEdits((current) => [
+        ...current,
+        ...regionOps.map((operation) => {
+          regionSeqRef.current += 1;
+          const op = operation.op as Extract<typeof operation.op, { type: 'region-edit' }>;
+          return { id: `region-${regionSeqRef.current}`, path: op.path, color: op.color, label: operation.label };
+        })
+      ]);
+    }
+    // 这轮圈选已经落地，清掉画面上的虚线
+    setDrawnPath(null);
+    setIsPenMode(false);
     setMessages((current) =>
       current.map((message) =>
         message.id === pendingPlanId && message.role === 'plan'
-          ? { ...message, status: 'applied', snapshot, snapshotFormat, version }
+          ? { ...message, status: 'applied', snapshot, snapshotFormat, snapshotRegions, version }
           : message
       )
     );
@@ -390,6 +422,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   };
 
   const discardPlan = () => {
+    setDrawnPath(null);
     setMessages((current) =>
       current.map((message) =>
         message.id === pendingPlanId && message.role === 'plan' ? { ...message, status: 'discarded' } : message
@@ -407,6 +440,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     }
     setTracks(message.snapshot);
     setFormat(message.snapshotFormat ?? '9:16');
+    setRegionEdits(message.snapshotRegions ?? []);
     setSelectedClipId(null);
     setPendingPlanId(null);
     setMessages((current) => [
@@ -548,6 +582,67 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       video.muted = active.track.muted;
     }
   }, [active]);
+
+  /** 圈选路径：0-100 归一化坐标，随画幅缩放。 */
+  const penPathFrom = (points: Array<[number, number]>) =>
+    points.length ? `M ${points.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z` : '';
+
+  const penPoint = (event: React.PointerEvent<SVGSVGElement>): [number, number] => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return [
+      Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)),
+      Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100))
+    ];
+  };
+
+  const startPenStroke = (event: React.PointerEvent<SVGSVGElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrawnPath(null);
+    setPenPoints([penPoint(event)]);
+  };
+
+  const movePenStroke = (event: React.PointerEvent<SVGSVGElement>) => {
+    const point = penPoint(event);
+    setPenPoints((current) => {
+      if (!current) {
+        return current;
+      }
+      const [lastX, lastY] = current[current.length - 1];
+      // 采样间隔 >1.2 个单位，避免路径点爆炸
+      return Math.hypot(point[0] - lastX, point[1] - lastY) < 1.2 ? current : [...current, point];
+    });
+  };
+
+  const endPenStroke = () => {
+    setPenPoints((current) => {
+      if (current && current.length >= 3) {
+        setDrawnPath(penPathFrom(current));
+      }
+      return null;
+    });
+  };
+
+  /** 圈选 + 指令交给 agent，走同一个会话与计划评审。 */
+  const submitRegionPrompt = () => {
+    const text = regionPrompt.trim();
+    if (!text || !drawnPath || isPlanning) {
+      return;
+    }
+    setRegionPrompt('');
+    setActiveTool('agent');
+    void runAgent(`Edit the circled area: ${text}`, undefined, { path: drawnPath });
+  };
+
+  /** 画面上要渲染的圈选蒙版：已应用的 + 待确认计划里的（虚线描边）。 */
+  const previewRegions = useMemo(() => {
+    const pending = acceptedOperations
+      .filter((operation) => operation.op.type === 'region-edit')
+      .map((operation, index) => {
+        const op = operation.op as Extract<typeof operation.op, { type: 'region-edit' }>;
+        return { id: `pending-region-${index}`, path: op.path, color: op.color, label: operation.label, pending: true };
+      });
+    return [...regionEdits.map((region) => ({ ...region, pending: false })), ...pending];
+  }, [regionEdits, acceptedOperations]);
 
   /** 统一的跳转入口：播放头和预览视频一起挪到对应的素材位置。 */
   const seekTo = (seconds: number) => {
@@ -961,9 +1056,79 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
             {/* 右：预览 Viewer */}
             <section className="flex min-w-0 flex-1 flex-col">
-              <div className="shrink-0 px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
-                Viewer
+              <div className="flex shrink-0 items-center gap-2 px-4 pt-3">
+                <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+                  Viewer
+                </span>
+                {videoUrl ? (
+                  <button
+                    type="button"
+                    data-pen-toggle
+                    title={isPenMode ? 'Exit draw mode' : 'Draw an area, then describe the change'}
+                    onClick={() =>
+                      setIsPenMode((on) => {
+                        if (on) {
+                          setPenPoints(null);
+                          setDrawnPath(null);
+                          setRegionPrompt('');
+                        }
+                        return !on;
+                      })
+                    }
+                    className={clsx(
+                      'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors',
+                      isPenMode
+                        ? 'bg-primary-fill text-neutral-onFill'
+                        : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2'
+                    )}
+                  >
+                    <KsIconPen size={13} />
+                    Draw to edit
+                  </button>
+                ) : null}
               </div>
+              {isPenMode ? (
+                <div className="shrink-0 px-4 pt-2">
+                  {drawnPath ? (
+                    <div className="flex items-center gap-1.5 rounded-xl border border-solid border-primary-fill/40 bg-neutral-surface p-1.5">
+                      <input
+                        data-region-prompt
+                        autoFocus
+                        value={regionPrompt}
+                        placeholder="Describe the change — “update to blue”…"
+                        onChange={(event) => setRegionPrompt(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            submitRegionPrompt();
+                          } else if (event.key === 'Escape') {
+                            setDrawnPath(null);
+                            setRegionPrompt('');
+                          }
+                        }}
+                        className="min-w-0 flex-1 bg-transparent px-1 text-[12px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
+                      />
+                      <button
+                        type="button"
+                        title="Send"
+                        disabled={!regionPrompt.trim() || isPlanning}
+                        onClick={submitRegionPrompt}
+                        className={clsx(
+                          'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
+                          regionPrompt.trim() && !isPlanning
+                            ? 'bg-primary-fill text-neutral-onFill'
+                            : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+                        )}
+                      >
+                        <KsIconSend size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-neutral-lowOnSurface">
+                      Draw around the part you want to change — e.g. circle the shoes.
+                    </p>
+                  )}
+                </div>
+              ) : null}
           <div className="relative flex min-h-0 flex-1 items-center justify-center p-6">
 
             {/* 来源节点带视频就直接放它，点画面或用下方走带都能播放/暂停；否则退回占位块 */}
@@ -991,6 +1156,48 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="size-full cursor-pointer object-contain"
                 />
+                {/* 圈选调色蒙版：mix-blend color 只换色相，画面细节保留 */}
+                {previewRegions.map((region) => (
+                  <svg
+                    key={region.id}
+                    data-region-overlay={region.pending ? 'pending' : 'applied'}
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    className="pointer-events-none absolute inset-0 size-full"
+                    style={{ mixBlendMode: 'color' }}
+                  >
+                    <path d={region.path} fill={region.color} fillOpacity={0.85} />
+                  </svg>
+                ))}
+                {previewRegions
+                  .filter((region) => region.pending)
+                  .map((region) => (
+                    <svg
+                      key={`${region.id}-outline`}
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      className="pointer-events-none absolute inset-0 size-full"
+                    >
+                      <path d={region.path} fill="none" stroke={region.color} strokeWidth={0.6} strokeDasharray="2.4 1.6" />
+                    </svg>
+                  ))}
+                {/* 正在画/画好待指令的轨迹 */}
+                {penPoints || drawnPath ? (
+                  <svg
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    className="pointer-events-none absolute inset-0 size-full"
+                  >
+                    <path
+                      d={penPoints ? penPathFrom(penPoints) : drawnPath ?? ''}
+                      fill="#2f6bff"
+                      fillOpacity={0.12}
+                      stroke="#ffffff"
+                      strokeWidth={0.55}
+                      strokeDasharray="2 1.4"
+                    />
+                  </svg>
+                ) : null}
                 {/* 动态图形卖点：大标题 + 展开细线 + 角标 + 进度条，跟着播放头切换 */}
                 {graphicsCue ? (
                   <span data-graphics-overlay className="pointer-events-none absolute inset-0">
@@ -1053,6 +1260,20 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   <span className="pointer-events-none absolute flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh/60 pl-1 text-[20px] text-neutral-onFill">
                     ▶
                   </span>
+                ) : null}
+                {/* pen 模式的捕获层，接管一切指针事件 */}
+                {isPenMode ? (
+                  <svg
+                    data-pen-layer
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    className="absolute inset-0 size-full cursor-crosshair touch-none"
+                    onPointerDown={startPenStroke}
+                    onPointerMove={movePenStroke}
+                    onPointerUp={endPenStroke}
+                  >
+                    <rect width="100" height="100" fill="transparent" style={{ pointerEvents: 'all' }} />
+                  </svg>
                 ) : null}
               </div>
             ) : posterUrl ? (

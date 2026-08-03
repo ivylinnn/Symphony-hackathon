@@ -26,6 +26,8 @@ interface WireOperation {
   Value?: boolean;
   Ratio?: string;
   Text?: string;
+  Path?: string;
+  Color?: string;
   Clip?: WireClip;
   Track?: WireTrack;
 }
@@ -117,6 +119,11 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
       return ratio ? { type: 'set-format', ratio } : undefined;
     }
 
+    case 'region-edit':
+      return typeof wire.Path === 'string' && wire.Path && typeof wire.Color === 'string' && wire.Color
+        ? { type: 'region-edit', path: wire.Path, color: wire.Color }
+        : undefined;
+
     default:
       return undefined;
   }
@@ -136,12 +143,15 @@ export const planEdit = async (
   tracks: TimelineTrack[],
   playhead: number,
   /** 开场问卷答案；有值时后端直接给一份复合首刀计划。 */
-  intake?: Record<string, string | string[]>
+  intake?: Record<string, string | string[]>,
+  /** 用户在画面上圈出的区域（归一化路径）；有值时按局部编辑处理。 */
+  region?: { path: string }
 ): Promise<AgentReply> => {
   const resp = await planTimelineEdit({
     prompt,
     playhead,
     ...(intake ? { intake } : {}),
+    ...(region ? { region: { Path: region.path } } : {}),
     tracks: tracks.map((track) => ({
       TrackId: track.id,
       Kind: track.kind,
