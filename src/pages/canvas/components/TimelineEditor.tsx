@@ -13,10 +13,13 @@ import {
   KsIconUndo
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { INITIAL_TIMELINE_TRACKS } from '../const';
-import type { TimelineTrack } from '../types';
+import { planEdit } from '../services/timeline-ai';
+import { applyOperations, buildPreview, summarizePreview, timelineDuration } from '../timeline-ops';
+import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack } from '../types';
+import TimelineAgentBar from './TimelineAgentBar';
 
 interface TimelineEditorProps {
   /** 编辑对象的名称，展示在 Source 区。 */
@@ -26,8 +29,17 @@ interface TimelineEditorProps {
 
 /** 时间轴每秒占用的像素，缩放滑杆会在此基础上乘系数。 */
 const BASE_PX_PER_SECOND = 104;
-const RULER_SECONDS = 9;
+/** 标尺至少画这么多秒，内容更长时按内容延展。 */
+const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
+
+/** 预览态下片段的描边样式，全用虚线以便和「选中」的实线区分开。 */
+const DIFF_CLASS: Record<ClipDiffStatus, string> = {
+  added: 'border-dashed border-success-fill bg-success-fill/10',
+  removed: 'border-dashed border-error-fill bg-error-fillLow opacity-60',
+  changed: 'border-dashed border-primary-fill bg-primary-surface3',
+  unchanged: ''
+};
 
 /** 把秒格式化成 00:00.00。 */
 const formatTime = (seconds: number) => {
@@ -118,11 +130,84 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
   const [activeTool, setActiveTool] = useState<'select' | 'text' | 'media'>('select');
   const rulerRef = useRef<HTMLDivElement>(null);
 
-  const pxPerSecond = BASE_PX_PER_SECOND * zoom;
-  const duration = Math.max(
-    ...tracks.flatMap((track) => track.clips.map((clip) => clip.start + clip.duration)),
-    1
+  /* AI 编辑：计划待确认时只做预览，应用后把上一版存进 undoSnapshot。 */
+  const [plan, setPlan] = useState<TimelineEditPlan | null>(null);
+  const [skippedOpIds, setSkippedOpIds] = useState<Set<string>>(new Set());
+  const [isPlanning, setIsPlanning] = useState(false);
+  const [undoSnapshot, setUndoSnapshot] = useState<TimelineTrack[] | null>(null);
+
+  /** 勾选中的操作，取消勾选的不参与预览也不会被应用。 */
+  const acceptedOperations = useMemo(
+    () => (plan ? plan.operations.filter((operation) => !skippedOpIds.has(operation.id)) : []),
+    [plan, skippedOpIds]
   );
+
+  /** 计划待确认时，时间线画的是应用后的样子。 */
+  const previewTracks = useMemo(
+    () => (acceptedOperations.length > 0 ? applyOperations(tracks, acceptedOperations) : tracks),
+    [tracks, acceptedOperations]
+  );
+
+  const trackPreviews = useMemo(
+    () => buildPreview(tracks, previewTracks),
+    [tracks, previewTracks]
+  );
+
+  const diffCounts = useMemo(
+    () => (plan ? summarizePreview(trackPreviews) : null),
+    [plan, trackPreviews]
+  );
+
+  const pxPerSecond = BASE_PX_PER_SECOND * zoom;
+  const duration = Math.max(timelineDuration(previewTracks), 1);
+  const rulerSeconds = Math.max(MIN_RULER_SECONDS, Math.ceil(duration));
+
+  const requestPlan = async (prompt: string) => {
+    setIsPlanning(true);
+    try {
+      const next = await planEdit(prompt, tracks, currentTime);
+      setPlan(next);
+      setSkippedOpIds(new Set());
+    } finally {
+      setIsPlanning(false);
+    }
+  };
+
+  const toggleOperation = (operationId: string) => {
+    setSkippedOpIds((current) => {
+      const next = new Set(current);
+      if (next.has(operationId)) {
+        next.delete(operationId);
+      } else {
+        next.add(operationId);
+      }
+      return next;
+    });
+  };
+
+  const applyPlan = () => {
+    if (acceptedOperations.length === 0) {
+      return;
+    }
+    setUndoSnapshot(tracks);
+    setTracks(applyOperations(tracks, acceptedOperations));
+    setPlan(null);
+    setSkippedOpIds(new Set());
+  };
+
+  const discardPlan = () => {
+    setPlan(null);
+    setSkippedOpIds(new Set());
+  };
+
+  const undoAiEdit = () => {
+    if (!undoSnapshot) {
+      return;
+    }
+    setTracks(undoSnapshot);
+    setUndoSnapshot(null);
+    setSelectedClipId(null);
+  };
 
   /* 播放时推进播放头，到片尾自动停。 */
   useEffect(() => {
@@ -223,6 +308,19 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
             <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
               <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
             </div>
+
+            <TimelineAgentBar
+              isBusy={isPlanning}
+              plan={plan}
+              skippedOpIds={skippedOpIds}
+              diff={diffCounts}
+              canUndo={Boolean(undoSnapshot)}
+              onSubmit={requestPlan}
+              onToggleOp={toggleOperation}
+              onApply={applyPlan}
+              onDiscard={discardPlan}
+              onUndo={undoAiEdit}
+            />
           </div>
 
           {/* 时间线区 */}
@@ -283,12 +381,23 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
               {/* 轨道头 */}
               <div className="w-[112px] shrink-0 border-r border-solid border-neutral-fillLow">
                 <div className="h-7 border-b border-solid border-neutral-fillLow" />
-                {tracks.map((track, index) => (
+                {trackPreviews.map(({ track, isNewTrack }, index) => (
                   <div
                     key={track.id}
-                    className="flex h-[72px] items-center gap-1.5 border-b border-solid border-neutral-fillLow px-2"
+                    className={clsx(
+                      'flex h-[72px] items-center gap-1.5 border-b border-solid border-neutral-fillLow px-2',
+                      isNewTrack && 'bg-success-fill/5'
+                    )}
                   >
-                    <span className="w-4 text-[11px] tabular-nums text-neutral-lowOnSurface">{index + 1}</span>
+                    <span
+                      className={clsx(
+                        'w-4 text-[11px] tabular-nums',
+                        isNewTrack ? 'text-success-onSurface' : 'text-neutral-lowOnSurface'
+                      )}
+                      title={isNewTrack ? 'New track from the pending AI edit' : undefined}
+                    >
+                      {isNewTrack ? '+' : index + 1}
+                    </span>
                     <button
                       type="button"
                       title={track.visible ? 'Hide track' : 'Show track'}
@@ -317,41 +426,50 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
 
               {/* 标尺 + 轨道 */}
               <div className="relative min-w-0 flex-1 overflow-x-auto">
-                <div style={{ width: RULER_SECONDS * pxPerSecond }}>
+                <div style={{ width: rulerSeconds * pxPerSecond }}>
                   <div
                     ref={rulerRef}
                     className="relative h-7 cursor-pointer border-b border-solid border-neutral-fillLow"
                     onPointerDown={(event) => seekFromPointer(event.clientX)}
                   >
-                    {Array.from({ length: RULER_SECONDS }, (_, second) => (
+                    {Array.from({ length: rulerSeconds }, (_, second) => (
                       <span
                         key={second}
                         className="absolute top-1.5 text-[10px] tabular-nums text-neutral-lowOnSurface"
                         style={{ left: second * pxPerSecond + 4 }}
                       >
-                        00:0{second}
+                        {`00:${String(second).padStart(2, '0')}`}
                       </span>
                     ))}
                   </div>
 
-                  {tracks.map((track) => (
+                  {trackPreviews.map(({ track, clips }) => (
                     <div key={track.id} className="relative h-[72px] border-b border-solid border-neutral-fillLow">
-                      {track.clips.map((clip) => (
+                      {clips.map(({ clip, status }) => (
                         <button
-                          key={clip.id}
+                          key={`${clip.id}-${status}`}
                           type="button"
-                          title={clip.label}
+                          title={status === 'removed' ? `${clip.label} — will be removed` : clip.label}
+                          // 幽灵块只是预览，不参与选中
+                          disabled={status === 'removed'}
                           onClick={() => setSelectedClipId(clip.id)}
                           className={clsx(
                             'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-md border text-left transition-colors',
-                            selectedClipId === clip.id
+                            status === 'unchanged' && selectedClipId === clip.id
                               ? 'border-primary-fill bg-primary-surface2'
-                              : 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3',
+                              : status === 'unchanged'
+                                ? 'border-neutral-fillLow bg-neutral-surface2 hover:bg-neutral-surface3'
+                                : DIFF_CLASS[status],
                             !track.visible && 'opacity-40'
                           )}
                           style={{ left: clip.start * pxPerSecond, width: Math.max(24, clip.duration * pxPerSecond) }}
                         >
-                          <span className="truncate px-1.5 pt-1 text-[10px] font-medium text-neutral-highOnSurface">
+                          <span
+                            className={clsx(
+                              'truncate px-1.5 pt-1 text-[10px] font-medium text-neutral-highOnSurface',
+                              status === 'removed' && 'line-through'
+                            )}
+                          >
                             {clip.label}
                           </span>
                           {clip.hasAudio ? (

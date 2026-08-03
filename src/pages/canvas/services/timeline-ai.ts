@@ -1,0 +1,146 @@
+import { planTimelineEdit } from '@/api';
+
+import type {
+  TimelineClip,
+  TimelineEditOp,
+  TimelineEditOperation,
+  TimelineEditPlan,
+  TimelineTrack
+} from '../types';
+
+/** 接口返回的原始操作，字段是平铺的可选值，需要收窄成 TimelineEditOp。 */
+interface WireOperation {
+  Label?: string;
+  Type?: string;
+  ClipId?: string;
+  TrackId?: string;
+  Start?: number;
+  Duration?: number;
+  At?: number;
+  Flag?: string;
+  Value?: boolean;
+  Clip?: WireClip;
+  Track?: WireTrack;
+}
+
+interface WireClip {
+  ClipId?: string;
+  Label?: string;
+  Start?: number;
+  Duration?: number;
+  HasAudio?: boolean;
+}
+
+interface WireTrack {
+  TrackId?: string;
+  Kind?: string;
+  Visible?: boolean;
+  Muted?: boolean;
+  Clips?: WireClip[];
+}
+
+let planSeq = 0;
+
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const toClip = (wire: WireClip | undefined): TimelineClip | undefined => {
+  if (!wire?.ClipId || !isNumber(wire.Start) || !isNumber(wire.Duration)) {
+    return undefined;
+  }
+  return {
+    id: wire.ClipId,
+    label: wire.Label ?? 'Untitled clip',
+    start: Math.max(0, wire.Start),
+    duration: Math.max(0.05, wire.Duration),
+    hasAudio: Boolean(wire.HasAudio)
+  };
+};
+
+const toTrack = (wire: WireTrack | undefined): TimelineTrack | undefined => {
+  if (!wire?.TrackId) {
+    return undefined;
+  }
+  return {
+    id: wire.TrackId,
+    kind: wire.Kind === 'audio' ? 'audio' : 'video',
+    visible: wire.Visible ?? true,
+    muted: wire.Muted ?? false,
+    clips: (wire.Clips ?? []).map(toClip).filter((clip): clip is TimelineClip => Boolean(clip))
+  };
+};
+
+/** 把一条平铺的 wire 操作收窄成带判别式的 TimelineEditOp；字段不全就丢弃。 */
+const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
+  switch (wire.Type) {
+    case 'set-timing':
+      return wire.ClipId && isNumber(wire.Start) && isNumber(wire.Duration)
+        ? { type: 'set-timing', clipId: wire.ClipId, start: wire.Start, duration: wire.Duration }
+        : undefined;
+
+    case 'split':
+      return wire.ClipId && isNumber(wire.At) ? { type: 'split', clipId: wire.ClipId, at: wire.At } : undefined;
+
+    case 'delete':
+      return wire.ClipId ? { type: 'delete', clipId: wire.ClipId } : undefined;
+
+    case 'add-clip': {
+      const clip = toClip(wire.Clip);
+      return wire.TrackId && clip ? { type: 'add-clip', trackId: wire.TrackId, clip } : undefined;
+    }
+
+    case 'add-track': {
+      const track = toTrack(wire.Track);
+      return track ? { type: 'add-track', track } : undefined;
+    }
+
+    case 'set-track-flag':
+      return wire.TrackId && (wire.Flag === 'visible' || wire.Flag === 'muted') && typeof wire.Value === 'boolean'
+        ? { type: 'set-track-flag', trackId: wire.TrackId, flag: wire.Flag, value: wire.Value }
+        : undefined;
+
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * 让模型基于当前时间线和一句自然语言指令给出一份编辑计划。
+ * 计划只是「提议」，调用方负责预览和逐条应用 —— 这里不改任何状态。
+ */
+export const planEdit = async (
+  prompt: string,
+  tracks: TimelineTrack[],
+  playhead: number
+): Promise<TimelineEditPlan> => {
+  const resp = await planTimelineEdit({
+    prompt,
+    playhead,
+    tracks: tracks.map((track) => ({
+      TrackId: track.id,
+      Kind: track.kind,
+      Clips: track.clips.map((clip) => ({
+        ClipId: clip.id,
+        Label: clip.label,
+        Start: clip.start,
+        Duration: clip.duration,
+        HasAudio: clip.hasAudio
+      }))
+    }))
+  });
+
+  planSeq += 1;
+
+  const operations: TimelineEditOperation[] = (resp?.Operations ?? [])
+    .map((wire: WireOperation, index: number) => {
+      const op = toOp(wire);
+      return op ? { id: `plan-${planSeq}-op-${index}`, label: wire.Label ?? 'Edit', op } : undefined;
+    })
+    .filter((operation): operation is TimelineEditOperation => Boolean(operation));
+
+  return {
+    id: `plan-${planSeq}`,
+    prompt,
+    summary: resp?.Summary ?? 'No summary returned.',
+    operations
+  };
+};

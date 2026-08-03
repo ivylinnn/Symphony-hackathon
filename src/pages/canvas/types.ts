@@ -67,6 +67,51 @@ export interface TimelineTrack {
   clips: TimelineClip[];
 }
 
+/**
+ * AI 编辑计划里的一步原子操作。
+ * 每一步都能单独应用/跳过，所以必须是自包含的、不依赖前一步结果的描述。
+ */
+export type TimelineEditOp =
+  /** 重设片段的起点与时长，剪短、挪位、变速都走这一个。 */
+  | { type: 'set-timing'; clipId: string; start: number; duration: number }
+  /** 在绝对时间 at 处切开片段，后半段 id 加 `-b` 后缀。 */
+  | { type: 'split'; clipId: string; at: number }
+  | { type: 'delete'; clipId: string }
+  | { type: 'add-clip'; trackId: string; clip: TimelineClip }
+  | { type: 'add-track'; track: TimelineTrack }
+  | { type: 'set-track-flag'; trackId: string; flag: 'visible' | 'muted'; value: boolean };
+
+export interface TimelineEditOperation {
+  id: string;
+  /** 一句话说明这步做什么，展示在 plan 列表里。 */
+  label: string;
+  op: TimelineEditOp;
+}
+
+/** Agent 针对一句 prompt 提出的整套改动，应用前先在时间线上做 diff 预览。 */
+export interface TimelineEditPlan {
+  id: string;
+  prompt: string;
+  /** Agent 的一句话总结。 */
+  summary: string;
+  operations: TimelineEditOperation[];
+}
+
+/** 预览时每个片段相对原时间线的状态，决定轨道上画什么描边。 */
+export type ClipDiffStatus = 'added' | 'removed' | 'changed' | 'unchanged';
+
+export interface ClipPreview {
+  clip: TimelineClip;
+  status: ClipDiffStatus;
+}
+
+/** 一条轨道的预览：应用后的片段，外加按原位置回填的待删除片段。 */
+export interface TrackPreview {
+  track: TimelineTrack;
+  isNewTrack: boolean;
+  clips: ClipPreview[];
+}
+
 /** 节点生成状态，驱动卡片上的状态条展示。 */
 export type CanvasNodeStatus = 'idle' | 'generating' | 'done';
 
