@@ -55,8 +55,22 @@ function DiffPill({ counts }: { counts: DiffCounts }) {
   return <span className="text-[11px] tabular-nums text-neutral-mediumOnSurface">{parts.join(' · ')}</span>;
 }
 
+/** 还没有计划时占住上半区，说明这个面板是干什么的。 */
+function EmptyState() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+      <span className="flex size-9 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+        <KsIconAiAssistant size={18} />
+      </span>
+      <p className="text-[12px] leading-[17px] text-neutral-mediumOnSurface">
+        Describe an edit and I’ll draft a plan you can review before it touches the timeline.
+      </p>
+    </div>
+  );
+}
+
 /**
- * 时间线上的 AI 编辑入口，交互参考 Flora：
+ * 右侧栏的 AI 编辑面板，交互参考 Flora：
  * 输入一句话 → Agent 给出一份可预览的编辑计划 → 逐条勾选后应用 → 可整体撤销。
  * 计划应用前只做预览，不改时间线状态。
  */
@@ -86,34 +100,31 @@ function TimelineAgentBar({
   const acceptedCount = plan ? plan.operations.filter((op) => !skippedOpIds.has(op.id)).length : 0;
 
   return (
-    <div
-      data-timeline-agent
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[460px] max-w-[calc(100%-32px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)]"
-    >
-      {/* 计划评审态 */}
-      {plan ? (
-        <div className="border-b border-solid border-neutral-fillLow">
-          <div className="flex items-start gap-2 px-3 pt-3">
-            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
-              <KsIconAiAssistant size={13} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[12px] leading-[17px] text-neutral-highOnSurface">{plan.summary}</p>
-              <p className="mt-0.5 truncate text-[11px] text-neutral-lowOnSurface">“{plan.prompt}”</p>
+    <div data-timeline-agent className="flex min-h-0 flex-1 flex-col">
+      {/* 上半区：无计划时是空状态，有计划时是逐条评审 */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {plan ? (
+          <>
+            <div className="flex items-start gap-2 px-3 pt-3">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+                <KsIconAiAssistant size={13} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] leading-[17px] text-neutral-highOnSurface">{plan.summary}</p>
+                <p className="mt-0.5 truncate text-[11px] text-neutral-lowOnSurface">“{plan.prompt}”</p>
+              </div>
+              <button
+                type="button"
+                title="Discard plan"
+                onClick={onDiscard}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-neutral-lowOnSurface transition-colors hover:bg-neutral-surface2"
+              >
+                <KsIconClose size={12} />
+              </button>
             </div>
-            <button
-              type="button"
-              title="Discard plan"
-              onClick={onDiscard}
-              className="flex size-6 shrink-0 items-center justify-center rounded-md text-neutral-lowOnSurface transition-colors hover:bg-neutral-surface2"
-            >
-              <KsIconClose size={12} />
-            </button>
-          </div>
 
-          {plan.operations.length > 0 ? (
-            <>
-              <ul className="mt-2 max-h-[168px] overflow-y-auto px-3">
+            {plan.operations.length > 0 ? (
+              <ul className="mt-2 px-3">
                 {plan.operations.map((operation) => {
                   const skipped = skippedOpIds.has(operation.id);
                   return (
@@ -143,48 +154,59 @@ function TimelineAgentBar({
                   );
                 })}
               </ul>
-
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                {diff ? <DiffPill counts={diff} /> : null}
-                <span className="flex-1" />
+            ) : (
+              <div className="px-3 pb-3 pt-2">
                 <button
                   type="button"
                   onClick={onDiscard}
-                  className="rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+                  className="rounded-lg bg-neutral-surface2 px-2.5 py-1.5 text-[12px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface3"
                 >
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  disabled={acceptedCount === 0}
-                  onClick={onApply}
-                  className={clsx(
-                    'rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors',
-                    acceptedCount > 0
-                      ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
-                      : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
-                  )}
-                >
-                  Apply {acceptedCount > 0 ? `${acceptedCount} edit${acceptedCount > 1 ? 's' : ''}` : ''}
+                  Dismiss
                 </button>
               </div>
-            </>
-          ) : (
-            <div className="px-3 pb-3 pt-2">
-              <button
-                type="button"
-                onClick={onDiscard}
-                className="rounded-lg bg-neutral-surface2 px-2.5 py-1.5 text-[12px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface3"
-              >
-                Dismiss
-              </button>
+            )}
+          </>
+        ) : (
+          <EmptyState />
+        )}
+      </div>
+
+      {/* 计划的确认条，贴在输入框上方 */}
+      {plan && plan.operations.length > 0 ? (
+        <div className="shrink-0 border-t border-solid border-neutral-fillLow px-3 py-2.5">
+          {/* 侧栏只有 280px，摘要单独占一行，按钮才不会被挤到换行 */}
+          {diff ? (
+            <div className="mb-2">
+              <DiffPill counts={diff} />
             </div>
-          )}
+          ) : null}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="flex-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              disabled={acceptedCount === 0}
+              onClick={onApply}
+              className={clsx(
+                'flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                acceptedCount > 0
+                  ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
+                  : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+              )}
+            >
+              Apply {acceptedCount > 0 ? `${acceptedCount} edit${acceptedCount > 1 ? 's' : ''}` : ''}
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {/* 输入态 */}
-      <div className="p-2.5">
+      {/* 输入区常驻底部 */}
+      <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
         {!plan && !isBusy ? (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {SUGGESTIONS.map((suggestion) => (
@@ -209,7 +231,7 @@ function TimelineAgentBar({
         >
           <textarea
             value={draft}
-            rows={2}
+            rows={3}
             disabled={isBusy}
             placeholder={
               isBusy ? 'Reading the timeline and drafting edits…' : 'Describe the edit — “trim to 15s”, “add captions”…'

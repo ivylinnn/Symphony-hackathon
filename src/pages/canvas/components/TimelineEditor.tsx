@@ -6,11 +6,7 @@ import {
   KsIconDelete,
   KsIconDownload,
   KsIconFolder,
-  KsIconFullScreen,
-  KsIconRedo,
-  KsIconSound,
-  KsIconTextFile,
-  KsIconUndo
+  KsIconSound
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -78,45 +74,6 @@ function ToolButton({
   );
 }
 
-/** 右侧属性面板的分组标题。 */
-function InspectorSection({
-  children,
-  title,
-  collapsible
-}: {
-  children?: React.ReactNode;
-  title: string;
-  collapsible?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(!collapsible);
-  return (
-    <div className="border-b border-solid border-neutral-fillLow">
-      <button
-        type="button"
-        title={title}
-        onClick={() => setIsOpen((open) => !open)}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-[12px] font-semibold text-neutral-highOnSurface"
-      >
-        {title}
-        <span className="text-neutral-lowOnSurface">{isOpen ? '−' : '+'}</span>
-      </button>
-      {isOpen && children ? <div className="px-3 pb-3">{children}</div> : null}
-    </div>
-  );
-}
-
-function NumberField({ label, value }: { label: string; value: string }) {
-  return (
-    <label className="flex flex-1 items-center gap-2 rounded-lg bg-neutral-surface1 px-2 py-1.5">
-      <span className="text-[11px] text-neutral-lowOnSurface">{label}</span>
-      <input
-        defaultValue={value}
-        className="w-full bg-transparent text-right text-[12px] tabular-nums text-neutral-highOnSurface outline-none"
-      />
-    </label>
-  );
-}
-
 /**
  * 全屏时间线编辑器，参考 Flora 的 Timeline Editor。
  * 上方预览、下方多轨时间线、右侧属性面板。
@@ -127,7 +84,6 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [activeTool, setActiveTool] = useState<'select' | 'text' | 'media'>('select');
   const rulerRef = useRef<HTMLDivElement>(null);
 
   /* AI 编辑：计划待确认时只做预览，应用后把上一版存进 undoSnapshot。 */
@@ -308,19 +264,6 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
             <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
               <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
             </div>
-
-            <TimelineAgentBar
-              isBusy={isPlanning}
-              plan={plan}
-              skippedOpIds={skippedOpIds}
-              diff={diffCounts}
-              canUndo={Boolean(undoSnapshot)}
-              onSubmit={requestPlan}
-              onToggleOp={toggleOperation}
-              onApply={applyPlan}
-              onDiscard={discardPlan}
-              onUndo={undoAiEdit}
-            />
           </div>
 
           {/* 时间线区 */}
@@ -501,68 +444,29 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
           </div>
         </div>
 
-        {/* 右侧属性面板 */}
-        <aside className="flex w-[280px] shrink-0 flex-col overflow-y-auto border-l border-solid border-neutral-fillLow bg-neutral-surface">
-          <div className="flex items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-2.5">
-            <span className="flex-1 text-[12px] font-semibold text-neutral-highOnSurface">Timeline Editor</span>
+        {/* 右侧 AI 编辑面板 */}
+        <aside className="flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-solid border-neutral-fillLow bg-neutral-surface">
+          <div className="flex shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-2.5">
+            <span className="flex-1 truncate text-[12px] font-semibold text-neutral-highOnSurface">
+              Timeline Editor
+            </span>
+            <span className="shrink-0 text-[11px] tabular-nums text-neutral-lowOnSurface">
+              {formatTime(duration)}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1 border-b border-solid border-neutral-fillLow px-2 py-1.5">
-            <ToolButton
-              title="Select tool"
-              isActive={activeTool === 'select'}
-              onClick={() => setActiveTool('select')}
-            >
-              ▷
-            </ToolButton>
-            <ToolButton title="Text tool" isActive={activeTool === 'text'} onClick={() => setActiveTool('text')}>
-              <KsIconTextFile size={15} />
-            </ToolButton>
-            <ToolButton title="Media tool" isActive={activeTool === 'media'} onClick={() => setActiveTool('media')}>
-              <KsIconFolder size={15} />
-            </ToolButton>
-            <span className="mx-1 h-4 w-px bg-neutral-fillLow" />
-            <ToolButton title="Undo">
-              <KsIconUndo size={15} />
-            </ToolButton>
-            <ToolButton title="Redo">
-              <KsIconRedo size={15} />
-            </ToolButton>
-            <span className="flex-1" />
-            <ToolButton title="Fit to view">
-              <KsIconFullScreen size={15} />
-            </ToolButton>
-          </div>
-
-          <InspectorSection title="Source">
-            <div className="text-[12px] text-neutral-highOnSurface">{sourceLabel}</div>
-            <div className="mt-1 text-[11px] tabular-nums text-neutral-lowOnSurface">{formatTime(duration)}</div>
-          </InspectorSection>
-
-          <InspectorSection title="Layout">
-            <div className="flex gap-2">
-              <NumberField label="W" value="1080" />
-              <NumberField label="H" value="1920" />
-            </div>
-            <div className="mt-2 flex gap-2">
-              <NumberField label="X" value="0" />
-              <NumberField label="Y" value="0" />
-            </div>
-            <div className="mt-2 flex gap-2">
-              <NumberField label="Rotation" value="0°" />
-            </div>
-          </InspectorSection>
-
-          <InspectorSection title="Fill">
-            <label className="flex items-center gap-2">
-              <span className="text-[11px] text-neutral-lowOnSurface">Opacity</span>
-              <input type="range" min={0} max={100} defaultValue={100} className="flex-1 accent-primary-fill" />
-            </label>
-          </InspectorSection>
-
-          <InspectorSection title="Crop" collapsible />
-          <InspectorSection title="Video" collapsible />
-          <InspectorSection title="Audio" collapsible />
+          <TimelineAgentBar
+            isBusy={isPlanning}
+            plan={plan}
+            skippedOpIds={skippedOpIds}
+            diff={diffCounts}
+            canUndo={Boolean(undoSnapshot)}
+            onSubmit={requestPlan}
+            onToggleOp={toggleOperation}
+            onApply={applyPlan}
+            onDiscard={discardPlan}
+            onUndo={undoAiEdit}
+          />
         </aside>
       </div>
     </div>
