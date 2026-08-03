@@ -1,5 +1,7 @@
 import {
   KsIconAiAssistant,
+  KsIconAiGeneration,
+  KsIconChevronDown,
   KsIconChevronRight,
   KsIconPlus,
   KsIconSend,
@@ -8,7 +10,7 @@ import {
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
-import type { AiEditorMessage, IntakeAnswers, IntakeField } from '../types';
+import type { AiEditorMessage, IntakeAnswers, IntakeField, ThinkingStep } from '../types';
 
 export interface DiffCounts {
   added: number;
@@ -24,7 +26,6 @@ interface AiEditorPanelProps {
   messages: AiEditorMessage[];
   /** 当前正在预览的计划消息 id，只有它显示应用/放弃按钮。 */
   pendingPlanId: string | null;
-  skippedOpIds: Set<string>;
   onSubmit: (prompt: string) => void;
   /** 时间线上选中的元素；有值时 composer 显示 @pill，指令定向到它。 */
   selectedClip: { id: string; label: string } | null;
@@ -33,7 +34,6 @@ interface AiEditorPanelProps {
   onUpload: (files: FileList) => void;
   onSubmitIntake: (messageId: string, answers: IntakeAnswers) => void;
   onAnswer: (messageId: string, option: string) => void;
-  onToggleOp: (operationId: string) => void;
   onApply: () => void;
   onDiscard: () => void;
   onRestore: (messageId: string) => void;
@@ -82,8 +82,52 @@ function IntakeForm({
 
   const isComplete = fields.every((field) => !field.required || draft[field.id]);
 
+  const [isExpanded, setIsExpanded] = useState(!submitted);
+
+  /* 答完就收起来，会话里只留一行摘要 */
+  useEffect(() => {
+    if (submitted) {
+      setIsExpanded(false);
+    }
+  }, [submitted]);
+
+  if (submitted && !isExpanded) {
+    const chosen = fields
+      .flatMap((field) => {
+        const value = draft[field.id];
+        if (Array.isArray(value)) {
+          return value;
+        }
+        return typeof value === 'string' && value ? [value] : [];
+      })
+      .slice(0, 4);
+    return (
+      <button
+        type="button"
+        data-intake-form="collapsed"
+        onClick={() => setIsExpanded(true)}
+        className="flex w-full items-center gap-2 rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 px-3 py-2 text-left transition-colors hover:bg-neutral-surface2"
+      >
+        <span className="min-w-0 flex-1 truncate text-[12px] text-neutral-mediumOnSurface">
+          Brief · {chosen.join(' · ') || 'answered'}
+        </span>
+        <KsIconChevronDown size={13} className="shrink-0 text-neutral-lowOnSurface" />
+      </button>
+    );
+  }
+
   return (
     <div data-intake-form className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-3">
+      {submitted ? (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(false)}
+          className="mb-2 flex w-full items-center justify-between text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface"
+        >
+          Brief
+          <KsIconChevronDown size={13} className="rotate-180" />
+        </button>
+      ) : null}
       {fields.map((field) => (
         <div key={field.id} className="mb-3 last:mb-0">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-mediumOnSurface">
@@ -162,7 +206,7 @@ function IntakeForm({
   );
 }
 
-function ThinkingBlock({ steps, revealed }: { steps: string[]; revealed: number }) {
+function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: number }) {
   // steps 还没回来时 revealed/length 都是 0，不能算「思考完」，否则请求期间会显示 "Thought for 0 steps"
   const isDone = steps.length > 0 && revealed >= steps.length;
   const [isOpen, setIsOpen] = useState(true);
@@ -174,29 +218,69 @@ function ThinkingBlock({ steps, revealed }: { steps: string[]; revealed: number 
     }
   }, [isDone]);
 
+  const shown = steps.slice(0, revealed);
+  // 进行中时标题就是当前这一步，读起来像 agent 在自述进度
+  const activeIndex = shown.length - 1;
+  const headline = isDone
+    ? `Thought for ${steps.length} step${steps.length > 1 ? 's' : ''}`
+    : shown[activeIndex]?.title
+      ? `${shown[activeIndex].title}…`
+      : 'Thinking…';
+
   return (
-    <div className="rounded-xl bg-neutral-surface1 px-2.5 py-2">
+    <div data-thinking-block>
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
-        className="flex w-full items-center gap-1.5 text-left text-[11px] font-medium text-neutral-mediumOnSurface"
+        className="flex w-full items-center gap-2 text-left"
       >
-        {isDone ? (
-          <KsIconChevronRight size={11} className={clsx('transition-transform', isOpen && 'rotate-90')} />
-        ) : (
-          <span className="size-1.5 animate-pulse rounded-full bg-primary-fill" />
-        )}
-        {isDone ? `Thought for ${steps.length} step${steps.length > 1 ? 's' : ''}` : 'Thinking…'}
+        <span className="shrink-0 text-primary-fill">
+          <KsIconAiGeneration size={17} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-highOnSurface">
+          {headline}
+        </span>
+        <span className="shrink-0 text-neutral-lowOnSurface">
+          {isOpen ? <KsIconChevronDown size={14} className="rotate-180" /> : <KsIconChevronDown size={14} />}
+        </span>
       </button>
-      {isOpen ? (
-        <ul className="mt-1.5 flex flex-col gap-1">
-          {steps.slice(0, revealed).map((step, index) => (
-            <li key={step} className="flex gap-1.5 text-[11px] leading-[16px] text-neutral-lowOnSurface">
-              <span className="tabular-nums text-neutral-fill">{index + 1}.</span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ul>
+
+      {isOpen && shown.length > 0 ? (
+        <div className="mt-2.5 flex flex-col">
+          {shown.map((step, index) => {
+            const isActive = !isDone && index === activeIndex;
+            return (
+              <div key={`${step.title ?? 'step'}-${index}`} className="relative py-1.5 pl-4">
+                {/* 竖轨贯穿整条轨迹，正在进行的那一段用主色标出来 */}
+                <span
+                  className={clsx(
+                    'absolute inset-y-0 left-0 w-0.5',
+                    isActive ? 'bg-primary-fill' : 'bg-neutral-fillLow'
+                  )}
+                />
+                {step.title ? (
+                  <p
+                    className={clsx(
+                      'text-[13px] leading-[18px]',
+                      isActive ? 'font-semibold text-neutral-highOnSurface' : 'font-medium text-neutral-highOnSurface'
+                    )}
+                  >
+                    {step.title}
+                  </p>
+                ) : null}
+                <p
+                  className={clsx(
+                    'text-[13px] leading-[20px] text-neutral-mediumOnSurface',
+                    step.title && 'mt-1'
+                  )}
+                >
+                  {step.body}
+                  {isActive ? <span className="ml-0.5 animate-pulse font-normal">|</span> : null}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       ) : null}
     </div>
   );
@@ -211,14 +295,12 @@ function AiEditorPanel({
   isBusy,
   messages,
   pendingPlanId,
-  skippedOpIds,
   onSubmit,
   selectedClip,
   onClearSelection,
   onUpload,
   onSubmitIntake,
   onAnswer,
-  onToggleOp,
   onApply,
   onDiscard,
   onRestore
@@ -248,9 +330,7 @@ function AiEditorPanel({
     (message): message is Extract<AiEditorMessage, { role: 'plan' }> =>
       message.role === 'plan' && message.id === pendingPlanId
   );
-  const acceptedCount = pending
-    ? pending.plan.operations.filter((op) => !skippedOpIds.has(op.id)).length
-    : 0;
+  const acceptedCount = pending?.plan.operations.length ?? 0;
 
   return (
     <div data-ai-editor className="flex min-h-0 flex-1 flex-col">
@@ -271,7 +351,7 @@ function AiEditorPanel({
           if (message.role === 'user') {
             return (
               <div key={message.id} className="flex justify-end">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary-surface2 px-3 py-2 text-[12px] leading-[17px] text-neutral-highOnSurface">
+                <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] bg-primary-surface2 px-4 py-2.5 text-[13px] leading-[19px] text-neutral-highOnSurface">
                   {message.text}
                 </div>
               </div>
@@ -301,7 +381,7 @@ function AiEditorPanel({
                 <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
                   <KsIconAiAssistant size={13} />
                 </span>
-                <p className="min-w-0 flex-1 text-[12px] leading-[17px] text-neutral-highOnSurface">{message.text}</p>
+                <p className="min-w-0 flex-1 text-[13px] leading-[20px] text-neutral-highOnSurface">{message.text}</p>
               </div>
             );
           }
@@ -321,8 +401,8 @@ function AiEditorPanel({
                   <KsIconAiAssistant size={13} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] leading-[17px] text-neutral-highOnSurface">{message.text}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <p className="text-[13px] leading-[20px] text-neutral-highOnSurface">{message.text}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
                     {message.options.map((option) => (
                       <button
                         key={option}
@@ -352,53 +432,16 @@ function AiEditorPanel({
 
           // plan
           const isPending = message.id === pendingPlanId;
+          // 只有最后一条计划显示建议，避免整条会话堆满过期的 pill
+          const isLastPlan =
+            messages.filter((item) => item.role === 'plan').slice(-1)[0]?.id === message.id;
           return (
             <div key={message.id} className="flex items-start gap-2">
               <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
                 <KsIconAiAssistant size={13} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[12px] leading-[17px] text-neutral-highOnSurface">{message.plan.summary}</p>
-
-                {message.plan.operations.length > 0 ? (
-                  <ul
-                    className={clsx(
-                      'mt-1.5 rounded-xl border border-solid border-neutral-fillLow p-1',
-                      !isPending && 'opacity-70'
-                    )}
-                  >
-                    {message.plan.operations.map((operation) => {
-                      const skipped = isPending && skippedOpIds.has(operation.id);
-                      return (
-                        <li key={operation.id}>
-                          <label
-                            className={clsx(
-                              'flex items-start gap-2 rounded-lg px-1.5 py-1',
-                              isPending && 'cursor-pointer hover:bg-neutral-surface1',
-                              skipped && 'opacity-45'
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!skipped}
-                              disabled={!isPending}
-                              onChange={() => onToggleOp(operation.id)}
-                              className="mt-0.5 size-3.5 shrink-0 accent-primary-fill"
-                            />
-                            <span
-                              className={clsx(
-                                'text-[11px] leading-[16px] text-neutral-highOnSurface',
-                                skipped && 'line-through'
-                              )}
-                            >
-                              {operation.label}
-                            </span>
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
+                <p className="text-[13px] leading-[20px] text-neutral-highOnSurface">{message.plan.summary}</p>
 
                 {/* 待确认时，应用/放弃就跟在这份计划下面，不再单独占一条固定操作条 */}
                 {isPending && message.plan.operations.length > 0 ? (
@@ -445,6 +488,23 @@ function AiEditorPanel({
 
                 {message.status === 'discarded' ? (
                   <span className="mt-1.5 inline-block text-[11px] text-neutral-lowOnSurface">Discarded</span>
+                ) : null}
+
+                {/* 下一步建议：点一下就当成新指令发出去 */}
+                {isLastPlan && !isPending && message.suggestions?.length ? (
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    {message.suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onSubmit(suggestion)}
+                        className="rounded-full bg-neutral-surface px-3.5 py-1.5 text-[12px] text-neutral-highOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:bg-neutral-surface2 disabled:opacity-50"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                 ) : null}
               </div>
             </div>

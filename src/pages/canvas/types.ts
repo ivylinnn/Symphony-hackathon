@@ -165,13 +165,19 @@ export interface IntakeField {
   };
 }
 
+/** 思考轨迹的一步：可选小标题 + 正文，标题缺省时只渲染正文段落。 */
+export interface ThinkingStep {
+  title?: string;
+  body: string;
+}
+
 /** 问卷答案：单选/文本存字符串，多选存数组。 */
 export type IntakeAnswers = Record<string, string | string[]>;
 
 export type AiEditorMessage =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'form'; fields: IntakeField[]; answers: IntakeAnswers; submitted: boolean }
-  | { id: string; role: 'thinking'; steps: string[]; revealed: number }
+  | { id: string; role: 'thinking'; steps: ThinkingStep[]; revealed: number }
   | { id: string; role: 'answer'; text: string }
   | { id: string; role: 'question'; text: string; options: string[]; answer?: string }
   | {
@@ -187,6 +193,8 @@ export type AiEditorMessage =
       snapshotRegions?: RegionEdit[];
       /** 展示用的版本号，从 1 开始。 */
       version?: number;
+      /** 这一步之后的建议动作，渲染成 pill。 */
+      suggestions?: string[];
     }
   | { id: string; role: 'note'; text: string };
 

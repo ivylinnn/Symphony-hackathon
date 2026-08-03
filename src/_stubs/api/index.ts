@@ -104,9 +104,12 @@ export interface WireOperation {
  * The agent either proposes a plan or stops to ask one clarifying question.
  * `Thinking` is the reasoning trace the panel reveals while it works.
  */
+/** 思考轨迹的一步：给了 Title 就渲染成小标题 + 正文，否则只是一段话。 */
+export type WireThinkingStep = string | { Title: string; Body: string };
+
 export interface WireAgentReply {
   Kind: 'plan' | 'question';
-  Thinking: string[];
+  Thinking: WireThinkingStep[];
   Summary?: string;
   Operations?: WireOperation[];
   Question?: string;
@@ -115,6 +118,8 @@ export interface WireAgentReply {
    * so answering genuinely resolves the request instead of replaying a canned branch.
    */
   Options?: string[];
+  /** 这一步之后值得做的几件事，面板渲染成 pill，点了就当成新指令。 */
+  Suggestions?: string[];
 }
 
 let opSeq = 0;
@@ -271,13 +276,35 @@ const renderRegionPatch = (prompt: string, ramp: [string, string, string]) => {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
 
-/** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
-const surveyLine = (tracks: WireTrack[]) => {
+/**
+ * 下一步建议：优先补时间线上还没有的东西，再给几条通用动作，
+ * 并避开刚刚做过的那件事，免得建议看起来像复读。
+ */
+const suggestNext = (tracks: WireTrack[], prompt: string): string[] => {
+  const filled = (kind: WireTrack['Kind']) => tracks.some((t) => t.Kind === kind && t.Clips.length > 0);
+  const pool = [
+    ...(filled('caption') ? [] : ['Add captions']),
+    ...(filled('audio') ? [] : ['Lay in a music bed']),
+    ...(filled('graphics') ? [] : ['Add motion graphics']),
+    'Make the hook punchier',
+    'Trim to 15 seconds',
+    'Uncrop to 1:1',
+    'Add an AI voiceover',
+  ];
+  const words = prompt.toLowerCase();
+  return pool.filter((item) => !words.includes(item.toLowerCase().split(' ').slice(-1)[0])).slice(0, 3);
+};
+
+/** 读一遍时间线，作为思考轨迹的第一步，让它引用真实结构而不是套话。 */
+const surveyLine = (tracks: WireTrack[]): WireThinkingStep => {
   const clips = allClips(tracks).length;
   const kinds = tracks.map((t) => t.Kind);
-  return `Reading the timeline — ${tracks.length} track${tracks.length > 1 ? 's' : ''} (${kinds.join(', ')}), ${clips} clip${
-    clips > 1 ? 's' : ''
-  }, ${endOf(tracks).toFixed(1)}s total.`;
+  return {
+    Title: 'Reading the timeline',
+    Body: `${tracks.length} track${tracks.length > 1 ? 's' : ''} (${kinds.join(', ')}), ${clips} clip${
+      clips > 1 ? 's' : ''
+    }, ${endOf(tracks).toFixed(1)}s total.`,
+  };
 };
 
 /**
@@ -287,6 +314,28 @@ const surveyLine = (tracks: WireTrack[]) => {
  * request/response shape.
  */
 export async function planTimelineEdit(args: {
+  prompt: string;
+  playhead: number;
+  tracks: WireTrack[];
+  intake?: {
+    source?: string;
+    clipCount?: string;
+    targetLength?: string;
+    packaging?: string[];
+    graphicsBrief?: string;
+  };
+  region?: { Path: string };
+  target?: { ClipId: string; Label: string; Kind: WireTrack['Kind'] };
+}): Promise<WireAgentReply> {
+  const reply = await planTimelineEditInner(args);
+  // 计划类回复统一补上「下一步」建议，省得每个分支各写一遍
+  if (reply.Kind === 'plan' && !reply.Suggestions) {
+    reply.Suggestions = suggestNext(args.tracks ?? [], args.prompt ?? '');
+  }
+  return reply;
+}
+
+async function planTimelineEditInner(args: {
   prompt: string;
   playhead: number;
   tracks: WireTrack[];
@@ -323,11 +372,20 @@ export async function planTimelineEdit(args: {
       Kind: 'plan',
       Thinking: [
         survey,
-        'A region is circled on the frame — masking to that path and regenerating inside it.',
-        `Reading the instruction as “${instruction || prompt}” → ${ramp.label} palette.`,
-        recolor
-          ? 'Compositing on hue only, so the original shading and texture survive.'
-          : 'Replacing the masked content outright with the generated fill.',
+        {
+          Title: 'Masking the drawn region',
+          Body: 'A region is circled on the frame, so the edit is confined to that path — everything outside it is left untouched.',
+        },
+        {
+          Title: 'Interpreting the instruction',
+          Body: `Reading “${instruction || prompt}” as the target look, which resolves to a ${ramp.label} palette for the generated fill.`,
+        },
+        {
+          Title: recolor ? 'Compositing on hue' : 'Replacing the masked content',
+          Body: recolor
+            ? 'This reads as a recolor, so only the hue is replaced — the original shading, texture and highlights survive underneath.'
+            : 'This asks for different content rather than a different colour, so the generated fill replaces what was inside the mask.',
+        },
       ],
       Summary: `Regenerated the circled area as “${instruction || prompt}” — masked to your drawing and carried across the cut.`,
       Operations: [
@@ -429,11 +487,14 @@ export async function planTimelineEdit(args: {
     const finalTotal = target > 0 ? target : total;
     const wants = (item: string) => packaging.includes(item);
 
-    const thinking = [survey];
+    const thinking: WireThinkingStep[] = [survey];
     const operations: WireOperation[] = [];
 
     if (target > 0 && Math.abs(factor - 1) > 0.01) {
-      thinking.push(`Target is ${target}s per clip against ${total.toFixed(1)}s — retiming ${factor.toFixed(2)}×.`);
+      thinking.push({
+        Title: 'Fitting the target length',
+        Body: `Target is ${target}s per clip against ${total.toFixed(1)}s of material, so every clip is retimed ${factor.toFixed(2)}× rather than chopping the tail.`,
+      });
       operations.push(
         ...allClips(tracks).map<WireOperation>((c) => ({
           Label: `Fit "${c.Label}" to ${(c.Duration * factor).toFixed(2)}s`,
@@ -444,7 +505,10 @@ export async function planTimelineEdit(args: {
         }))
       );
     } else if (target > 0) {
-      thinking.push(`Already ${total.toFixed(1)}s, which matches the ${target}s target — no retime needed.`);
+      thinking.push({
+        Title: 'Checking the length',
+        Body: `Already ${total.toFixed(1)}s, which matches the ${target}s target — no retime needed.`,
+      });
     }
 
     // 分镜按 retime 后的时间算，字幕/标题才能对上
@@ -455,7 +519,10 @@ export async function planTimelineEdit(args: {
     }));
 
     if (wants('Captions') && scenes.length > 0) {
-      thinking.push(`Writing ${scenes.length} caption cue${scenes.length > 1 ? 's' : ''}, one per scene.`);
+      thinking.push({
+        Title: 'Writing the captions',
+        Body: `One cue per scene, ${scenes.length} in total, timed against the retimed layout so the lines stay on their shots.`,
+      });
       operations.push({
         Label: `Add captions (${scenes.length} cues)`,
         Type: 'add-track',
@@ -478,7 +545,10 @@ export async function planTimelineEdit(args: {
 
     if (wants('Title text overlay')) {
       const titleLength = Math.min(2.5, finalTotal);
-      thinking.push(`Adding a ${titleLength.toFixed(1)}s title card over the opening.`);
+      thinking.push({
+        Title: 'Adding the title card',
+        Body: `A ${titleLength.toFixed(1)}s card over the opening, sized to clear the hook before the first cut.`,
+      });
       operations.push({
         Label: `Add title overlay (${titleLength.toFixed(1)}s)`,
         Type: 'add-track',
@@ -531,11 +601,13 @@ export async function planTimelineEdit(args: {
         written.length > 0 ? written.length : Math.max(3, scenes.length),
         written
       );
-      thinking.push(
-        written.length > 0
-          ? `Using the ${written.length} selling point${written.length > 1 ? 's' : ''} you wrote, spaced across the ${finalTotal.toFixed(1)}s cut.`
-          : `No copy given for the graphics, so pulling ${graphicsClips.length} selling points from the product brief.`
-      );
+      thinking.push({
+        Title: 'Building the motion graphics',
+        Body:
+          written.length > 0
+            ? `Using the ${written.length} selling point${written.length > 1 ? 's' : ''} you wrote, spaced across the ${finalTotal.toFixed(1)}s cut so each gets a clear beat.`
+            : `No copy was given, so pulling ${graphicsClips.length} selling points from the product brief and spacing them across the cut.`,
+      });
       operations.push({
         Label: `Add motion graphics (${graphicsClips.length} selling points)`,
         Type: 'add-track',

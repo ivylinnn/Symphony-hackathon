@@ -6,6 +6,7 @@ import type {
   TimelineEditOperation,
   TimelineEditPlan,
   TimelineTrack,
+  ThinkingStep,
   TimelineTrackKind,
   VideoFormatRatio
 } from '../types';
@@ -138,8 +139,22 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
 
 /** Agent 要么给一份计划，要么停下来问一个澄清问题。 */
 export type AgentReply =
-  | { kind: 'plan'; thinking: string[]; plan: TimelineEditPlan }
-  | { kind: 'question'; thinking: string[]; question: string; options: string[] };
+  | { kind: 'plan'; thinking: ThinkingStep[]; plan: TimelineEditPlan; suggestions: string[] }
+  | { kind: 'question'; thinking: ThinkingStep[]; question: string; options: string[] };
+
+/** 接口的 Thinking 既可能是纯句子，也可能是带标题的对象，统一收成 ThinkingStep。 */
+const toThinkingStep = (entry: unknown): ThinkingStep | undefined => {
+  if (typeof entry === 'string' && entry.trim()) {
+    return { body: entry };
+  }
+  if (entry && typeof entry === 'object') {
+    const record = entry as { Title?: unknown; Body?: unknown };
+    if (typeof record.Body === 'string' && record.Body.trim()) {
+      return { title: typeof record.Title === 'string' ? record.Title : undefined, body: record.Body };
+    }
+  }
+  return undefined;
+};
 
 /**
  * 让模型基于当前时间线和一句自然语言指令作答。
@@ -176,7 +191,9 @@ export const planEdit = async (
   });
 
   planSeq += 1;
-  const thinking = (resp?.Thinking ?? []).filter((line): line is string => typeof line === 'string');
+  const thinking = (resp?.Thinking ?? [])
+    .map(toThinkingStep)
+    .filter((step): step is ThinkingStep => Boolean(step));
 
   if (resp?.Kind === 'question' && resp.Question) {
     return {
@@ -197,6 +214,7 @@ export const planEdit = async (
   return {
     kind: 'plan',
     thinking,
+    suggestions: (resp?.Suggestions ?? []).filter((item): item is string => typeof item === 'string'),
     plan: {
       id: `plan-${planSeq}`,
       prompt,
