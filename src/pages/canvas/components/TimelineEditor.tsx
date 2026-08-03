@@ -1832,10 +1832,30 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </div>
             </div>
 
-            <div className="flex border-t border-solid border-neutral-fillLow">
+            {/* 轨道区固定高度：轨道多出来时纵向滚动，gutter 吸左、标尺吸顶不跟着跑 */}
+            <div
+              className="flex max-h-[272px] overflow-auto border-t border-solid border-neutral-fillLow"
+              onDragOver={(event) => {
+                if (dragAssetId) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'copy';
+                }
+              }}
+              onDrop={(event) => {
+                if (!dragAssetId) {
+                  return;
+                }
+                event.preventDefault();
+                const asset = allAssets.find((item) => item.id === dragAssetId);
+                setDragAssetId(null);
+                if (asset) {
+                  addAssetToTimeline(asset);
+                }
+              }}
+            >
               {/* 轨道头 */}
-              <div className="w-[56px] shrink-0 border-r border-solid border-neutral-fillLow">
-                <div className="h-8 border-b border-solid border-neutral-fillLow" />
+              <div className="sticky left-0 z-30 w-[56px] shrink-0 border-r border-solid border-neutral-fillLow bg-neutral-surface">
+                <div className="sticky top-0 z-10 h-8 border-b border-solid border-neutral-fillLow bg-neutral-surface" />
                 {trackPreviews.map(({ track, isNewTrack }) => {
                   const Icon = TRACK_ICON[track.kind];
                   return (
@@ -1889,32 +1909,13 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </div>
 
               {/* 标尺 + 轨道 */}
-              <div
-                className="relative min-w-0 flex-1 overflow-x-auto"
-                onDragOver={(event) => {
-                  if (dragAssetId) {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'copy';
-                  }
-                }}
-                onDrop={(event) => {
-                  if (!dragAssetId) {
-                    return;
-                  }
-                  event.preventDefault();
-                  const asset = allAssets.find((item) => item.id === dragAssetId);
-                  setDragAssetId(null);
-                  if (asset) {
-                    addAssetToTimeline(asset);
-                  }
-                }}
-              >
+              <div className="relative min-w-0 flex-1">
                 <div style={{ width: rulerSeconds * pxPerSecond }}>
                   <div
                     ref={rulerRef}
                     data-timeline-ruler
                     className={clsx(
-                      'relative h-8 touch-none border-b border-solid border-neutral-fillLow',
+                      'sticky top-0 z-20 h-8 touch-none border-b border-solid border-neutral-fillLow bg-neutral-surface',
                       isScrubbing ? 'cursor-grabbing' : 'cursor-grab'
                     )}
                     onPointerDown={startScrub}
@@ -1945,6 +1946,23 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                         </span>
                       );
                     })}
+                    {/* 播放头在标尺里的部分：把手 + 线段。标尺吸顶，纵向滚动时它们仍然可见可拖 */}
+                    <span
+                      className="pointer-events-none absolute inset-y-0 w-px bg-neutral-fillHigh"
+                      style={{ left: currentTime * pxPerSecond }}
+                    >
+                      <span
+                        data-playhead-handle
+                        className={clsx(
+                          'pointer-events-auto absolute -left-[7px] -top-0.5 block h-4 w-[15px] touch-none rounded-b-[3px] rounded-t-full border border-solid border-neutral-fillHigh bg-neutral-surface',
+                          isScrubbing ? 'cursor-grabbing' : 'cursor-grab'
+                        )}
+                        onPointerDown={startScrub}
+                        onPointerMove={moveScrub}
+                        onPointerUp={endScrub}
+                        onPointerCancel={endScrub}
+                      />
+                    </span>
                   </div>
 
                   {trackPreviews.map(({ track, clips }) => (
@@ -2041,24 +2059,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                     </div>
                   ))}
 
-                  {/* 播放头 */}
+                  {/* 播放头竖线（把手在吸顶的标尺里） */}
                   <div
                     className="pointer-events-none absolute top-0 z-10 h-full w-px bg-neutral-fillHigh"
                     style={{ left: currentTime * pxPerSecond }}
-                  >
-                    {/* 顶部把手：上圆下尖；自己也能拖，命中区比 1px 的线宽容多了 */}
-                    <span
-                      data-playhead-handle
-                      className={clsx(
-                        'pointer-events-auto absolute -left-[7px] -top-0.5 block h-4 w-[15px] touch-none rounded-b-[3px] rounded-t-full border border-solid border-neutral-fillHigh bg-neutral-surface',
-                        isScrubbing ? 'cursor-grabbing' : 'cursor-grab'
-                      )}
-                      onPointerDown={startScrub}
-                      onPointerMove={moveScrub}
-                      onPointerUp={endScrub}
-                      onPointerCancel={endScrub}
-                    />
-                  </div>
+                  />
                 </div>
               </div>
             </div>
