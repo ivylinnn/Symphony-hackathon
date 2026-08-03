@@ -1368,10 +1368,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   <span data-graphics-overlay className="pointer-events-none absolute inset-0">
                     {/* 画面亮的时候白字会糊，压一层自下而上的暗角 */}
                     <span className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-black/45 via-black/20 to-transparent" />
-                    <span className="absolute right-3 top-3 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
-                      #{graphicsCue.clip.label.split(' ')[0]}
-                    </span>
-
                     {/* key 带 clip id，切换卖点时重新播放入场动效；版式对齐参考稿：
                         计数行两端对齐、中间一根细线 → 无衬线大标题直接压画面 → 短粗下划线 */}
                     <span key={graphicsCue.clip.id} className="absolute inset-x-0 top-[44%] block">
