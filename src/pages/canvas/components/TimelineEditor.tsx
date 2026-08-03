@@ -1311,7 +1311,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
           ) : (
             <>
           <div className="flex shrink-0 items-center gap-1 px-3.5 py-3">
-            <span className="text-[15px] font-bold text-primary-onSurface">Editing agent</span>
+            <span className="text-[15px] font-bold text-ai-deep">Editing agent</span>
             <span className="flex-1" />
             <button
               type="button"

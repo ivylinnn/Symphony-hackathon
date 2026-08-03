@@ -200,7 +200,7 @@ function IntakeForm({
 
           {/* 勾中触发选项后就地追问，答案单独存一格 */}
           {field.followUp && isSelected(field, field.followUp.whenOption) ? (
-            <div className="mt-2 border-l-2 border-solid border-primary-fill/40 pl-2.5">
+            <div className="mt-2 border-l-2 border-solid border-ai-fill/60 pl-2.5">
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-mediumOnSurface">
                 {field.followUp.label}
               </p>
@@ -269,7 +269,7 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
         onClick={() => setIsOpen((open) => !open)}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span className="shrink-0 text-primary-fill">
+        <span className="shrink-0 text-ai-deep">
           <KsIconAiGeneration size={17} />
         </span>
         <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-highOnSurface">
@@ -290,7 +290,7 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
                 <span
                   className={clsx(
                     'absolute inset-y-0 left-0 w-0.5',
-                    isActive ? 'bg-primary-fill' : 'bg-neutral-fillLow'
+                    isActive ? 'bg-ai-fill' : 'bg-neutral-fillLow'
                   )}
                 />
                 {step.title ? (
@@ -373,7 +373,7 @@ function AiEditorPanel({
       <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
-            <span className="flex size-9 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+            <span className="flex size-9 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
               <KsIconAiAssistant size={18} />
             </span>
             <p className="text-[12px] leading-[17px] text-neutral-mediumOnSurface">
@@ -387,7 +387,7 @@ function AiEditorPanel({
           if (message.role === 'user') {
             return (
               <div key={message.id} className="flex justify-end">
-                <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] bg-primary-surface2 px-4 py-2.5 text-[13px] leading-[19px] text-neutral-highOnSurface">
+                <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] bg-ai-tint px-4 py-2.5 text-[13px] leading-[19px] text-neutral-highOnSurface">
                   {message.text}
                 </div>
               </div>
@@ -414,7 +414,7 @@ function AiEditorPanel({
           if (message.role === 'answer') {
             return (
               <div key={message.id} className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
                   <KsIconAiAssistant size={13} />
                 </span>
                 <p className="min-w-0 flex-1 text-[13px] leading-[20px] text-neutral-highOnSurface">{message.text}</p>
@@ -433,7 +433,7 @@ function AiEditorPanel({
           if (message.role === 'question') {
             return (
               <div key={message.id} className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
                   <KsIconAiAssistant size={13} />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -470,7 +470,7 @@ function AiEditorPanel({
           const isPending = message.id === pendingPlanId;
           return (
             <div key={message.id} className="flex items-start gap-2">
-              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
                 <KsIconAiAssistant size={13} />
               </span>
               <div className="min-w-0 flex-1">
@@ -555,7 +555,7 @@ function AiEditorPanel({
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',
-            isBusy ? 'border-primary-fill/40' : 'border-neutral-fillLow focus-within:border-primary-fill'
+            isBusy ? 'border-ai-fill/60' : 'border-neutral-fillLow focus-within:border-primary-fill'
           )}
         >
           {selectedClip ? (
