@@ -37,7 +37,42 @@ interface AiEditorPanelProps {
   onApply: () => void;
   onDiscard: () => void;
   onRestore: (messageId: string) => void;
+  /** 「Remove or replace objects」用例：直接打开画笔圈选模式。 */
+  onStartDraw: () => void;
 }
+
+/**
+ * 五大核心用例，常驻在输入区上方，随时可点。
+ * hint 是完整说明（挂在 title 上），prompt 是点击后交给 agent 的指令；
+ * 圈选类用例不发 prompt，直接打开画笔。
+ */
+const USE_CASES: Array<{ label: string; hint: string; prompt?: string; action?: 'draw' }> = [
+  {
+    label: 'Remove or replace objects',
+    hint: 'Select an object and ask AI to remove it, change its color, swap the product, or replace the background.',
+    action: 'draw'
+  },
+  {
+    label: 'Add motion graphics',
+    hint: 'Generate titles, product callouts, promotional banners, captions, logo animations, and lower thirds from natural-language prompts.',
+    prompt: 'Add motion graphics for the product selling points'
+  },
+  {
+    label: 'Create branded end cards',
+    hint: 'Automatically combine logos, product assets, offers, URLs, and CTAs into a polished, editable end card.',
+    prompt: 'Create a branded end card'
+  },
+  {
+    label: 'Create creative variations',
+    hint: 'Produce alternative styles, hooks, layouts, offers, or platform-specific versions without rebuilding the video manually.',
+    prompt: 'Create creative variations of this cut'
+  },
+  {
+    label: 'Reformat for social platforms',
+    hint: 'Resize and intelligently reframe for TikTok, Reels, Shorts, and Stories while keeping subjects, text, and products in safe zones.',
+    prompt: 'Reformat this video for another social platform'
+  }
+];
 
 /** 思考过程：进行中逐条揭示，结束后折叠成一行摘要，可再展开。 */
 /**
@@ -303,7 +338,8 @@ function AiEditorPanel({
   onAnswer,
   onApply,
   onDiscard,
-  onRestore
+  onRestore,
+  onStartDraw
 }: AiEditorPanelProps) {
   const [draft, setDraft] = useState('');
   const threadRef = useRef<HTMLDivElement>(null);
@@ -432,9 +468,6 @@ function AiEditorPanel({
 
           // plan
           const isPending = message.id === pendingPlanId;
-          // 只有最后一条计划显示建议，避免整条会话堆满过期的 pill
-          const isLastPlan =
-            messages.filter((item) => item.role === 'plan').slice(-1)[0]?.id === message.id;
           return (
             <div key={message.id} className="flex items-start gap-2">
               <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
@@ -490,22 +523,6 @@ function AiEditorPanel({
                   <span className="mt-1.5 inline-block text-[11px] text-neutral-lowOnSurface">Discarded</span>
                 ) : null}
 
-                {/* 下一步建议：点一下就当成新指令发出去 */}
-                {isLastPlan && !isPending && message.suggestions?.length ? (
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    {message.suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => onSubmit(suggestion)}
-                        className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3.5 py-1.5 text-[12px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
             </div>
           );
@@ -514,6 +531,21 @@ function AiEditorPanel({
 
       {/* 输入区常驻底部 */}
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
+        {/* 五大核心用例 pill：随时可选，不依赖上一份计划 */}
+        <div data-use-cases className="mb-2 flex flex-wrap gap-1.5">
+          {USE_CASES.map((useCase) => (
+            <button
+              key={useCase.label}
+              type="button"
+              title={useCase.hint}
+              disabled={isBusy}
+              onClick={() => (useCase.action === 'draw' ? onStartDraw() : onSubmit(useCase.prompt ?? useCase.label))}
+              className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3 py-1 text-[11px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
+            >
+              {useCase.label}
+            </button>
+          ))}
+        </div>
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',

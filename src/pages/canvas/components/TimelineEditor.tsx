@@ -1245,6 +1245,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             onApply={applyPlan}
             onDiscard={discardPlan}
             onRestore={restoreVersion}
+            onStartDraw={() => setIsPenMode(true)}
           />
             </>
           )}

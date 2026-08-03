@@ -782,8 +782,24 @@ async function planTimelineEditInner(args: {
     };
   }
 
-  /* 4a) 智能扩画（Uncrop）—— 没说目标版位就先问 */
-  if (has(prompt, 'uncrop', 'expand the frame', 'outpaint', 'placement', 'aspect ratio', '扩画')) {
+  /* 4a-0) 全局变体：先问方向。选项本身就是可执行指令，拼回原话后各自命中对应分支 */
+  if (
+    has(prompt, 'variation', 'variations', 'versions', 'alternatives', '变体') &&
+    !has(prompt, 'hook', 'resize', 'reformat', 'platform', 'dub', 'ratio', '9:16', '1:1', '16:9', '4:5')
+  ) {
+    return {
+      Kind: 'question',
+      Thinking: [
+        survey,
+        'A variation can change the opening, the format or the language — each is a different edit path, so the direction comes first.',
+      ],
+      Question: 'Which direction should the variations take?',
+      Options: ['Punchier hook', 'Resize for another platform', 'Dub into another language'],
+    };
+  }
+
+  /* 4a) 智能扩画（Uncrop / 重排版位）—— 没说目标版位就先问 */
+  if (has(prompt, 'uncrop', 'expand the frame', 'outpaint', 'placement', 'aspect ratio', 'resize', 'reformat', 'social platform', '扩画')) {
     const ratioMatch =
       prompt.match(/(1:1|16:9|4:5|9:16)/)?.[1] ??
       (has(prompt, 'square') ? '1:1' : has(prompt, 'landscape') ? '16:9' : undefined);
