@@ -272,7 +272,7 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
         <span className="shrink-0 text-data5-fillMedHigh">
           <KsIconAiGeneration size={17} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-neutral-highOnSurface">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-highOnSurface">
           {headline}
         </span>
         <span className="shrink-0 text-neutral-lowOnSurface">

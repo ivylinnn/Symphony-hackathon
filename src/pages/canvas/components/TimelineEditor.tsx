@@ -8,11 +8,22 @@ import {
   KsIconDownload,
   KsIconFolder,
   KsIconAiGeneration,
+  KsIconCamera,
+  KsIconCrop,
+  KsIconFullScreen,
+  KsIconHd,
   KsIconPen,
+  KsIconPeople,
   KsIconPlus,
+  KsIconRedo,
   KsIconRotate,
+  KsIconSection,
+  KsIconSeperateAudio,
+  KsIconSpeed,
   KsIconSearch,
   KsIconSend,
+  KsIconUndo,
+  KsIconArrowRight,
   KsIconShare,
   KsIconTips,
   KsIconSound,
@@ -236,6 +247,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
   const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null);
   /** 中栏素材面板的页签与搜索词。 */
   const [assetsTab, setAssetsTab] = useState<'assets' | 'library' | 'transcript'>('assets');
+  /* Viewer 顶栏工具条的就地状态：预览旋转角度、画质增强开关、更多菜单 */
+  const [previewRotation, setPreviewRotation] = useState(0);
+  const [isPreviewEnhanced, setIsPreviewEnhanced] = useState(false);
+  const [isViewerMoreOpen, setIsViewerMoreOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState('');
   /** 左侧工具栏当前停留的条目，默认是编辑 agent。 */
   const [activeTool, setActiveTool] = useState<EditorTool>('agent');
@@ -660,6 +675,50 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
         ]
       }
     ]);
+  };
+
+  /** Viewer 工具条：把指令交给 agent，同时确保左侧就是会话面板。 */
+  const runViewerAgent = (prompt: string) => {
+    setActiveTool('agent');
+    void runAgent(prompt);
+  };
+
+  /** Viewer 工具条「Extract frame」：抓当前预览帧存 PNG；跨域素材退回下载封面。 */
+  const extractPreviewFrame = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 720;
+      canvas.height = video.videoHeight || 1280;
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = `${sourceLabel || 'frame'}.png`;
+      link.click();
+    } catch {
+      if (posterUrl) {
+        const link = document.createElement('a');
+        link.href = posterUrl;
+        link.download = `${sourceLabel || 'frame'}.jpg`;
+        link.target = '_blank';
+        link.click();
+      }
+    }
+  };
+
+  const downloadSource = () => {
+    if (!videoUrl) {
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = `${sourceLabel || 'video'}.mp4`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.click();
   };
 
   /** 顶栏 +：清空会话，从问候和问卷重新开始（时间线保持现状）。 */
@@ -1311,8 +1370,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
           ) : (
             <>
           <div className="flex shrink-0 items-center gap-1 px-3.5 py-3">
-            {/* Creative agent 参考：亮蓝标题，18/26 semibold */}
-            <span className="text-[18px] font-semibold leading-[26px] text-[#1a9ad6]">Editing agent</span>
+            {/* 统一 14px：标题与正文同字号，靠字重和颜色区分层级 */}
+            <span className="text-[14px] font-semibold leading-5 text-[#1a9ad6]">Editing agent</span>
             <span className="flex-1" />
             <button
               type="button"
@@ -1496,9 +1555,98 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
             {/* 右：预览 Viewer */}
             <section className="flex min-w-0 flex-1 flex-col">
               <div className="flex shrink-0 items-center gap-2 px-4 pt-3">
-                <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
                   Viewer
                 </span>
+                {videoUrl ? (
+                  <div
+                    data-viewer-toolbar
+                    className="flex min-w-0 flex-1 items-center justify-center gap-0.5 overflow-x-auto whitespace-nowrap rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-1.5 py-1 [scrollbar-width:none]"
+                  >
+                    {[
+                      { label: 'Extract frame', hint: 'Save the current frame as an image', icon: <KsIconCamera size={13} />, run: extractPreviewFrame },
+                      { label: 'Enhance', hint: 'Boost clarity and color (HD)', icon: <KsIconHd size={13} />, active: isPreviewEnhanced, run: () => setIsPreviewEnhanced((on) => !on) },
+                      { label: 'Trim', hint: 'Tighten the cut with the agent', icon: <KsIconSection size={13} />, run: () => runViewerAgent('Trim the cut tighter') },
+                      { label: 'Separate audio', hint: 'Detach the audio into its own track', icon: <KsIconSeperateAudio size={13} />, run: () => runViewerAgent('Separate the audio into its own track') },
+                      { label: 'Crop', hint: 'Reframe for another placement', icon: <KsIconCrop size={13} />, run: () => runViewerAgent('Reformat this video for another social platform') },
+                      { label: 'Analyze', hint: 'Open the transcript', icon: <KsIconTextFile size={13} />, run: () => setAssetsTab('transcript') },
+                      { label: 'Smart cutout', hint: 'Circle an object to replace or remove it', icon: <KsIconPeople size={13} />, run: () => setIsPenMode(true) },
+                      { label: 'Reshoot clip', hint: 'Regenerate the opening with AI', icon: <KsIconRedo size={13} />, run: () => runViewerAgent('Swap the hook for a fresh opening') },
+                      { label: 'Rotate', hint: 'Rotate the preview 90°', icon: <KsIconRotate size={13} />, run: () => setPreviewRotation((deg) => (deg + 90) % 360) }
+                    ].map((action) => (
+                      <button
+                        key={action.label}
+                        type="button"
+                        title={action.hint}
+                        onClick={action.run}
+                        className={clsx(
+                          'flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[10.5px] font-medium transition-colors',
+                          action.active
+                            ? 'bg-neutral-surface3 text-neutral-highOnSurface'
+                            : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2 hover:text-neutral-highOnSurface'
+                        )}
+                      >
+                        {action.icon}
+                        {action.label}
+                      </button>
+                    ))}
+                    <span className="relative shrink-0">
+                      <button
+                        type="button"
+                        title="More"
+                        onClick={() => setIsViewerMoreOpen((open) => !open)}
+                        className={clsx(
+                          'flex h-6 items-center rounded-full px-1.5 text-[12px] font-semibold transition-colors',
+                          isViewerMoreOpen ? 'bg-neutral-surface3 text-neutral-highOnSurface' : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2'
+                        )}
+                      >
+                        ⋯
+                      </button>
+                      {isViewerMoreOpen ? (
+                        <span className="absolute right-0 top-full z-40 mt-1.5 block w-[176px] rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface p-1 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+                          {[
+                            { label: 'Remove subtitles', icon: <KsIconTextFile size={12} />, prompt: 'Remove the captions' },
+                            { label: 'Extend clip', icon: <KsIconArrowRight size={12} />, prompt: 'Extend the cut to 20 seconds' },
+                            { label: 'Reverse', icon: <KsIconUndo size={12} />, prompt: 'Play the cut in reverse' },
+                            { label: 'Speed', icon: <KsIconSpeed size={12} />, prompt: 'Speed up the whole cut' }
+                          ].map((item) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => {
+                                setIsViewerMoreOpen(false);
+                                runViewerAgent(item.prompt);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+                            >
+                              <span className="text-neutral-mediumOnSurface">{item.icon}</span>
+                              {item.label}
+                            </button>
+                          ))}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mx-0.5 h-4 w-px shrink-0 bg-neutral-fillLow" />
+                    <button
+                      type="button"
+                      title="Download video"
+                      onClick={downloadSource}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 hover:text-neutral-highOnSurface"
+                    >
+                      <KsIconDownload size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Full screen"
+                      onClick={() => void videoRef.current?.requestFullscreen()}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 hover:text-neutral-highOnSurface"
+                    >
+                      <KsIconFullScreen size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="flex-1" />
+                )}
                 {videoUrl ? (
                   <button
                     type="button"
@@ -1545,6 +1693,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                   poster={posterUrl}
                   playsInline
                   preload="metadata"
+                  style={{
+                    transform: previewRotation ? `rotate(${previewRotation}deg)` : undefined,
+                    filter: isPreviewEnhanced ? 'contrast(1.06) saturate(1.12) brightness(1.02)' : undefined
+                  }}
                   title={isPlaying ? `Pause ${sourceLabel}` : `Play ${sourceLabel}`}
                   onLoadedMetadata={handleMetadata}
                   onError={() => seedFromMedia(FALLBACK_MEDIA_SECONDS)}

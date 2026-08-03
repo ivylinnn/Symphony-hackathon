@@ -695,6 +695,29 @@ async function planTimelineEditInner(args: {
   }
 
   /* 1) 静音 / 取消静音 —— 要排在 "music" 之前，否则 "mute the music" 会被当成加音乐 */
+  /* 1.5) 音频分离：把内嵌音频抽成独立音轨，原片段静音 —— Viewer 工具条的 Separate audio */
+  if (has(prompt, 'separate the audio', 'separate audio', 'detach audio', 'audio separation', '音频分离')) {
+    const track = videoTracks[0];
+    if (track && track.Clips.length > 0) {
+      const start = Math.min(...track.Clips.map((c) => c.Start));
+      const end = endOf([track]);
+      return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          'Detaching the embedded audio into its own track so it can be trimmed, retimed or muted independently of the picture.',
+        ],
+        Summary: 'Separated the audio — the footage sound now lives on its own track and the original clips are muted.',
+        Operations: [
+          { Label: 'Add separated audio track', Type: 'add-track',
+            Track: { TrackId: nextId('track-sep-audio'), Kind: 'audio', Visible: true, Muted: false,
+              Clips: [{ ClipId: nextId('clip-sep-audio'), Label: 'Video audio (separated)', Start: start, Duration: Math.max(0.5, end - start), HasAudio: true }] } },
+          { Label: 'Mute the original clips', Type: 'set-track-flag', TrackId: track.TrackId, Flag: 'muted', Value: true },
+        ],
+      };
+    }
+  }
+
   if (has(prompt, 'mute', 'silence the', 'unmute')) {
     const unmute = prompt.includes('unmute');
     const target = audioTracks[0] ?? tracks[0];
