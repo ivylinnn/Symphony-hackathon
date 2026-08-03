@@ -1,6 +1,9 @@
 import { planTimelineEdit } from '@/api';
 
+import { getClaudeKey, planWithClaude } from './claude-client';
+
 import type {
+  GraphicStyle,
   TimelineClip,
   TimelineEditOp,
   TimelineEditOperation,
@@ -12,6 +15,29 @@ import type {
 } from '../types';
 
 const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption', 'graphics'];
+const GRAPHIC_KINDS = ['headline', 'lower-third', 'banner', 'badge', 'logo'] as const;
+
+/** 宽松收窄图形样式：认识的字段留下，kind 必须命中枚举。 */
+const toGraphic = (raw: Record<string, unknown> | undefined): GraphicStyle | undefined => {
+  if (!raw) {
+    return undefined;
+  }
+  const kind = GRAPHIC_KINDS.find((item) => item === raw.kind);
+  if (!kind) {
+    return undefined;
+  }
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return {
+    kind,
+    ...(num(raw.y) !== undefined ? { y: num(raw.y) } : {}),
+    ...(num(raw.scale) !== undefined ? { scale: num(raw.scale) } : {}),
+    ...(str(raw.fg) ? { fg: str(raw.fg) } : {}),
+    ...(str(raw.accent) ? { accent: str(raw.accent) } : {}),
+    ...(str(raw.bg) ? { bg: str(raw.bg) } : {}),
+    ...(str(raw.cta) ? { cta: str(raw.cta) } : {})
+  };
+};
 const FORMAT_RATIOS: VideoFormatRatio[] = ['9:16', '1:1', '16:9', '4:5'];
 
 /** 接口返回的原始操作，字段是平铺的可选值，需要收窄成 TimelineEditOp。 */
@@ -27,6 +53,7 @@ interface WireOperation {
   Value?: boolean;
   Ratio?: string;
   Text?: string;
+  Style?: Record<string, unknown>;
   Path?: string;
   Patch?: string;
   Blend?: string;
@@ -42,6 +69,7 @@ interface WireClip {
   HasAudio?: boolean;
   Text?: string;
   SourceUrl?: string;
+  Graphic?: Record<string, unknown>;
 }
 
 interface WireTrack {
@@ -69,7 +97,8 @@ const toClip = (wire: WireClip | undefined): TimelineClip | undefined => {
     text: typeof wire.Text === 'string' && wire.Text ? wire.Text : undefined,
     ...(typeof wire.SourceUrl === 'string' && wire.SourceUrl
       ? { sourceUrl: wire.SourceUrl, sourceStart: 0, sourceDuration: Math.max(0.05, wire.Duration ?? 1) }
-      : {})
+      : {}),
+    ...(toGraphic(wire.Graphic) ? { graphic: toGraphic(wire.Graphic) } : {})
   };
 };
 
@@ -114,6 +143,15 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
       return wire.TrackId && (wire.Flag === 'visible' || wire.Flag === 'muted') && typeof wire.Value === 'boolean'
         ? { type: 'set-track-flag', trackId: wire.TrackId, flag: wire.Flag, value: wire.Value }
         : undefined;
+
+    case 'set-style': {
+      if (!wire.ClipId || !wire.Style || typeof wire.Style !== 'object') {
+        return undefined;
+      }
+      // y 作为增量或绝对值都可能出现；直接透传，合并时覆盖
+      const patch = wire.Style as Partial<GraphicStyle>;
+      return { type: 'set-style', clipId: wire.ClipId, style: patch };
+    }
 
     case 'set-text':
       return wire.ClipId && typeof wire.Text === 'string' && wire.Text
@@ -175,7 +213,7 @@ export const planEdit = async (
   /** 时间线上选中的元素；有值时指令优先定向到它。 */
   target?: { id: string; label: string; kind: TimelineTrackKind }
 ): Promise<AgentReply> => {
-  const resp = await planTimelineEdit({
+  const wireArgs = {
     prompt,
     playhead,
     ...(intake ? { intake } : {}),
@@ -189,10 +227,35 @@ export const planEdit = async (
         Label: clip.label,
         Start: clip.start,
         Duration: clip.duration,
-        HasAudio: clip.hasAudio
+        HasAudio: clip.hasAudio,
+        ...(clip.text ? { Text: clip.text } : {})
       }))
     }))
-  });
+  };
+
+  /*
+   * 有 key 就把 prompt 交给用户自己的 Claude；圈选重生成除外 —— 那条链路
+   * 要产出贴片图，Messages API 不做图，仍走本地生成器。
+   * Claude 挂了（断网、key 失效…）回落到本地 planner，并在思考轨迹里说明。
+   */
+  const claudeKey = getClaudeKey();
+  let resp: Awaited<ReturnType<typeof planTimelineEdit>>;
+  if (claudeKey && !region) {
+    try {
+      resp = (await planWithClaude(wireArgs, claudeKey)) as typeof resp;
+    } catch (error) {
+      resp = await planTimelineEdit(wireArgs);
+      resp.Thinking = [
+        {
+          Title: 'Claude unavailable',
+          Body: `${error instanceof Error ? error.message : 'Request failed'} — fell back to the local planner.`
+        },
+        ...(resp.Thinking ?? [])
+      ];
+    }
+  } else {
+    resp = await planTimelineEdit(wireArgs);
+  }
 
   planSeq += 1;
   const thinking = (resp?.Thinking ?? [])

@@ -75,6 +75,8 @@ export interface WireClip {
   Text?: string;
   /** 引用的素材地址；静帧（片尾卡等）也走这里。 */
   SourceUrl?: string;
+  /** 图形片段的结构化样式（kind/y/scale/fg/accent/bg/cta）。 */
+  Graphic?: Record<string, unknown>;
 }
 
 export interface WireTrack {
@@ -85,7 +87,7 @@ export interface WireTrack {
 
 export interface WireOperation {
   Label: string;
-  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-text' | 'set-format' | 'region-edit';
+  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-text' | 'set-style' | 'set-format' | 'region-edit';
   ClipId?: string;
   TrackId?: string;
   Start?: number;
@@ -95,6 +97,7 @@ export interface WireOperation {
   Value?: boolean;
   Ratio?: string;
   Text?: string;
+  Style?: Record<string, unknown>;
   Path?: string;
   Patch?: string;
   Blend?: 'color' | 'normal';
@@ -215,6 +218,26 @@ const buildGraphicsClips = (
     Text: point.headline,
   }));
 };
+
+/** 风格词 → 图形样式 patch；「AI 改已有设计」就是把这些 patch 打到结构化对象上。 */
+const STYLE_PRESETS: Array<{ names: string[]; label: string; style: Record<string, unknown> }> = [
+  { names: ['premium', 'luxury', '高级'], label: 'premium', style: { fg: '#f2ece1', accent: '#c6a06a', scale: 0.95 } },
+  { names: ['minimal', 'minimalist', '极简'], label: 'minimal', style: { fg: '#ffffff', accent: '#ffffff', scale: 0.82 } },
+  { names: ['energetic', 'bold', '活力'], label: 'energetic', style: { fg: '#ffffff', accent: '#ff5a5f', scale: 1.18 } },
+  { names: ['tiktok'], label: 'TikTok-native', style: { fg: '#ffffff', accent: '#25f4ee', scale: 1.1, y: 38 } },
+  { names: ['instagram'], label: 'Instagram-native', style: { fg: '#ffffff', accent: '#e1306c', scale: 0.9 } },
+  { names: ['black and gold', 'gold and black', '黑金'], label: 'black & gold', style: { fg: '#f2ece1', accent: '#c6a06a', bg: '#0d0b08' } },
+  { names: ['brand color', 'brand colour', '品牌色'], label: 'brand colors', style: { fg: '#ffffff', accent: '#2f6bff' } },
+];
+const matchStylePreset = (prompt: string) =>
+  STYLE_PRESETS.find((preset) => preset.names.some((name) => prompt.includes(name)));
+
+/** 片尾卡场景的深色底（内联 SVG，随画幅拉伸）。 */
+const DARK_BG =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#17130f"/><stop offset="1" stop-color="#060504"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)"/></svg>`
+  );
 
 /** 常见颜色词 → 一组配色，生成的贴片以此为主色。 */
 const COLOR_WORDS: Array<{ names: string[]; label: string; ramp: [string, string, string] }> = [
@@ -466,6 +489,39 @@ async function planTimelineEditInner(args: {
             { Label: `Extend "${target.Label}" to ${duration.toFixed(1)}s`, Type: 'set-timing', ClipId: target.ClipId, Start: target.Start, Duration: duration },
           ],
         };
+      }
+
+      // 图形样式的增量编辑：位置 / 大小 / 配色 / 风格 / 变体
+      if (args.target.Kind === 'graphics') {
+        const stylePatch: Record<string, unknown> = {};
+        const notes: string[] = [];
+        if (has(prompt, 'higher', 'move up', '上移')) { stylePatch.y = -12; notes.push('moved up'); }
+        if (has(prompt, 'lower', 'move down', '下移')) { stylePatch.y = 12; notes.push('moved down'); }
+        if (has(prompt, 'larger', 'bigger', '大一点')) { stylePatch.scale = 1.25; notes.push('scaled up'); }
+        if (has(prompt, 'smaller', '小一点')) { stylePatch.scale = 0.8; notes.push('scaled down'); }
+        const preset = matchStylePreset(prompt);
+        if (preset) { Object.assign(stylePatch, preset.style); notes.push(`${preset.label} style`); }
+        if (Object.keys(stylePatch).length > 0) {
+          return {
+            Kind: 'plan',
+            Thinking: [
+              ...targetThinking,
+              { Title: 'Patching the design', Body: `Updating ${name} in place — ${notes.join(', ')} — nothing is regenerated.` },
+            ],
+            Summary: `Updated ${name}: ${notes.join(', ')}.`,
+            Operations: [
+              { Label: `Restyle "${target.Label}" (${notes.join(', ')})`, Type: 'set-style', ClipId: target.ClipId, Style: stylePatch },
+            ],
+          };
+        }
+        if (has(prompt, 'variation', 'versions', 'alternatives', '变体')) {
+          return {
+            Kind: 'question',
+            Thinking: [...targetThinking, { Title: 'Drafting variations', Body: 'Four directions for this graphic — pick one and it applies as an in-place patch.' }],
+            Question: `Which direction should ${name} take?`,
+            Options: ['make it premium', 'make it minimal', 'make it energetic', 'make it TikTok-native'],
+          };
+        }
       }
 
       // 改文案：update to X / say X / change to X / 改成 X（仅字幕与图形有文案）
@@ -881,7 +937,41 @@ async function planTimelineEditInner(args: {
   }
 
   /* 4c-2) 品牌元素 / 片尾卡：把 End card 接到视频轨末尾，再打一条品牌字幕 */
-  if (has(prompt, 'branding', 'brand element', 'end card', 'endcard', 'logo', '品牌', '片尾')) {
+  if (has(prompt, 'branding', 'brand element', 'end card', 'endcard', '品牌', '片尾')) {
+    const track = videoTracks[0];
+    if (track) {
+      const at = endOf([track]);
+      const cardLength = 3;
+      const preset = matchStylePreset(prompt);
+      const style = preset?.style ?? { fg: '#f2ece1', accent: '#c6a06a' };
+      return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          { Title: 'Building the end scene', Body: `A ${cardLength}s branded close at ${at.toFixed(1)}s: dark background, logo, tagline, CTA and promo — each its own editable layer, not a flattened image.` },
+          { Title: 'Choosing the look', Body: preset ? `Styled ${preset.label}, per the instruction.` : 'Defaulting to the brand’s premium cream-and-gold on black.' },
+        ],
+        Summary: 'Added an end card scene — logo, tagline, Shop now CTA and promo badge as separate editable layers.',
+        Operations: [
+          { Label: `Add end-card background (${cardLength}s)`, Type: 'add-clip', TrackId: track.TrackId,
+            Clip: { ClipId: nextId('clip-endbg'), Label: 'End card bg', Start: at, Duration: cardLength, HasAudio: false, SourceUrl: DARK_BG } },
+          { Label: 'Add logo layer', Type: 'add-track',
+            Track: { TrackId: nextId('track-ec-logo'), Kind: 'graphics', Visible: true, Muted: false,
+              Clips: [{ ClipId: nextId('clip-ec-logo'), Label: 'Logo', Start: at, Duration: cardLength, HasAudio: false, Text: 'AURAK', Graphic: { kind: 'logo', y: 24, ...style } }] } },
+          { Label: 'Add tagline layer', Type: 'add-track',
+            Track: { TrackId: nextId('track-ec-tag'), Kind: 'graphics', Visible: true, Muted: false,
+              Clips: [{ ClipId: nextId('clip-ec-tag'), Label: 'Tagline', Start: at + 0.3, Duration: cardLength - 0.3, HasAudio: false, Text: 'CRAFTED FOR MOTION', Graphic: { kind: 'headline', y: 44, scale: 0.8, ...style } }] } },
+          { Label: 'Add CTA layer', Type: 'add-track',
+            Track: { TrackId: nextId('track-ec-cta'), Kind: 'graphics', Visible: true, Muted: false,
+              Clips: [{ ClipId: nextId('clip-ec-cta'), Label: 'CTA', Start: at + 0.5, Duration: cardLength - 0.5, HasAudio: false, Text: 'AURAK.COM', Graphic: { kind: 'banner', y: 74, cta: 'Shop now', ...style } }] } },
+          { Label: 'Add promo badge', Type: 'add-track',
+            Track: { TrackId: nextId('track-ec-promo'), Kind: 'graphics', Visible: true, Muted: false,
+              Clips: [{ ClipId: nextId('clip-ec-promo'), Label: 'Promo', Start: at + 0.7, Duration: cardLength - 0.7, HasAudio: false, Text: '20% OFF — SUMMER', Graphic: { kind: 'badge', y: 14, ...style } }] } },
+        ],
+      };
+    }
+  }
+  if (false) {
     const track = videoTracks[0];
     if (track) {
       const at = endOf([track]);
@@ -953,6 +1043,68 @@ async function planTimelineEditInner(args: {
       }, and describe the replacement — the swap is generated inside your drawing and carried across the cut.`,
       Operations: [],
     };
+  }
+
+  /* 4d-2) 单条图形：标题动画 / lower third / 促销 banner / 徽章 / logo reveal */
+  {
+    const graphicIntents: Array<{
+      match: string[];
+      kind: string;
+      label: string;
+      defaults: { text: string; duration: number; start?: number; graphic?: Record<string, unknown> };
+      title: string;
+    }> = [
+      { match: ['title animation', 'animated title', 'premium title', '标题动画'], kind: 'headline', label: 'Title',
+        defaults: { text: 'CRAFTED FOR MOTION', duration: 2.6 }, title: 'Composing the title' },
+      { match: ['lower third', 'lower-third'], kind: 'lower-third', label: 'Lower third',
+        defaults: { text: 'ALEX RIVERA — FOUNDER, AURAK', duration: 3.2 }, title: 'Placing the lower third' },
+      { match: ['banner', 'sale banner', 'cta banner', '促销条'], kind: 'banner', label: 'Banner',
+        defaults: { text: 'SUMMER SALE — 20% OFF', duration: 3.5, graphic: { cta: 'Shop now' } }, title: 'Building the banner' },
+      { match: ['badge', 'sticker', 'promotional badge', '徽章', 'exclusive'], kind: 'badge', label: 'Badge',
+        defaults: { text: 'SUMMER EXCLUSIVE — 20% OFF', duration: 3 }, title: 'Stamping the badge' },
+      { match: ['logo reveal', 'animate our logo', 'animate the logo', 'logo animation'], kind: 'logo', label: 'Logo',
+        defaults: { text: 'AURAK', duration: 3, start: 0 }, title: 'Revealing the logo' },
+    ];
+    const intent = graphicIntents.find((g) => has(prompt, ...g.match));
+    if (intent) {
+      const custom = (args.prompt ?? '').split(/[:：]/).slice(1).join(':').trim();
+      const text = (custom || intent.defaults.text).toUpperCase();
+      const preset = matchStylePreset(prompt);
+      const start = intent.defaults.start ?? Math.min(0.4, total);
+      const duration = Math.min(intent.defaults.duration, Math.max(1, total));
+      return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          { Title: intent.title, Body: `Placing a ${intent.kind} graphic at ${start.toFixed(1)}s for ${duration.toFixed(1)}s — position, type and palette chosen for a 9:16 ad frame${preset ? `, in the ${preset.label} style` : ''}.` },
+          { Title: 'Keeping it editable', Body: 'It lands as a structured layer on the graphics track: text, position, scale, palette and timing all stay editable.' },
+        ],
+        Summary: `Added a ${intent.label.toLowerCase()} — “${text}” — as an editable graphics layer.`,
+        Operations: [
+          {
+            Label: `Add ${intent.label.toLowerCase()} “${text}”`,
+            Type: 'add-track',
+            Track: {
+              TrackId: nextId('track-graphic'),
+              Kind: 'graphics',
+              Visible: true,
+              Muted: false,
+              Clips: [
+                {
+                  ClipId: nextId('clip-graphic'),
+                  Label: intent.label,
+                  Start: start,
+                  Duration: duration,
+                  HasAudio: false,
+                  Text: text,
+                  Graphic: { kind: intent.kind, ...(intent.defaults.graphic ?? {}), ...(preset?.style ?? {}) },
+                },
+              ],
+            },
+          },
+        ],
+      };
+    }
   }
 
   /* 4e) 动态图形卖点 */

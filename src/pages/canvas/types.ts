@@ -48,6 +48,26 @@ export type NodeBodyShape =
   | 'storyboard'
   | 'audio-clips';
 
+/** 动态图形的种类，决定渲染的版式。 */
+export type GraphicKind = 'headline' | 'lower-third' | 'banner' | 'badge' | 'logo';
+
+/**
+ * 图形不是像素而是结构化对象：种类、位置、缩放、配色、CTA 都是字段，
+ * AI 的每次修改都是对这些字段的增量 patch，永远可继续编辑。
+ */
+export interface GraphicStyle {
+  kind: GraphicKind;
+  /** 垂直位置 0-100，缺省用各 kind 的默认位。 */
+  y?: number;
+  /** 相对基准字号的缩放。 */
+  scale?: number;
+  fg?: string;
+  accent?: string;
+  bg?: string;
+  /** banner 的按钮文案。 */
+  cta?: string;
+}
+
 /** 时间线上的一段素材。 */
 export interface TimelineClip {
   id: string;
@@ -59,6 +79,8 @@ export interface TimelineClip {
   hasAudio: boolean;
   /** 字幕片段叠在画面上的文案；非字幕片段留空。 */
   text?: string;
+  /** graphics 片段的结构化样式。 */
+  graphic?: GraphicStyle;
   /**
    * 片段引用的媒体地址。有值的片段才驱动预览播放，
    * 字幕/音乐这类没有画面的片段留空。
@@ -102,6 +124,8 @@ export type TimelineEditOp =
   | { type: 'set-track-flag'; trackId: string; flag: 'visible' | 'muted'; value: boolean }
   /** 改写字幕片段的文案（内联编辑与 AI 改稿共用）。 */
   | { type: 'set-text'; clipId: string; text: string }
+  /** 增量改图形样式：位置、缩放、配色、CTA —— AI 改已有设计而不是重做。 */
+  | { type: 'set-style'; clipId: string; style: Partial<GraphicStyle> }
   /** 智能扩画：改画幅不改轨道，由编辑器状态承接。 */
   | { type: 'set-format'; ratio: VideoFormatRatio }
   /**

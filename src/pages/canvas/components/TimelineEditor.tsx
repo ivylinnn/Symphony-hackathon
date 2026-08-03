@@ -30,7 +30,7 @@ import { planEdit } from '../services/timeline-ai';
 import {
   activeCaptionClip,
   activeCaptionText,
-  activeGraphicsCue,
+  activeGraphicsCues,
   activeVideoClip,
   applyOperations,
   buildPreview,
@@ -51,6 +51,7 @@ import type {
 } from '../types';
 import AiEditorPanel from './AiEditorPanel';
 import { ToolPanel, ToolRail, type EditorTool } from './EditorToolPanels';
+import { getClaudeKey, setClaudeKey } from '../services/claude-client';
 
 interface TimelineEditorProps {
   /** 编辑对象的名称，展示在标题和预览占位上。 */
@@ -265,6 +266,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const versionSeqRef = useRef(0);
   /** 开场问候+问卷只落一次。 */
   const introSeededRef = useRef(false);
+  /* Connect Claude：key 只存本浏览器 localStorage，绝不进代码或构建产物。 */
+  const [claudeConnected, setClaudeConnected] = useState(() => Boolean(getClaudeKey()));
+  const [showClaudeRow, setShowClaudeRow] = useState(false);
+  const [claudeKeyDraft, setClaudeKeyDraft] = useState('');
+  /* 拖素材 + 品牌元素识别 */
+  const [dragAssetId, setDragAssetId] = useState<string | null>(null);
+  const brandDropsRef = useRef(0);
+  const brandSuggestedRef = useRef(false);
 
   const nextMessageId = () => {
     msgSeqRef.current += 1;
@@ -399,6 +408,16 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     if (index < 0) {
       return;
     }
+    // 布局建议：直接执行/关闭，不走「原诉求 + 选项」的重跑逻辑
+    if (messageId.startsWith('endcard-suggest-')) {
+      setMessages((current) =>
+        current.map((message) => (message.id === messageId ? { ...message, answer: option } : message))
+      );
+      if (option.startsWith('Yes')) {
+        void runAgent('create an end card');
+      }
+      return;
+    }
     const origin = [...messages.slice(0, index)].reverse().find((message) => message.role === 'user');
     setMessages((current) =>
       current.map((message) => (message.id === messageId ? { ...message, answer: option } : message))
@@ -525,7 +544,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const captionText = useMemo(() => activeCaptionText(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
   /** 当前时间点的动态图形卖点，同样用 previewTracks 以便未应用时先看到。 */
-  const graphicsCue = useMemo(() => activeGraphicsCue(previewTracks, sampleTime), [previewTracks, sampleTime]);
+  const graphicsCues = useMemo(() => activeGraphicsCues(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
   /*
    * 拿到真实时长后，用整条视频建一条视频轨；只建一次，后续编辑不再被覆盖。
@@ -957,6 +976,23 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       ])
     );
     setSelectedClipId(clip.id);
+    // 连续放了两个以上品牌素材（图片/片尾卡）→ 主动提出把版式做完
+    if (asset.kind === 'image') {
+      brandDropsRef.current += 1;
+      if (brandDropsRef.current >= 2 && !brandSuggestedRef.current) {
+        brandSuggestedRef.current = true;
+        setMessages((current) => [
+          ...current,
+          {
+            id: `endcard-suggest-${nextMessageId()}`,
+            role: 'question',
+            text: 'Looks like you’re assembling branding assets — want me to finish the layout as an end card?',
+            options: ['Yes — finish the layout', 'No thanks']
+          }
+        ]);
+        setActiveTool('agent');
+      }
+    }
   };
 
   const deleteTrack = (trackId: string) => {
@@ -1092,7 +1128,72 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             <>
           <div className="flex shrink-0 items-center gap-2 px-3.5 py-3">
             <span className="text-[15px] font-bold text-primary-onSurface">Editing agent</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              data-claude-connect
+              title={claudeConnected ? 'Prompts run through your Claude account' : 'Connect your Claude account (Anthropic API key)'}
+              onClick={() => setShowClaudeRow((v) => !v)}
+              className={clsx(
+                'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
+                claudeConnected
+                  ? 'border-success-fill/40 bg-success-fill/10 text-success-onSurface'
+                  : 'border-neutral-fillLow text-neutral-mediumOnSurface hover:bg-neutral-surface2'
+              )}
+            >
+              {claudeConnected ? 'Claude ✓' : 'Connect Claude'}
+            </button>
           </div>
+          {showClaudeRow ? (
+            <div className="shrink-0 border-b border-solid border-neutral-fillLow px-3.5 pb-3">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="password"
+                  value={claudeKeyDraft}
+                  placeholder="sk-ant-…"
+                  onChange={(event) => setClaudeKeyDraft(event.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface1 px-2 py-1.5 text-[12px] text-neutral-highOnSurface outline-none focus:border-primary-fill"
+                />
+                <button
+                  type="button"
+                  disabled={!claudeKeyDraft.trim()}
+                  onClick={() => {
+                    setClaudeKey(claudeKeyDraft.trim());
+                    setClaudeConnected(true);
+                    setClaudeKeyDraft('');
+                    setShowClaudeRow(false);
+                    setMessages((current) => [
+                      ...current,
+                      { id: nextMessageId(), role: 'note', text: 'Connected — prompts now run through your Claude account (claude-sonnet-5). Falls back to the local planner if the call fails.' }
+                    ]);
+                  }}
+                  className="rounded-lg bg-primary-fill px-2.5 py-1.5 text-[12px] font-semibold text-neutral-onFill disabled:opacity-50"
+                >
+                  Save
+                </button>
+                {claudeConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClaudeKey(null);
+                      setClaudeConnected(false);
+                      setShowClaudeRow(false);
+                      setMessages((current) => [
+                        ...current,
+                        { id: nextMessageId(), role: 'note', text: 'Disconnected — back to the local planner.' }
+                      ]);
+                    }}
+                    className="rounded-lg px-2 py-1.5 text-[12px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
+                  >
+                    Disconnect
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-1.5 text-[10px] leading-[14px] text-neutral-lowOnSurface">
+                Your API key is stored only in this browser and sent straight to Anthropic — never to our servers or the repo.
+              </p>
+            </div>
+          ) : null}
           <AiEditorPanel
             isBusy={isPlanning}
             messages={messages}
@@ -1166,6 +1267,12 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                         <button
                           key={asset.id}
                           type="button"
+                          draggable
+                          onDragStart={(event) => {
+                            setDragAssetId(asset.id);
+                            event.dataTransfer.effectAllowed = 'copy';
+                          }}
+                          onDragEnd={() => setDragAssetId(null)}
                           title={
                             asset.kind === 'graphics'
                               ? `Select “${asset.name}” on the timeline to keep editing it`
@@ -1372,42 +1479,85 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   </svg>
                 ) : null}
                 {/* 动态图形卖点：大标题 + 展开细线 + 角标 + 进度条，跟着播放头切换 */}
-                {graphicsCue ? (
+                {graphicsCues.length > 0 ? (
                   <span data-graphics-overlay className="pointer-events-none absolute inset-0">
                     {/* 画面亮的时候白字会糊，压一层自下而上的暗角 */}
                     <span className="absolute inset-x-0 bottom-0 top-1/3 bg-gradient-to-t from-black/45 via-black/20 to-transparent" />
-                    {/* key 带 clip id，切换卖点时重新播放入场动效；版式对齐参考稿：
-                        计数行两端对齐、中间一根细线 → 无衬线大标题直接压画面 → 短粗下划线 */}
-                    <span key={graphicsCue.clip.id} className="absolute inset-x-0 top-[44%] block">
-                      <span className="flex items-center gap-2 px-4">
-                        <span className="animate-hud-in text-[8px] font-medium tabular-nums tracking-[0.34em] text-neutral-onFill/70">
-                          {String(graphicsCue.index + 1).padStart(2, '0')} / {String(graphicsCue.total).padStart(2, '0')}
+                    {graphicsCues.map(({ clip, index, total }) => {
+                      const g = clip.graphic ?? { kind: 'headline' as const };
+                      const scale = g.scale ?? 1;
+                      const fg = g.fg ?? '#ffffff';
+                      const accent = g.accent ?? '#ffffff';
+                      const y = g.y;
+                      if (g.kind === 'lower-third') {
+                        return (
+                          <span key={clip.id} className="absolute inset-x-0 block px-4" style={{ top: `${y ?? 76}%` }}>
+                            <span className="block h-[3px] w-6 origin-left animate-rule-in" style={{ background: accent }} />
+                            <span className="mt-1.5 block animate-graphic-in font-bold uppercase" style={{ color: fg, fontSize: 13 * scale, lineHeight: 1.25 }}>
+                              {clip.text}
+                            </span>
+                          </span>
+                        );
+                      }
+                      if (g.kind === 'banner') {
+                        return (
+                          <span key={clip.id} className="absolute inset-x-0 block" style={{ top: `${y ?? 82}%` }}>
+                            <span className="flex animate-graphic-in items-center gap-2 px-3 py-2" style={{ background: g.bg ?? 'rgba(10,9,8,0.72)' }}>
+                              <span className="min-w-0 flex-1 truncate font-bold uppercase" style={{ color: fg, fontSize: 12 * scale }}>
+                                {clip.text}
+                              </span>
+                              {g.cta ? (
+                                <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: accent, color: '#111' }}>
+                                  {g.cta}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                        );
+                      }
+                      if (g.kind === 'badge') {
+                        return (
+                          <span key={clip.id} className="absolute right-3 block animate-graphic-in" style={{ top: `${y ?? 12}%`, transform: 'rotate(-8deg)' }}>
+                            <span className="block rounded-lg border px-2.5 py-1.5 text-center font-bold uppercase" style={{ background: g.bg ?? '#f2ece1', borderColor: accent, color: g.bg ? fg : '#1b1713', fontSize: 10.5 * scale, letterSpacing: '0.06em' }}>
+                              {clip.text}
+                            </span>
+                          </span>
+                        );
+                      }
+                      if (g.kind === 'logo') {
+                        return (
+                          <span key={clip.id} className="absolute inset-x-0 block text-center" style={{ top: `${y ?? 42}%` }}>
+                            <span className="block animate-graphic-in font-semibold" style={{ color: fg, fontSize: 26 * scale, letterSpacing: '0.42em' }}>
+                              {clip.text}
+                            </span>
+                            <span className="mx-auto mt-2 block h-px w-8 animate-rule-in" style={{ background: accent }} />
+                          </span>
+                        );
+                      }
+                      // headline（默认）：计数行 + 大标题 + 短粗线
+                      return (
+                        <span key={clip.id} className="absolute inset-x-0 block" style={{ top: `${y ?? 44}%` }}>
+                          {total > 1 ? (
+                            <span className="flex items-center gap-2 px-4">
+                              <span className="animate-hud-in text-[8px] font-medium tabular-nums tracking-[0.34em]" style={{ color: `${fg}b3` }}>
+                                {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
+                              </span>
+                              <span className="h-px flex-1 animate-hud-in" style={{ background: `${fg}40` }} />
+                              <span className="animate-hud-in text-[8px] font-medium uppercase tracking-[0.34em]" style={{ color: `${fg}b3` }}>
+                                Details
+                              </span>
+                            </span>
+                          ) : null}
+                          <span
+                            className="mt-2 block animate-graphic-in px-4 font-bold uppercase"
+                            style={{ color: fg, fontSize: 27 * scale, lineHeight: 1.07, letterSpacing: '-0.015em', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                          >
+                            {clip.text}
+                          </span>
+                          <span className="ml-4 mt-3 block h-[3px] w-7 origin-left animate-rule-in" style={{ background: accent }} />
                         </span>
-                        <span className="h-px flex-1 animate-hud-in bg-neutral-onFill/25" />
-                        <span className="animate-hud-in text-[8px] font-medium uppercase tracking-[0.34em] text-neutral-onFill/70">
-                          Details
-                        </span>
-                      </span>
-                      <span
-                        className="mt-2 block animate-graphic-in px-4 text-[27px] font-bold uppercase leading-[29px] tracking-[-0.015em] text-neutral-onFill"
-                        style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
-                      >
-                        {graphicsCue.clip.text}
-                      </span>
-                      <span className="ml-4 mt-3 block h-[3px] w-7 origin-left animate-rule-in bg-neutral-onFill" />
-                    </span>
-
-                    <span className="absolute inset-x-0 bottom-3 flex justify-center gap-1">
-                      {Array.from({ length: graphicsCue.total }, (_, dot) => (
-                        <span
-                          key={dot}
-                          className={clsx(
-                            'h-px transition-all',
-                            dot === graphicsCue.index ? 'w-4 bg-neutral-onFill' : 'w-2 bg-neutral-onFill/40'
-                          )}
-                        />
-                      ))}
-                    </span>
+                      );
+                    })}
                   </span>
                 ) : null}
                 {/* 字幕叠层：跟着播放头换行；双击直接进入该条字幕的内联编辑 */}
@@ -1679,7 +1829,26 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </div>
 
               {/* 标尺 + 轨道 */}
-              <div className="relative min-w-0 flex-1 overflow-x-auto">
+              <div
+                className="relative min-w-0 flex-1 overflow-x-auto"
+                onDragOver={(event) => {
+                  if (dragAssetId) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                  }
+                }}
+                onDrop={(event) => {
+                  if (!dragAssetId) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const asset = allAssets.find((item) => item.id === dragAssetId);
+                  setDragAssetId(null);
+                  if (asset) {
+                    addAssetToTimeline(asset);
+                  }
+                }}
+              >
                 <div style={{ width: rulerSeconds * pxPerSecond }}>
                   <div
                     ref={rulerRef}

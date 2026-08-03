@@ -97,6 +97,15 @@ export const applyOperation = (
         track.id === op.trackId ? { ...track, [op.flag]: op.value } : track
       );
 
+    case 'set-style':
+      return mapClips(tracks, (clips) =>
+        clips.map((clip) =>
+          clip.id === op.clipId && clip.graphic
+            ? { ...clip, graphic: { ...clip.graphic, ...op.style } }
+            : clip
+        )
+      );
+
     case 'set-text':
       return mapClips(tracks, (clips) =>
         clips.map((clip) => (clip.id === op.clipId ? { ...clip, text: op.text } : clip))
@@ -145,7 +154,10 @@ export const buildPreview = (
         return { clip, status: 'added' };
       }
       const moved =
-        original.start !== clip.start || original.duration !== clip.duration || original.text !== clip.text;
+        original.start !== clip.start ||
+        original.duration !== clip.duration ||
+        original.text !== clip.text ||
+        JSON.stringify(original.graphic ?? null) !== JSON.stringify(clip.graphic ?? null);
       return { clip, status: moved ? 'changed' : 'unchanged' };
     });
 
@@ -210,6 +222,27 @@ export const activeCaptionText = (tracks: TimelineTrack[], time: number): string
  * 播放头处命中的动态图形卖点，附带它在整条卖点序列里的序号，
  * 好在画面上渲染 01/05 这样的计数和进度条。
  */
+/** 同一时刻可能有多条图形（片尾卡场景就是好几条叠加），全部取出来。 */
+export const activeGraphicsCues = (
+  tracks: TimelineTrack[],
+  time: number
+): Array<{ clip: TimelineClip; index: number; total: number }> => {
+  const cues: Array<{ clip: TimelineClip; index: number; total: number }> = [];
+  for (const track of tracks) {
+    if (track.kind !== 'graphics' || !track.visible) {
+      continue;
+    }
+    const ordered = [...track.clips].sort((a, b) => a.start - b.start);
+    const index = ordered.findIndex(
+      (clip) => time >= clip.start && time < clip.start + clip.duration && clip.text
+    );
+    if (index >= 0) {
+      cues.push({ clip: ordered[index], index, total: ordered.length });
+    }
+  }
+  return cues;
+};
+
 export const activeGraphicsCue = (
   tracks: TimelineTrack[],
   time: number
