@@ -1,5 +1,6 @@
 /* eslint-disable max-lines-per-function */
 import {
+  KsIconAiAssistant,
   KsIconClose,
   KsIconCopyContent,
   KsIconCut,
@@ -24,8 +25,8 @@ import {
   summarizePreview,
   timelineDuration
 } from '../timeline-ops';
-import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack, TimelineTrackKind } from '../types';
-import TimelineAgentBar from './TimelineAgentBar';
+import type { AiEditorMessage, ClipDiffStatus, TimelineTrack, TimelineTrackKind } from '../types';
+import AiEditorPanel from './AiEditorPanel';
 
 interface TimelineEditorProps {
   /** 编辑对象的名称，展示在标题和预览占位上。 */
@@ -44,6 +45,8 @@ const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
 /** 预览视频与播放头允许的最大偏差（秒），超过才回拉。 */
 const DRIFT_TOLERANCE = 0.4;
+/** 思考步骤逐条揭示的间隔（毫秒）。 */
+const THINKING_REVEAL_MS = 420;
 /** 读不到素材时长时（解码失败等）建轨道用的兜底时长。 */
 const FALLBACK_MEDIA_SECONDS = 6;
 /** 每段分镜的目标时长（秒），用来决定把素材切成几段。 */
@@ -138,11 +141,24 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 复制片段的自增后缀，保证 id 唯一。 */
   const copySeqRef = useRef(1);
 
-  /* AI 编辑：计划待确认时只做预览，应用后把上一版存进 undoSnapshot。 */
-  const [plan, setPlan] = useState<TimelineEditPlan | null>(null);
+  /* AI editor 会话：计划待确认时只做预览，应用后把上一版留在消息里可回滚。 */
+  const [messages, setMessages] = useState<AiEditorMessage[]>([]);
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
   const [skippedOpIds, setSkippedOpIds] = useState<Set<string>>(new Set());
   const [isPlanning, setIsPlanning] = useState(false);
-  const [undoSnapshot, setUndoSnapshot] = useState<TimelineTrack[] | null>(null);
+  const msgSeqRef = useRef(0);
+  const versionSeqRef = useRef(0);
+
+  const nextMessageId = () => {
+    msgSeqRef.current += 1;
+    return `msg-${msgSeqRef.current}`;
+  };
+
+  /** 当前待确认的计划。 */
+  const plan = useMemo(() => {
+    const message = messages.find((item) => item.role === 'plan' && item.id === pendingPlanId);
+    return message && message.role === 'plan' ? message.plan : null;
+  }, [messages, pendingPlanId]);
 
   /** 勾选中的操作，取消勾选的不参与预览也不会被应用。 */
   const acceptedOperations = useMemo(
@@ -170,15 +186,68 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const duration = Math.max(timelineDuration(previewTracks), 1);
   const rulerSeconds = Math.max(MIN_RULER_SECONDS, Math.ceil(duration));
 
-  const requestPlan = async (prompt: string) => {
+  const patchMessage = (id: string, patch: Partial<Extract<AiEditorMessage, { role: 'thinking' }>>) =>
+    setMessages((current) =>
+      current.map((message) => (message.id === id ? ({ ...message, ...patch } as AiEditorMessage) : message))
+    );
+
+  /**
+   * 跑一轮 agent：先落用户消息和思考占位，拿到回复后逐条揭示推理，
+   * 最后落地成一个澄清问题或一份待确认的计划。
+   */
+  const runAgent = async (prompt: string) => {
+    // 两个 id 都先算好，别在 setState 更新函数里取，那会被 StrictMode 重复调用
+    const userId = nextMessageId();
+    const thinkingId = nextMessageId();
+    setMessages((current) => [
+      ...current,
+      { id: userId, role: 'user', text: prompt },
+      { id: thinkingId, role: 'thinking', steps: [], revealed: 0 }
+    ]);
     setIsPlanning(true);
+    setPendingPlanId(null);
+
     try {
-      const next = await planEdit(prompt, tracks, currentTime);
-      setPlan(next);
+      const reply = await planEdit(prompt, tracks, currentTime);
+      patchMessage(thinkingId, { steps: reply.thinking, revealed: 0 });
+      // 逐条揭示，让处理过程可见而不是一次性糊上来
+      for (let step = 1; step <= reply.thinking.length; step += 1) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, THINKING_REVEAL_MS);
+        });
+        patchMessage(thinkingId, { revealed: step });
+      }
+
+      if (reply.kind === 'question') {
+        setMessages((current) => [
+          ...current,
+          { id: nextMessageId(), role: 'question', text: reply.question, options: reply.options }
+        ]);
+        return;
+      }
+
+      const planId = nextMessageId();
+      setMessages((current) => [...current, { id: planId, role: 'plan', plan: reply.plan, status: 'pending' }]);
       setSkippedOpIds(new Set());
+      if (reply.plan.operations.length > 0) {
+        setPendingPlanId(planId);
+      }
     } finally {
       setIsPlanning(false);
     }
+  };
+
+  /** 回答澄清问题：把选项接在原始诉求后面重跑，答案因此真的会改变结果。 */
+  const answerQuestion = (messageId: string, option: string) => {
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) {
+      return;
+    }
+    const origin = [...messages.slice(0, index)].reverse().find((message) => message.role === 'user');
+    setMessages((current) =>
+      current.map((message) => (message.id === messageId ? { ...message, answer: option } : message))
+    );
+    void runAgent(origin && origin.role === 'user' ? `${origin.text} ${option}` : option);
   };
 
   const toggleOperation = (operationId: string) => {
@@ -194,27 +263,47 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   };
 
   const applyPlan = () => {
-    if (acceptedOperations.length === 0) {
+    if (acceptedOperations.length === 0 || !pendingPlanId) {
       return;
     }
-    setUndoSnapshot(tracks);
+    const snapshot = tracks;
+    versionSeqRef.current += 1;
+    const version = versionSeqRef.current;
     setTracks(applyOperations(tracks, acceptedOperations));
-    setPlan(null);
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === pendingPlanId && message.role === 'plan'
+          ? { ...message, status: 'applied', snapshot, version }
+          : message
+      )
+    );
+    setPendingPlanId(null);
     setSkippedOpIds(new Set());
   };
 
   const discardPlan = () => {
-    setPlan(null);
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === pendingPlanId && message.role === 'plan' ? { ...message, status: 'discarded' } : message
+      )
+    );
+    setPendingPlanId(null);
     setSkippedOpIds(new Set());
   };
 
-  const undoAiEdit = () => {
-    if (!undoSnapshot) {
+  /** 回到某次编辑之前的那份拷贝。 */
+  const restoreVersion = (messageId: string) => {
+    const message = messages.find((item) => item.id === messageId);
+    if (!message || message.role !== 'plan' || !message.snapshot) {
       return;
     }
-    setTracks(undoSnapshot);
-    setUndoSnapshot(null);
+    setTracks(message.snapshot);
     setSelectedClipId(null);
+    setPendingPlanId(null);
+    setMessages((current) => [
+      ...current,
+      { id: nextMessageId(), role: 'note', text: `Reverted to the timeline before v${message.version}.` }
+    ]);
   };
 
   /** 播放头当前落在哪个有画面的片段上，决定预览播哪一段素材。 */
@@ -683,25 +772,27 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         {/* 右侧 AI 编辑面板 */}
         <aside className="flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-solid border-neutral-fillLow bg-neutral-surface">
           <div className="flex shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-2.5">
-            <span className="flex-1 truncate text-[12px] font-semibold text-neutral-highOnSurface">
-              Timeline Editor
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+              <KsIconAiAssistant size={12} />
             </span>
+            <span className="flex-1 truncate text-[12px] font-semibold text-neutral-highOnSurface">AI editor</span>
             <span className="shrink-0 text-[11px] tabular-nums text-neutral-lowOnSurface">
               {formatTime(duration)}
             </span>
           </div>
 
-          <TimelineAgentBar
+          <AiEditorPanel
             isBusy={isPlanning}
-            plan={plan}
+            messages={messages}
+            pendingPlanId={pendingPlanId}
             skippedOpIds={skippedOpIds}
             diff={diffCounts}
-            canUndo={Boolean(undoSnapshot)}
-            onSubmit={requestPlan}
+            onSubmit={runAgent}
+            onAnswer={answerQuestion}
             onToggleOp={toggleOperation}
             onApply={applyPlan}
             onDiscard={discardPlan}
-            onUndo={undoAiEdit}
+            onRestore={restoreVersion}
           />
         </aside>
       </div>

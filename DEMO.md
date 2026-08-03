@@ -45,22 +45,34 @@ the active clip and seeks the video to the mapped source time, so gaps play noth
 hidden tracks don't drive the preview. Clips without a `sourceUrl` — captions, music beds —
 never hijack the picture.
 
-Split, duplicate and delete in the toolbar run through the same operations the AI uses.
-The prompt panel takes a plain-language instruction and returns a **plan** rather than an
-immediate mutation — the Flora-style propose → review → apply loop:
+Split, duplicate and delete in the toolbar run through the same operations the agent uses.
 
-1. **Prompt** — "trim to 15 seconds", "add captions", "lay in a music bed", "remove the
-   street b-roll", "make the hook punchier", "split", "mute the music".
-2. **Preview** — the plan is applied to a throwaway copy and diffed against the current
-   timeline. Added clips draw green-dashed, retimed clips blue-dashed, and deleted clips
-   stay on the track as red-dashed struck-through ghosts so you see what you're losing.
-3. **Review** — each step is an individually checkable line. Unchecking one re-renders the
-   preview without it, so you can take half a plan.
-4. **Apply / Undo** — applying commits only the checked steps and snapshots the previous
-   timeline, so **Undo AI edit** restores it in one click.
+## The AI editor
 
-Nothing mutates the timeline until you press Apply. When the instruction doesn't map to a
-timeline edit, the agent says so and suggests phrasings instead of inventing an edit.
+The right-hand panel is a conversational editing agent, not a one-shot prompt box. A turn
+runs the way a Claude turn does:
+
+1. **Ask** — "trim to 15 seconds", "make it shorter", "add captions", "lay in a music bed",
+   "remove the hook", "make the hook punchier", "split", "mute the music".
+2. **Think** — the reasoning trace streams in step by step and cites the real timeline
+   ("Reading the timeline — 3 tracks (video, transition, audio), 4 clips, 30.1s total"),
+   then collapses to `Thought for N steps` once it lands. Click to expand it again.
+3. **Ask back, when it should** — a vague instruction gets a question instead of a guess.
+   "Make it shorter" asks what length to hit; "remove that clip" asks which one, listing
+   the clips by name. Answering appends your choice to the original request and re-runs it,
+   so the answer genuinely changes the result rather than replaying a canned branch.
+4. **Propose** — the plan arrives as individually checkable steps, previewed on the
+   timeline: added clips draw green-dashed, retimed clips blue-dashed, and deleted clips
+   stay put as red-dashed struck-through ghosts so you see what you'd lose. Unchecking a
+   step re-renders the preview without it, so you can take half a plan.
+5. **Apply, and keep the old copy** — applying commits only the checked steps and stamps a
+   version (`Applied · v1`). Every applied turn keeps the timeline as it was beforehand, so
+   **Revert to before** on any earlier turn restores that copy — history, not a single-slot
+   undo.
+
+Nothing mutates the timeline until you press Apply. The whole conversation stays in the
+panel, so later turns read against the edits you already made. When an instruction doesn't
+map to a timeline edit, the agent says so and suggests phrasings instead of inventing one.
 
 The split is deliberate: [`timeline-ops.ts`](./src/pages/canvas/timeline-ops.ts) holds the
 pure, unit-tested reducer over tracks/clips; [`services/timeline-ai.ts`](./src/pages/canvas/services/timeline-ai.ts)

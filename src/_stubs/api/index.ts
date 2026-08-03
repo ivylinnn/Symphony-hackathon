@@ -94,6 +94,23 @@ export interface WireOperation {
   Track?: WireTrack & { Visible?: boolean; Muted?: boolean };
 }
 
+/**
+ * The agent either proposes a plan or stops to ask one clarifying question.
+ * `Thinking` is the reasoning trace the panel reveals while it works.
+ */
+export interface WireAgentReply {
+  Kind: 'plan' | 'question';
+  Thinking: string[];
+  Summary?: string;
+  Operations?: WireOperation[];
+  Question?: string;
+  /**
+   * Each option is a phrase that gets appended to the original prompt and re-sent,
+   * so answering genuinely resolves the request instead of replaying a canned branch.
+   */
+  Options?: string[];
+}
+
 let opSeq = 0;
 const nextId = (prefix: string) => {
   opSeq += 1;
@@ -130,16 +147,26 @@ const matchClip = (tracks: WireTrack[], prompt: string): WireClip | undefined =>
 
 const has = (prompt: string, ...needles: string[]) => needles.some((n) => prompt.includes(n));
 
+/** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
+const surveyLine = (tracks: WireTrack[]) => {
+  const clips = allClips(tracks).length;
+  const kinds = tracks.map((t) => t.Kind);
+  return `Reading the timeline — ${tracks.length} track${tracks.length > 1 ? 's' : ''} (${kinds.join(', ')}), ${clips} clip${
+    clips > 1 ? 's' : ''
+  }, ${endOf(tracks).toFixed(1)}s total.`;
+};
+
 /**
- * Stub of the timeline-editing model. Reads the current timeline plus a natural-language
- * instruction and returns a plan of atomic operations. Intent matching is keyword-based
- * here; the real endpoint would run an LLM over the same request/response shape.
+ * Stub of the timeline-editing agent. Reads the current timeline plus a natural-language
+ * instruction and returns either a plan of atomic operations or a clarifying question.
+ * Intent matching is keyword-based here; the real endpoint would run an LLM over the same
+ * request/response shape.
  */
 export async function planTimelineEdit(args: {
   prompt: string;
   playhead: number;
   tracks: WireTrack[];
-}): Promise<{ Summary: string; Operations: WireOperation[] }> {
+}): Promise<WireAgentReply> {
   await delay(900);
 
   const prompt = (args.prompt ?? '').toLowerCase().trim();
@@ -147,6 +174,8 @@ export async function planTimelineEdit(args: {
   const videoTracks = tracks.filter((t) => t.Kind === 'video');
   const audioTracks = tracks.filter((t) => t.Kind === 'audio');
   const total = endOf(tracks);
+  const survey = surveyLine(tracks);
+  const durationMatch = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)/);
 
   /* 1) 静音 / 取消静音 —— 要排在 "music" 之前，否则 "mute the music" 会被当成加音乐 */
   if (has(prompt, 'mute', 'silence the', 'unmute')) {
@@ -154,6 +183,8 @@ export async function planTimelineEdit(args: {
     const target = audioTracks[0] ?? tracks[0];
     if (target) {
       return {
+        Kind: 'plan',
+        Thinking: [survey, `Targeting the ${target.Kind} track for a ${unmute ? 'unmute' : 'mute'}.`],
         Summary: `${unmute ? 'Unmuted' : 'Muted'} the ${target.Kind} track.`,
         Operations: [
           {
@@ -168,12 +199,31 @@ export async function planTimelineEdit(args: {
     }
   }
 
-  /* 2) 删除片段 */
+  /* 2) 删除片段 —— 认不出目标就反问，而不是瞎删一个 */
   if (has(prompt, 'remove', 'delete', 'get rid of', 'drop the', 'cut the')) {
     const target = matchClip(tracks, prompt);
+    if (!target) {
+      const candidates = allClips(tracks).map((c) => c.Label).slice(0, 5);
+      if (candidates.length > 0) {
+        return {
+          Kind: 'question',
+          Thinking: [survey, 'The instruction is a removal, but no clip label matches it confidently.'],
+          Question: 'Which clip should I remove?',
+          Options: candidates,
+        };
+      }
+    }
     if (target) {
       const trailing = allClips(tracks).filter((c) => c.Start > target.Start);
       return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          `Matched "${target.Label}" (${target.Duration.toFixed(1)}s at ${target.Start.toFixed(1)}s).`,
+          trailing.length
+            ? `${trailing.length} clip${trailing.length > 1 ? 's' : ''} sit after it and will be pulled up to close the gap.`
+            : 'Nothing follows it, so no gap to close.',
+        ],
         Summary: trailing.length
           ? `Removed "${target.Label}" and pulled the following ${trailing.length} clip${
               trailing.length > 1 ? 's' : ''
@@ -199,13 +249,20 @@ export async function planTimelineEdit(args: {
     const target = allClips(tracks).find((c) => at > c.Start && at < c.Start + c.Duration);
     if (target) {
       return {
+        Kind: 'plan',
+        Thinking: [survey, `Playhead sits at ${at.toFixed(2)}s, inside "${target.Label}".`],
         Summary: `Split "${target.Label}" at the playhead.`,
         Operations: [
           { Label: `Split "${target.Label}" at ${at.toFixed(2)}s`, Type: 'split', ClipId: target.ClipId, At: at },
         ],
       };
     }
-    return { Summary: 'The playhead is not over a clip, so there is nothing to split there.', Operations: [] };
+    return {
+      Kind: 'plan',
+      Thinking: [survey, `Playhead at ${at.toFixed(2)}s is not over any clip.`],
+      Summary: 'The playhead is not over a clip, so there is nothing to split there.',
+      Operations: [],
+    };
   }
 
   /* 4) 字幕轨 */
@@ -213,6 +270,8 @@ export async function planTimelineEdit(args: {
     const source = videoTracks[0]?.Clips ?? [];
     if (source.length > 0) {
       return {
+        Kind: 'plan',
+        Thinking: [survey, `Deriving one cue per scene on the video track — ${source.length} in total.`],
         Summary: `Added a caption track with ${source.length} cue${source.length > 1 ? 's' : ''} timed to your video clips.`,
         Operations: [
           {
@@ -237,13 +296,27 @@ export async function planTimelineEdit(args: {
     }
   }
 
-  /* 5) 背景音乐 */
+  /* 5) 背景音乐 —— 先问铺满还是只铺开场 */
   if (has(prompt, 'music', 'bgm', 'soundtrack', 'audio bed', 'background track')) {
+    const hookOnly = has(prompt, 'hook only', 'under the hook', 'just the hook', 'opening only');
+    const wholeCut = has(prompt, 'whole cut', 'entire', 'full cut', 'all the way', 'throughout');
+    if (!hookOnly && !wholeCut) {
+      return {
+        Kind: 'question',
+        Thinking: [survey, 'A music bed can run under everything or just lift the opening — that changes its length.'],
+        Question: 'How far should the music bed run?',
+        Options: ['under the whole cut', 'under the hook only'],
+      };
+    }
+    const firstScene = videoTracks[0]?.Clips[0];
+    const bedLength = hookOnly && firstScene ? firstScene.Duration : Math.max(1, total);
     return {
-      Summary: `Laid an upbeat music bed under the full ${total.toFixed(1)}s cut.`,
+      Kind: 'plan',
+      Thinking: [survey, `Laying a bed of ${bedLength.toFixed(1)}s starting at 0.`],
+      Summary: `Laid an upbeat music bed under ${hookOnly ? 'the hook' : `the full ${total.toFixed(1)}s cut`}.`,
       Operations: [
         {
-          Label: 'Add music bed spanning the cut',
+          Label: `Add music bed (${bedLength.toFixed(1)}s)`,
           Type: 'add-track',
           Track: {
             TrackId: nextId('track-music'),
@@ -255,7 +328,7 @@ export async function planTimelineEdit(args: {
                 ClipId: nextId('clip-music'),
                 Label: 'AI music bed — upbeat',
                 Start: 0,
-                Duration: Math.max(1, total),
+                Duration: bedLength,
                 HasAudio: true,
               },
             ],
@@ -270,6 +343,8 @@ export async function planTimelineEdit(args: {
     const track = videoTracks[0];
     if (track) {
       return {
+        Kind: 'plan',
+        Thinking: [survey, `Appending a 1.6s cutaway at ${endOf([track]).toFixed(1)}s, the end of the video track.`],
         Summary: 'Appended a b-roll cutaway to the end of the video track.',
         Operations: [
           {
@@ -296,6 +371,12 @@ export async function planTimelineEdit(args: {
       const keep = Math.min(1.2, first.Duration * 0.45);
       const trimmed = first.Duration - keep;
       return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          `"${first.Label}" runs ${first.Duration.toFixed(1)}s — long for an opening.`,
+          `Keeping ${keep.toFixed(1)}s and pulling everything after it up by ${trimmed.toFixed(1)}s.`,
+        ],
         Summary: `Tightened the opening — trimmed ${trimmed.toFixed(1)}s of lead-in so the hook lands immediately.`,
         Operations: [
           {
@@ -319,13 +400,18 @@ export async function planTimelineEdit(args: {
     }
   }
 
-  /* 8) 压到目标时长 */
-  const durationMatch = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)/);
+  /* 8) 压到目标时长；没给数字就先问要多长 */
   if (durationMatch && total > 0) {
     const target = Number(durationMatch[1]);
     const factor = target / total;
     if (target > 0 && Math.abs(factor - 1) > 0.01) {
       return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          `Target is ${target}s against ${total.toFixed(1)}s — a ${factor.toFixed(2)}× retime.`,
+          'Scaling every clip so the cut keeps its rhythm instead of chopping the tail.',
+        ],
         Summary: `Retimed every clip to fit a ${target}s cut — ${
           factor < 1 ? 'tightened' : 'stretched'
         } ${factor.toFixed(2)}× from ${total.toFixed(1)}s.`,
@@ -340,11 +426,22 @@ export async function planTimelineEdit(args: {
     }
   }
 
+  if (has(prompt, 'shorter', 'tighten', 'shorten', 'cut it down', 'trim') && !durationMatch) {
+    return {
+      Kind: 'question',
+      Thinking: [survey, 'This asks for a shorter cut but names no target length.'],
+      Question: `The cut runs ${total.toFixed(1)}s. What should it come down to?`,
+      Options: ['to 15 seconds', 'to 20 seconds', 'to 30 seconds'],
+    };
+  }
+
   /* 9) 变速 */
-  if (has(prompt, 'speed up', 'faster', 'slow down', 'slower', 'tighten', 'shorten')) {
+  if (has(prompt, 'speed up', 'faster', 'slow down', 'slower')) {
     const slower = has(prompt, 'slow down', 'slower');
     const factor = slower ? 1.25 : 0.8;
     return {
+      Kind: 'plan',
+      Thinking: [survey, `Applying a ${factor}× retime across every clip.`],
       Summary: `${slower ? 'Slowed' : 'Sped'} the cut to ${(total * factor).toFixed(1)}s across all tracks.`,
       Operations: allClips(tracks).map<WireOperation>((c) => ({
         Label: `${slower ? 'Slow' : 'Speed'} "${c.Label}" to ${(c.Duration * factor).toFixed(2)}s`,
@@ -357,8 +454,10 @@ export async function planTimelineEdit(args: {
   }
 
   return {
+    Kind: 'plan',
+    Thinking: [survey, 'No timeline operation maps to this instruction.'],
     Summary:
-      "I couldn't map that to a timeline edit. Try things like \"trim to 15 seconds\", \"add captions\", \"lay in a music bed\", \"remove the street b-roll\", or \"make the hook punchier\".",
+      "I couldn't map that to a timeline edit. Try things like \"trim to 15 seconds\", \"add captions\", \"lay in a music bed\", \"remove the hook\", or \"make the hook punchier\".",
     Operations: [],
   };
 }

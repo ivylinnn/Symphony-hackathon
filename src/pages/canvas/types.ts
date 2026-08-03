@@ -112,6 +112,27 @@ export interface TimelineEditPlan {
   operations: TimelineEditOperation[];
 }
 
+/**
+ * AI editor 会话里的一条消息。
+ * plan 消息带着应用前的时间线快照，所以每一次编辑都留有一份可回滚的旧版本。
+ */
+export type AiEditorMessage =
+  | { id: string; role: 'user'; text: string }
+  | { id: string; role: 'thinking'; steps: string[]; revealed: number }
+  | { id: string; role: 'answer'; text: string }
+  | { id: string; role: 'question'; text: string; options: string[]; answer?: string }
+  | {
+      id: string;
+      role: 'plan';
+      plan: TimelineEditPlan;
+      status: 'pending' | 'applied' | 'discarded';
+      /** 应用前的时间线，用来「回到这次编辑之前」。 */
+      snapshot?: TimelineTrack[];
+      /** 展示用的版本号，从 1 开始。 */
+      version?: number;
+    }
+  | { id: string; role: 'note'; text: string };
+
 /** 预览时每个片段相对原时间线的状态，决定轨道上画什么描边。 */
 export type ClipDiffStatus = 'added' | 'removed' | 'changed' | 'unchanged';
 

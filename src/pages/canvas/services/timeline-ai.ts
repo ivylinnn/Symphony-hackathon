@@ -106,15 +106,20 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
   }
 };
 
+/** Agent 要么给一份计划，要么停下来问一个澄清问题。 */
+export type AgentReply =
+  | { kind: 'plan'; thinking: string[]; plan: TimelineEditPlan }
+  | { kind: 'question'; thinking: string[]; question: string; options: string[] };
+
 /**
- * 让模型基于当前时间线和一句自然语言指令给出一份编辑计划。
+ * 让模型基于当前时间线和一句自然语言指令作答。
  * 计划只是「提议」，调用方负责预览和逐条应用 —— 这里不改任何状态。
  */
 export const planEdit = async (
   prompt: string,
   tracks: TimelineTrack[],
   playhead: number
-): Promise<TimelineEditPlan> => {
+): Promise<AgentReply> => {
   const resp = await planTimelineEdit({
     prompt,
     playhead,
@@ -132,6 +137,16 @@ export const planEdit = async (
   });
 
   planSeq += 1;
+  const thinking = (resp?.Thinking ?? []).filter((line): line is string => typeof line === 'string');
+
+  if (resp?.Kind === 'question' && resp.Question) {
+    return {
+      kind: 'question',
+      thinking,
+      question: resp.Question,
+      options: (resp.Options ?? []).filter((option): option is string => typeof option === 'string')
+    };
+  }
 
   const operations: TimelineEditOperation[] = (resp?.Operations ?? [])
     .map((wire: WireOperation, index: number) => {
@@ -141,9 +156,13 @@ export const planEdit = async (
     .filter((operation): operation is TimelineEditOperation => Boolean(operation));
 
   return {
-    id: `plan-${planSeq}`,
-    prompt,
-    summary: resp?.Summary ?? 'No summary returned.',
-    operations
+    kind: 'plan',
+    thinking,
+    plan: {
+      id: `plan-${planSeq}`,
+      prompt,
+      summary: resp?.Summary ?? 'No summary returned.',
+      operations
+    }
   };
 };
