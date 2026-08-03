@@ -54,6 +54,12 @@ module.exports = {
         warning: {
           fill: '#ff9000',
         },
+        /* ks/color/data/data5 —— 数据可视化蓝色系（fill / fillMedHigh / fillHigh） */
+        data5: {
+          fill: '#7cc0ed',
+          fillMedHigh: '#38a3e2',
+          fillHigh: '#0f6ea6',
+        },
       },
       fontFamily: {
         sans: [
