@@ -82,7 +82,7 @@ export interface WireTrack {
 
 export interface WireOperation {
   Label: string;
-  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag';
+  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-format';
   ClipId?: string;
   TrackId?: string;
   Start?: number;
@@ -90,6 +90,7 @@ export interface WireOperation {
   At?: number;
   Flag?: 'visible' | 'muted';
   Value?: boolean;
+  Ratio?: string;
   Clip?: WireClip;
   Track?: WireTrack & { Visible?: boolean; Muted?: boolean };
 }
@@ -265,8 +266,162 @@ export async function planTimelineEdit(args: {
     };
   }
 
+  /* 4a) 智能扩画（Uncrop）—— 没说目标版位就先问 */
+  if (has(prompt, 'uncrop', 'expand the frame', 'outpaint', 'placement', 'aspect ratio', '扩画')) {
+    const ratioMatch =
+      prompt.match(/(1:1|16:9|4:5|9:16)/)?.[1] ??
+      (has(prompt, 'square') ? '1:1' : has(prompt, 'landscape') ? '16:9' : undefined);
+    if (!ratioMatch) {
+      return {
+        Kind: 'question',
+        Thinking: [survey, 'Uncrop targets a placement, and each placement wants a different canvas.'],
+        Question: 'Which placement should this variant target?',
+        Options: ['square 1:1 for feed', 'landscape 16:9 for in-stream', 'portrait 4:5 for feed'],
+      };
+    }
+    return {
+      Kind: 'plan',
+      Thinking: [
+        survey,
+        `Source frame is 9:16 — outpainting the edges to reach ${ratioMatch}.`,
+        'Scene content stays centered; the AI fills the extended canvas.',
+      ],
+      Summary: `Uncropped the cut to ${ratioMatch} — edges AI-extended so the variant fits new placements.`,
+      Operations: [{ Label: `Uncrop to ${ratioMatch} (AI outpaint the edges)`, Type: 'set-format', Ratio: ratioMatch }],
+    };
+  }
+
+  /* 4b) 配音（Dubbing）—— 换语言重配，原声静音 */
+  if (has(prompt, 'dub', '配音')) {
+    const language = ['spanish', 'japanese', 'german', 'french', 'portuguese', 'korean'].find((item) =>
+      prompt.includes(item)
+    );
+    if (!language) {
+      return {
+        Kind: 'question',
+        Thinking: [survey, 'A dub replaces the dialogue — the target language decides the voice model.'],
+        Question: 'Which language should the dub target?',
+        Options: ['in Spanish', 'in Japanese', 'in German'],
+      };
+    }
+    const spoken = language[0].toUpperCase() + language.slice(1);
+    const videoTrack = videoTracks[0];
+    return {
+      Kind: 'plan',
+      Thinking: [survey, `Muting the original dialogue and laying a ${spoken} AI dub under the full ${total.toFixed(1)}s.`],
+      Summary: `Dubbed the cut into ${spoken} — original dialogue muted, AI dub matched to the scene timing.`,
+      Operations: [
+        ...(videoTrack
+          ? [
+              {
+                Label: 'Mute the original dialogue',
+                Type: 'set-track-flag' as const,
+                TrackId: videoTrack.TrackId,
+                Flag: 'muted' as const,
+                Value: true,
+              },
+            ]
+          : []),
+        {
+          Label: `Add ${spoken} dub track (AI)`,
+          Type: 'add-track',
+          Track: {
+            TrackId: nextId('track-dub'),
+            Kind: 'audio',
+            Visible: true,
+            Muted: false,
+            Clips: [
+              {
+                ClipId: nextId('clip-dub'),
+                Label: `Dub — ${spoken} (AI)`,
+                Start: 0,
+                Duration: Math.max(1, total),
+                HasAudio: true,
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+
+  /* 4c) AI 旁白（Voiceover）—— 从分镜结构起稿的解说轨 */
+  if (has(prompt, 'voiceover', 'narration', '旁白')) {
+    const scenes = videoTracks[0]?.Clips ?? [];
+    return {
+      Kind: 'plan',
+      Thinking: [
+        survey,
+        scenes.length
+          ? `Drafting a read from the scene structure (${scenes.map((c) => c.Label).join(' → ')}).`
+          : 'No scene structure found — drafting a single read over the cut.',
+      ],
+      Summary: `Added an AI voiceover reading the ad script over the full ${total.toFixed(1)}s cut.`,
+      Operations: [
+        {
+          Label: 'Add AI voiceover track',
+          Type: 'add-track',
+          Track: {
+            TrackId: nextId('track-voiceover'),
+            Kind: 'audio',
+            Visible: true,
+            Muted: false,
+            Clips: [
+              {
+                ClipId: nextId('clip-voiceover'),
+                Label: 'AI voiceover — script read',
+                Start: 0,
+                Duration: Math.max(1, total),
+                HasAudio: true,
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+
+  /* 4d) Hook 替换（Hook Swap）—— 同一时段换一个新开场，方向先问清 */
+  if (has(prompt, 'swap the hook', 'hook swap', 'replace the hook', 'new hook', 'fresh hook', '换个hook', '换 hook', '替换 hook')) {
+    const first = videoTracks[0]?.Clips[0];
+    if (first) {
+      const style = ['question-led', 'bold claim', 'social proof'].find((item) => prompt.includes(item));
+      if (!style) {
+        return {
+          Kind: 'question',
+          Thinking: [survey, `The hook ("${first.Label}", ${first.Duration.toFixed(1)}s) can be rebuilt in several directions.`],
+          Question: 'Which direction should the new hook take?',
+          Options: ['question-led hook', 'bold claim hook', 'social proof hook'],
+        };
+      }
+      return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          `Replacing "${first.Label}" with a ${style} variant at the exact same timing, so nothing downstream moves.`,
+        ],
+        Summary: `Swapped the hook for a ${style} variant — same ${first.Duration.toFixed(1)}s slot, rest of the cut untouched.`,
+        Operations: [
+          { Label: `Remove current hook "${first.Label}"`, Type: 'delete', ClipId: first.ClipId },
+          {
+            Label: `Add ${style} hook (AI generated)`,
+            Type: 'add-clip',
+            TrackId: videoTracks[0].TrackId,
+            Clip: {
+              ClipId: nextId('clip-hook-swap'),
+              Label: `Hook v2 — ${style} (AI)`,
+              Start: first.Start,
+              Duration: first.Duration,
+              HasAudio: true,
+            },
+          },
+        ],
+      };
+    }
+  }
+
   /* 4) 字幕轨 */
-  if (has(prompt, 'caption', 'subtitle', 'text overlay', 'on-screen text')) {
+  if (has(prompt, 'caption', 'subtitle', 'text overlay', 'on-screen text', '字幕')) {
     const source = videoTracks[0]?.Clips ?? [];
     if (source.length > 0) {
       return {

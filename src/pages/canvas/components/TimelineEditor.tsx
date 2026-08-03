@@ -25,7 +25,7 @@ import {
   summarizePreview,
   timelineDuration
 } from '../timeline-ops';
-import type { AiEditorMessage, ClipDiffStatus, TimelineTrack, TimelineTrackKind } from '../types';
+import type { AiEditorMessage, ClipDiffStatus, TimelineTrack, TimelineTrackKind, VideoFormatRatio } from '../types';
 import AiEditorPanel from './AiEditorPanel';
 
 interface TimelineEditorProps {
@@ -54,6 +54,14 @@ const TARGET_SEGMENT_SECONDS = 7;
 const MIN_SEGMENTS = 2;
 /** 转场元素的时长，跨在两段分镜的接缝上。 */
 const TRANSITION_SECONDS = 0.5;
+
+/** 画幅比例 → CSS aspect-ratio，Uncrop 变体在这些版位画布之间切换。 */
+const FORMAT_ASPECT: Record<VideoFormatRatio, string> = {
+  '9:16': '9 / 16',
+  '1:1': '1 / 1',
+  '16:9': '16 / 9',
+  '4:5': '4 / 5'
+};
 
 /** 分镜按广告结构命名，和画布上的 Hook / Body / CTA 节点对齐。 */
 const SEGMENT_LABELS = ['Hook', 'Body', 'Proof', 'CTA', 'Outro'];
@@ -134,6 +142,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(1);
+  /** 当前画幅；Uncrop 变体应用后从 9:16 切到目标版位。 */
+  const [format, setFormat] = useState<VideoFormatRatio>('9:16');
   const rulerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
@@ -177,9 +187,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     [tracks, previewTracks]
   );
 
+  /** 待确认计划里的画幅变更（若勾选中）。 */
+  const pendingFormat = useMemo(() => {
+    const formatOp = acceptedOperations.find((operation) => operation.op.type === 'set-format');
+    return formatOp && formatOp.op.type === 'set-format' ? formatOp.op.ratio : null;
+  }, [acceptedOperations]);
+
+  /** 预览区实际画的画幅：待确认的画幅变更也先预览出来。 */
+  const previewFormat = pendingFormat ?? format;
+
   const diffCounts = useMemo(
-    () => (plan ? summarizePreview(trackPreviews) : null),
-    [plan, trackPreviews]
+    () =>
+      plan
+        ? { ...summarizePreview(trackPreviews), format: pendingFormat && pendingFormat !== format ? pendingFormat : undefined }
+        : null,
+    [plan, trackPreviews, pendingFormat, format]
   );
 
   const pxPerSecond = BASE_PX_PER_SECOND * zoom;
@@ -267,13 +289,17 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       return;
     }
     const snapshot = tracks;
+    const snapshotFormat = format;
     versionSeqRef.current += 1;
     const version = versionSeqRef.current;
     setTracks(applyOperations(tracks, acceptedOperations));
+    if (pendingFormat) {
+      setFormat(pendingFormat);
+    }
     setMessages((current) =>
       current.map((message) =>
         message.id === pendingPlanId && message.role === 'plan'
-          ? { ...message, status: 'applied', snapshot, version }
+          ? { ...message, status: 'applied', snapshot, snapshotFormat, version }
           : message
       )
     );
@@ -298,6 +324,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       return;
     }
     setTracks(message.snapshot);
+    setFormat(message.snapshotFormat ?? '9:16');
     setSelectedClipId(null);
     setPendingPlanId(null);
     setMessages((current) => [
@@ -551,7 +578,16 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
             {/* 来源节点带视频就直接放它，点画面或用下方走带都能播放/暂停；否则退回占位块 */}
             {videoUrl ? (
-              <div className="relative flex h-full max-h-[420px] items-center justify-center">
+              <div
+                data-preview-frame={previewFormat}
+                className={clsx(
+                  'relative flex h-full max-h-[420px] items-center justify-center overflow-hidden rounded-xl bg-neutral-fillHigh',
+                  // 画幅超出原始 9:16 的部分由 AI 扩画补齐，先用渐变示意；待确认时画虚线框
+                  previewFormat !== '9:16' && 'bg-gradient-to-r from-primary-surface3/60 via-neutral-fillHigh to-primary-surface3/60',
+                  pendingFormat && pendingFormat !== format && 'border border-dashed border-primary-fill'
+                )}
+                style={{ aspectRatio: FORMAT_ASPECT[previewFormat] }}
+              >
                 <video
                   key={videoUrl}
                   ref={videoRef}
@@ -563,8 +599,13 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onLoadedMetadata={handleMetadata}
                   onError={() => seedFromMedia(FALLBACK_MEDIA_SECONDS)}
                   onClick={() => setIsPlaying((playing) => !playing)}
-                  className="h-full cursor-pointer rounded-xl bg-neutral-fillHigh object-contain"
+                  className="size-full cursor-pointer object-contain"
                 />
+                {previewFormat !== '9:16' ? (
+                  <span className="pointer-events-none absolute bottom-2 left-2 rounded bg-neutral-fillHigh/70 px-1.5 py-0.5 text-[10px] font-medium text-neutral-onFill">
+                    AI-extended · {previewFormat}
+                  </span>
+                ) : null}
                 {/* 暂停时给个可点提示，播放时不挡画面 */}
                 {!isPlaying ? (
                   <span className="pointer-events-none absolute flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh/60 pl-1 text-[20px] text-neutral-onFill">

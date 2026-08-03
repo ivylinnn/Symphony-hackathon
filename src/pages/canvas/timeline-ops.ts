@@ -97,6 +97,10 @@ export const applyOperation = (
         track.id === op.trackId ? { ...track, [op.flag]: op.value } : track
       );
 
+    case 'set-format':
+      // 画幅不属于轨道数据，由编辑器状态在 apply 时承接；这里保持轨道不变
+      return tracks;
+
     default:
       return tracks;
   }

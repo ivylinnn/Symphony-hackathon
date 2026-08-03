@@ -6,10 +6,12 @@ import type {
   TimelineEditOperation,
   TimelineEditPlan,
   TimelineTrack,
-  TimelineTrackKind
+  TimelineTrackKind,
+  VideoFormatRatio
 } from '../types';
 
 const TRACK_KINDS: TimelineTrackKind[] = ['video', 'transition', 'audio', 'caption'];
+const FORMAT_RATIOS: VideoFormatRatio[] = ['9:16', '1:1', '16:9', '4:5'];
 
 /** 接口返回的原始操作，字段是平铺的可选值，需要收窄成 TimelineEditOp。 */
 interface WireOperation {
@@ -22,6 +24,7 @@ interface WireOperation {
   At?: number;
   Flag?: string;
   Value?: boolean;
+  Ratio?: string;
   Clip?: WireClip;
   Track?: WireTrack;
 }
@@ -100,6 +103,11 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
       return wire.TrackId && (wire.Flag === 'visible' || wire.Flag === 'muted') && typeof wire.Value === 'boolean'
         ? { type: 'set-track-flag', trackId: wire.TrackId, flag: wire.Flag, value: wire.Value }
         : undefined;
+
+    case 'set-format': {
+      const ratio = FORMAT_RATIOS.find((item) => item === wire.Ratio);
+      return ratio ? { type: 'set-format', ratio } : undefined;
+    }
 
     default:
       return undefined;

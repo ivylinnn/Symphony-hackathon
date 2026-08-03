@@ -19,11 +19,26 @@ const SUGGESTIONS = [
   'Remove a clip'
 ];
 
+/**
+ * 变体生成工具（Generate & Edit Video Variants）：
+ * 在优质素材上快速产出变体，延长素材生命周期、拓展版位。
+ * 每个工具就是一条预置诉求，走同一个 agent 会话，该问的照样会问。
+ */
+const VARIANT_TOOLS: Array<{ label: string; prompt: string; hint: string }> = [
+  { label: 'Uncrop', prompt: 'uncrop the video for more placements', hint: 'AI-extend the frame to fit new placements' },
+  { label: 'Dubbing', prompt: 'dub the video into another language', hint: 'Replace the dialogue with an AI dub' },
+  { label: 'Voiceover', prompt: 'add an AI voiceover', hint: 'Narrate the cut from the ad script' },
+  { label: 'Subtitles', prompt: 'add subtitles', hint: 'Generate subtitles timed to the scenes' },
+  { label: 'Hook swap', prompt: 'swap the hook for a new variant', hint: 'Rebuild the opening, keep the rest' }
+];
+
 export interface DiffCounts {
   added: number;
   removed: number;
   changed: number;
   newTracks: number;
+  /** 画幅变更（Uncrop），有值时展示成 format → 1:1。 */
+  format?: string;
 }
 
 interface AiEditorPanelProps {
@@ -54,6 +69,9 @@ function DiffPill({ counts }: { counts: DiffCounts }) {
   }
   if (counts.newTracks) {
     parts.push(`+${counts.newTracks} track${counts.newTracks > 1 ? 's' : ''}`);
+  }
+  if (counts.format) {
+    parts.push(`format → ${counts.format}`);
   }
   if (parts.length === 0) {
     return <span className="text-[11px] text-neutral-lowOnSurface">No net change</span>;
@@ -150,6 +168,32 @@ function AiEditorPanel({
 
   return (
     <div data-ai-editor className="flex min-h-0 flex-1 flex-col">
+      {/* 变体生成入口常驻顶部：一键发起 Uncrop / Dub / Voiceover / Subtitles / Hook swap */}
+      <div className="shrink-0 border-b border-solid border-neutral-fillLow px-3 py-2">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+          Variants
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {VARIANT_TOOLS.map((tool) => (
+            <button
+              key={tool.label}
+              type="button"
+              title={tool.hint}
+              disabled={isBusy}
+              onClick={() => submit(tool.prompt)}
+              className={clsx(
+                'rounded-full border border-solid border-neutral-fillLow bg-neutral-surface1 px-2.5 py-1 text-[11px] font-medium transition-colors',
+                isBusy
+                  ? 'cursor-wait text-neutral-lowOnSurface'
+                  : 'text-neutral-mediumOnSurface hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface'
+              )}
+            >
+              {tool.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-3 text-center">

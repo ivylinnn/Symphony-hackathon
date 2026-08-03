@@ -74,6 +74,27 @@ Nothing mutates the timeline until you press Apply. The whole conversation stays
 panel, so later turns read against the edits you already made. When an instruction doesn't
 map to a timeline edit, the agent says so and suggests phrasings instead of inventing one.
 
+## Video variants (Generate & Edit Video Variants)
+
+The **Variants** row at the top of the AI editor produces variants of a proven creative —
+the point is extending a winning asset's lifetime and reaching more placements without
+re-shooting. Each tool is a preset request into the same agent conversation, so the
+clarifying-question and plan-review loop applies:
+
+| Tool | What it does | Asks first |
+|---|---|---|
+| **Uncrop** | AI-outpaints the 9:16 frame to a new canvas (`1:1`, `16:9`, `4:5`); preview shows the extended region and an `AI-extended` badge | which placement to target |
+| **Dubbing** | Mutes the original dialogue and lays an AI dub track matched to scene timing | which language |
+| **Voiceover** | Adds an AI narration track drafted from the scene structure (Hook → Body → …) | — |
+| **Subtitles** | Generates a caption track with one cue per scene | — |
+| **Hook swap** | Replaces the opening clip with an AI-generated variant in the exact same slot, so nothing downstream moves | which direction (question-led / bold claim / social proof) |
+
+Uncrop introduces a format dimension carried by the editor rather than the tracks: the
+`set-format` operation previews live (dashed frame while pending), and the format is
+snapshotted with the tracks, so **Revert to before** restores the old canvas too. Typed
+requests work as well as the chips — "uncrop to 16:9", "dub this in Japanese", "换个
+hook" all route to the same intents.
+
 The split is deliberate: [`timeline-ops.ts`](./src/pages/canvas/timeline-ops.ts) holds the
 pure, unit-tested reducer over tracks/clips; [`services/timeline-ai.ts`](./src/pages/canvas/services/timeline-ai.ts)
 validates and narrows the model's wire response into typed operations; only the planner

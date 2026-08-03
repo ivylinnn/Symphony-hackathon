@@ -82,6 +82,9 @@ export interface TimelineTrack {
   clips: TimelineClip[];
 }
 
+/** 画幅比例，Uncrop（智能扩画）在这些版位之间切换。 */
+export type VideoFormatRatio = '9:16' | '1:1' | '16:9' | '4:5';
+
 /**
  * AI 编辑计划里的一步原子操作。
  * 每一步都能单独应用/跳过，所以必须是自包含的、不依赖前一步结果的描述。
@@ -94,7 +97,9 @@ export type TimelineEditOp =
   | { type: 'delete'; clipId: string }
   | { type: 'add-clip'; trackId: string; clip: TimelineClip }
   | { type: 'add-track'; track: TimelineTrack }
-  | { type: 'set-track-flag'; trackId: string; flag: 'visible' | 'muted'; value: boolean };
+  | { type: 'set-track-flag'; trackId: string; flag: 'visible' | 'muted'; value: boolean }
+  /** 智能扩画：改画幅不改轨道，由编辑器状态承接。 */
+  | { type: 'set-format'; ratio: VideoFormatRatio };
 
 export interface TimelineEditOperation {
   id: string;
@@ -128,6 +133,8 @@ export type AiEditorMessage =
       status: 'pending' | 'applied' | 'discarded';
       /** 应用前的时间线，用来「回到这次编辑之前」。 */
       snapshot?: TimelineTrack[];
+      /** 应用前的画幅，和 snapshot 一起回滚。 */
+      snapshotFormat?: VideoFormatRatio;
       /** 展示用的版本号，从 1 开始。 */
       version?: number;
     }

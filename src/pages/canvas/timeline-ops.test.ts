@@ -106,6 +106,12 @@ describe('applyOperations', () => {
     expect(after).toEqual(tracks());
   });
 
+  it('passes set-format through without touching tracks', () => {
+    // 画幅由编辑器状态承接，轨道数据必须原样保留
+    const after = applyOperations(tracks(), [op('a', { type: 'set-format', ratio: '1:1' })]);
+    expect(after).toEqual(tracks());
+  });
+
   it('applies operations in order', () => {
     const after = applyOperations(tracks(), [
       op('a', { type: 'split', clipId: 'clip-1', at: 1 }),
