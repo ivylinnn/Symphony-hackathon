@@ -1545,9 +1545,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                   Viewer
                 </span>
                 {videoUrl ? (
+                  <div className="flex min-w-0 flex-1 justify-center">
                   <div
                     data-viewer-toolbar
-                    className="flex min-w-0 flex-1 items-center justify-center gap-0.5 overflow-x-auto whitespace-nowrap rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-1.5 py-1 [scrollbar-width:none]"
+                    className="flex max-w-full items-center gap-0.5 overflow-x-auto whitespace-nowrap rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-1.5 py-1 [scrollbar-width:none]"
                   >
                     {[
                       { label: 'Extract frame', hint: 'Save the current frame as an image', icon: <KsIconCamera size={13} />, run: extractPreviewFrame },
@@ -1626,6 +1627,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                         </span>
                       ) : null}
                     </span>
+                  </div>
                   </div>
                 ) : (
                   <span className="flex-1" />
