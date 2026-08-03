@@ -957,16 +957,17 @@ async function planTimelineEditInner(args: {
             Clip: { ClipId: nextId('clip-endbg'), Label: 'End card bg', Start: at, Duration: cardLength, HasAudio: false, SourceUrl: DARK_BG } },
           { Label: 'Add logo layer', Type: 'add-track',
             Track: { TrackId: nextId('track-ec-logo'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-logo'), Label: 'Logo', Start: at, Duration: cardLength, HasAudio: false, Text: 'AURAK', Graphic: { kind: 'logo', y: 24, ...style } }] } },
+              Clips: [{ ClipId: nextId('clip-ec-logo'), Label: 'Logo', Start: at, Duration: cardLength, HasAudio: false, Text: 'AURAK', Graphic: { kind: 'logo', y: 30, ...style } }] } },
           { Label: 'Add tagline layer', Type: 'add-track',
             Track: { TrackId: nextId('track-ec-tag'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-tag'), Label: 'Tagline', Start: at + 0.3, Duration: cardLength - 0.3, HasAudio: false, Text: 'CRAFTED FOR MOTION', Graphic: { kind: 'headline', y: 44, scale: 0.8, ...style } }] } },
+              // 副标走小号 logo lockup：居中、细体、宽字距，比大标题更衬品牌收尾
+              Clips: [{ ClipId: nextId('clip-ec-tag'), Label: 'Tagline', Start: at + 0.3, Duration: cardLength - 0.3, HasAudio: false, Text: 'CRAFTED FOR MOTION', Graphic: { kind: 'logo', y: 45, scale: 0.42, ...style } }] } },
           { Label: 'Add CTA layer', Type: 'add-track',
             Track: { TrackId: nextId('track-ec-cta'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-cta'), Label: 'CTA', Start: at + 0.5, Duration: cardLength - 0.5, HasAudio: false, Text: 'AURAK.COM', Graphic: { kind: 'banner', y: 74, cta: 'Shop now', ...style } }] } },
+              Clips: [{ ClipId: nextId('clip-ec-cta'), Label: 'CTA', Start: at + 0.5, Duration: cardLength - 0.5, HasAudio: false, Text: 'AURAK.COM', Graphic: { kind: 'banner', y: 72, cta: 'Shop now', ...style } }] } },
           { Label: 'Add promo badge', Type: 'add-track',
             Track: { TrackId: nextId('track-ec-promo'), Kind: 'graphics', Visible: true, Muted: false,
-              Clips: [{ ClipId: nextId('clip-ec-promo'), Label: 'Promo', Start: at + 0.7, Duration: cardLength - 0.7, HasAudio: false, Text: '20% OFF — SUMMER', Graphic: { kind: 'badge', y: 14, ...style } }] } },
+              Clips: [{ ClipId: nextId('clip-ec-promo'), Label: 'Promo', Start: at + 0.7, Duration: cardLength - 0.7, HasAudio: false, Text: '20% OFF — SUMMER', Graphic: { kind: 'badge', y: 12, ...style } }] } },
         ],
       };
     }

@@ -1521,8 +1521,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                       if (g.kind === 'lower-third') {
                         return (
                           <span key={clip.id} className="absolute inset-x-0 block px-4" style={{ top: `${y ?? 76}%` }}>
-                            <span className="block h-[3px] w-6 origin-left animate-rule-in" style={{ background: accent }} />
-                            <span className="mt-1.5 block animate-graphic-in font-bold uppercase" style={{ color: fg, fontSize: 13 * scale, lineHeight: 1.25 }}>
+                            <span className="block h-px w-7 origin-left animate-rule-in" style={{ background: accent }} />
+                            <span className="mt-2 block animate-graphic-in font-medium uppercase" style={{ color: fg, fontSize: 12.5 * scale, lineHeight: 1.3, letterSpacing: '0.09em' }}>
                               {clip.text}
                             </span>
                           </span>
@@ -1530,13 +1530,19 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                       }
                       if (g.kind === 'banner') {
                         return (
-                          <span key={clip.id} className="absolute inset-x-0 block" style={{ top: `${y ?? 82}%` }}>
-                            <span className="flex animate-graphic-in items-center gap-2 px-3 py-2" style={{ background: g.bg ?? 'rgba(10,9,8,0.72)' }}>
-                              <span className="min-w-0 flex-1 truncate font-bold uppercase" style={{ color: fg, fontSize: 12 * scale }}>
+                          <span key={clip.id} className="absolute inset-x-0 flex justify-center px-4" style={{ top: `${y ?? 80}%` }}>
+                            <span
+                              className="flex max-w-full animate-graphic-in items-center gap-2.5 border border-solid px-3.5 py-2"
+                              style={{ background: g.bg ?? 'rgba(8,7,6,0.55)', borderColor: `${accent}59`, backdropFilter: 'blur(6px)' }}
+                            >
+                              <span className="min-w-0 truncate font-medium uppercase" style={{ color: fg, fontSize: 10 * scale, letterSpacing: '0.24em' }}>
                                 {clip.text}
                               </span>
                               {g.cta ? (
-                                <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ background: accent, color: '#111' }}>
+                                <span
+                                  className="shrink-0 whitespace-nowrap border border-solid px-2.5 py-1 font-semibold uppercase"
+                                  style={{ borderColor: accent, color: accent, fontSize: 8.5 * scale, letterSpacing: '0.2em' }}
+                                >
                                   {g.cta}
                                 </span>
                               ) : null}
@@ -1546,8 +1552,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                       }
                       if (g.kind === 'badge') {
                         return (
-                          <span key={clip.id} className="absolute right-3 block animate-graphic-in" style={{ top: `${y ?? 12}%`, transform: 'rotate(-8deg)' }}>
-                            <span className="block rounded-lg border px-2.5 py-1.5 text-center font-bold uppercase" style={{ background: g.bg ?? '#f2ece1', borderColor: accent, color: g.bg ? fg : '#1b1713', fontSize: 10.5 * scale, letterSpacing: '0.06em' }}>
+                          <span key={clip.id} className="absolute right-4 block animate-graphic-in" style={{ top: `${y ?? 12}%`, transform: 'rotate(-3deg)' }}>
+                            <span className="block border border-solid px-3 py-1.5 text-center font-medium uppercase" style={{ background: g.bg ?? 'rgba(242,236,225,0.94)', borderColor: accent, color: g.bg ? fg : '#1b1713', fontSize: 9 * scale, letterSpacing: '0.18em' }}>
                               {clip.text}
                             </span>
                           </span>
@@ -1556,10 +1562,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                       if (g.kind === 'logo') {
                         return (
                           <span key={clip.id} className="absolute inset-x-0 block text-center" style={{ top: `${y ?? 42}%` }}>
-                            <span className="block animate-graphic-in font-semibold" style={{ color: fg, fontSize: 26 * scale, letterSpacing: '0.42em' }}>
+                            {/* 字距会在末字后多出一格，textIndent 补回来才是光学居中 */}
+                            <span className="block animate-graphic-in whitespace-nowrap font-light uppercase" style={{ color: fg, fontSize: 24 * scale, letterSpacing: '0.5em', textIndent: '0.5em' }}>
                               {clip.text}
                             </span>
-                            <span className="mx-auto mt-2 block h-px w-8 animate-rule-in" style={{ background: accent }} />
+                            {/* 小号 lockup（片尾卡副标）不画线，避免和主 logo 的下划线重复 */}
+                            {scale >= 0.7 ? (
+                              <span className="mx-auto mt-2.5 block h-px w-10 animate-rule-in" style={{ background: accent }} />
+                            ) : null}
                           </span>
                         );
                       }
