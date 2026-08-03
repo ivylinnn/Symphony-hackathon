@@ -499,7 +499,7 @@ function AiEditorPanel({
                         type="button"
                         disabled={isBusy}
                         onClick={() => onSubmit(suggestion)}
-                        className="rounded-full bg-neutral-surface px-3.5 py-1.5 text-[12px] text-neutral-highOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:bg-neutral-surface2 disabled:opacity-50"
+                        className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3.5 py-1.5 text-[12px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
                       >
                         {suggestion}
                       </button>

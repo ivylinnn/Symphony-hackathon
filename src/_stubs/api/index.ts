@@ -73,6 +73,8 @@ export interface WireClip {
   Duration: number;
   HasAudio?: boolean;
   Text?: string;
+  /** 引用的素材地址；静帧（片尾卡等）也走这里。 */
+  SourceUrl?: string;
 }
 
 export interface WireTrack {
@@ -282,16 +284,20 @@ const renderRegionPatch = (prompt: string, ramp: [string, string, string]) => {
  */
 const suggestNext = (tracks: WireTrack[], prompt: string): string[] => {
   const filled = (kind: WireTrack['Kind']) => tracks.some((t) => t.Kind === kind && t.Clips.length > 0);
+  const hasEndCard = allClips(tracks).some((c) => /end card/i.test(c.Label));
   const pool = [
     ...(filled('caption') ? [] : ['Add captions']),
-    ...(filled('audio') ? [] : ['Lay in a music bed']),
+    ...(hasEndCard ? [] : ['Add branding elements']),
+    'Swap the product',
+    'Swap the model',
     ...(filled('graphics') ? [] : ['Add motion graphics']),
-    'Make the hook punchier',
-    'Trim to 15 seconds',
-    'Uncrop to 1:1',
-    'Add an AI voiceover',
+    ...(filled('audio') ? [] : ['Lay in a music bed']),
+    'Refresh the hook',
+    'Dub into another language',
+    'Resize for feed',
   ];
   const words = prompt.toLowerCase();
+  // 刚做过的那件事不再建议，避免像复读
   return pool.filter((item) => !words.includes(item.toLowerCase().split(' ').slice(-1)[0])).slice(0, 3);
 };
 
@@ -872,6 +878,81 @@ async function planTimelineEditInner(args: {
         ],
       };
     }
+  }
+
+  /* 4c-2) 品牌元素 / 片尾卡：把 End card 接到视频轨末尾，再打一条品牌字幕 */
+  if (has(prompt, 'branding', 'brand element', 'end card', 'endcard', 'logo', '品牌', '片尾')) {
+    const track = videoTracks[0];
+    if (track) {
+      const at = endOf([track]);
+      const cardLength = 2.5;
+      return {
+        Kind: 'plan',
+        Thinking: [
+          survey,
+          {
+            Title: 'Placing the end card',
+            Body: `Appending the branded end frame at ${at.toFixed(1)}s so the logo and shop CTA close the cut.`,
+          },
+          { Title: 'Adding the brand line', Body: 'A short lockup cue over the card keeps the name on screen while it holds.' },
+        ],
+        Summary: 'Added branding — end card with the shop CTA, plus a brand lockup line over it.',
+        Operations: [
+          {
+            Label: `Add end card (${cardLength}s)`,
+            Type: 'add-clip',
+            TrackId: track.TrackId,
+            Clip: {
+              ClipId: nextId('clip-endcard'),
+              Label: 'End card',
+              Start: at,
+              Duration: cardLength,
+              HasAudio: false,
+              SourceUrl: '/end-card.svg',
+            },
+          },
+          {
+            Label: 'Add brand lockup line',
+            Type: 'add-track',
+            Track: {
+              TrackId: nextId('track-brand'),
+              Kind: 'graphics',
+              Visible: true,
+              Muted: false,
+              Clips: [
+                {
+                  ClipId: nextId('clip-brand'),
+                  Label: 'Brand',
+                  Start: at,
+                  Duration: cardLength,
+                  HasAudio: false,
+                  Text: 'AURAK — CRAFTED FOR MOTION',
+                },
+              ],
+            },
+          },
+        ],
+      };
+    }
+  }
+
+  /* 4c-3) 换产品 / 换模特：这类替换要指到画面上的具体位置，引导去用画笔 */
+  if (has(prompt, 'swap the product', 'swap product', 'replace the product', 'swap the model', 'swap model', 'replace the model', '换产品', '换模特')) {
+    const isModel = has(prompt, 'model', '模特');
+    return {
+      Kind: 'plan',
+      Thinking: [
+        survey,
+        {
+          Title: 'Locating the subject',
+          Body: `A ${isModel ? 'model' : 'product'} swap has to target a specific area of the frame, and nothing is circled yet.`,
+        },
+      ],
+      Summary: `To swap the ${isModel ? 'model' : 'product'}, hit “Draw to edit” on the viewer, circle ${
+        isModel ? 'the person' : 'the product'
+      }, and describe the replacement — the swap is generated inside your drawing and carried across the cut.`,
+      Operations: [],
+    };
   }
 
   /* 4e) 动态图形卖点 */

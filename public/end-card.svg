@@ -109,6 +109,18 @@
 
   <rect width="1080" height="1920" fill="url(#vig)"/>
 
+  <!-- 夏季促销贴纸：奶油底 + 细金边，倾斜一点带出短视频的即时感 -->
+  <g transform="rotate(-9 852 452)">
+    <rect x="702" y="378" width="300" height="150" rx="20" fill="#f2ece1"/>
+    <rect x="712" y="388" width="280" height="130" rx="13" fill="none" stroke="#c6a06a" stroke-width="2"/>
+    <text x="852" y="452" text-anchor="middle" fill="#1b1713"
+          font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="58" font-weight="700"
+          letter-spacing="1">20% OFF</text>
+    <text x="852" y="494" text-anchor="middle" fill="#7a6647"
+          font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21"
+          letter-spacing="7">SUMMER DROP</text>
+  </g>
+
   <!-- ── 排版 ────────────────────────────────────────────── -->
   <text x="540" y="196" text-anchor="middle" fill="#f6f2ec"
         font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="60" font-weight="500"
@@ -124,6 +136,8 @@
         font-size="30" letter-spacing="5.5">PREMIUM MATERIALS.</text>
   <text x="120" y="1404" fill="#e2dacd" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
         font-size="30" letter-spacing="5.5">TIMELESS DESIGN.</text>
+  <text x="120" y="1468" fill="#dfbc85" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="27" letter-spacing="5">SUMMER COLLECTION — 20% OFF</text>
 
   <rect x="344" y="1672" width="392" height="80" fill="none" stroke="#c6a06a" stroke-width="2"/>
   <text x="498" y="1721" text-anchor="middle" fill="#dfbc85"
@@ -131,7 +145,11 @@
   <path d="M626 1712 L672 1712 M656 1698 L672 1712 L656 1726" stroke="#dfbc85" stroke-width="2.6"
         fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <text x="540" y="1812" text-anchor="middle" fill="#d4ccc0"
+  <text x="540" y="1800" text-anchor="middle" fill="#efe7d9"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="600"
+        letter-spacing="6">CODE SUMMER20</text>
+
+  <text x="540" y="1856" text-anchor="middle" fill="#d4ccc0"
         font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="25"
         letter-spacing="8">AURAK.COM</text>
 </svg>

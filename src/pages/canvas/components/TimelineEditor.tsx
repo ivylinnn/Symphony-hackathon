@@ -217,6 +217,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [selectedClipId, setSelectedClipId] = useState<string | null>(videoUrl ? null : 'clip-1');
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  /** 正在拖动播放头。 */
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [zoom, setZoom] = useState(1);
   /** 当前画幅；Uncrop 变体应用后从 9:16 切到目标版位。 */
   const [format, setFormat] = useState<VideoFormatRatio>('9:16');
@@ -501,6 +503,15 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 播放头当前落在哪个有画面的片段上，决定预览播哪一段素材。 */
   const active = useMemo(() => activeVideoClip(previewTracks, currentTime), [previewTracks, currentTime]);
 
+  /**
+   * 当前片段引用的是图片而不是视频时，预览要放 <img>。
+   * 片尾卡、产品图这类静帧素材都走这条路。
+   */
+  const activeStillUrl = useMemo(() => {
+    const url = active?.clip.sourceUrl;
+    return url && /\.(png|jpe?g|webp|gif|svg)$/i.test(url) ? url : undefined;
+  }, [active]);
+
   /** 当前时间点应叠在画面上的字幕；用 previewTracks，待确认的字幕也能先看到。 */
   const captionText = useMemo(() => activeCaptionText(previewTracks, currentTime), [previewTracks, currentTime]);
 
@@ -762,13 +773,38 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     }
   };
 
-  /** 点击标尺跳转播放头。 */
+  /** 把指针位置换算成时间并跳过去。 */
   const seekFromPointer = (clientX: number) => {
     const rect = rulerRef.current?.getBoundingClientRect();
     if (!rect) {
       return;
     }
     seekTo((clientX - rect.left) / pxPerSecond);
+  };
+
+  /*
+   * 标尺可拖动：按下就接管指针，拖动过程中持续 seek，画面跟着走。
+   * 用 setPointerCapture，指针滑出标尺甚至滑出窗口也不会丢事件。
+   */
+  const startScrub = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsScrubbing(true);
+    // 拖动时先暂停，否则定时器和拖动会互相抢播放头
+    setIsPlaying(false);
+    seekFromPointer(event.clientX);
+  };
+
+  const moveScrub = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (isScrubbing) {
+      seekFromPointer(event.clientX);
+    }
+  };
+
+  const endScrub = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsScrubbing(false);
   };
 
   const toggleTrackFlag = (trackId: string, flag: 'visible' | 'muted') => {
@@ -1267,6 +1303,15 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="size-full cursor-pointer object-contain"
                 />
+                {/* 静帧片段（片尾卡、产品图）盖在视频之上 */}
+                {activeStillUrl ? (
+                  <img
+                    data-still-overlay
+                    src={activeStillUrl}
+                    alt={active?.clip.label ?? ''}
+                    className="pointer-events-none absolute inset-0 size-full object-cover"
+                  />
+                ) : null}
                 {/* 圈选调色蒙版：mix-blend color 只换色相，画面细节保留 */}
                 {previewRegions.map((region) => {
                   const bounds = pathBounds(region.path);
@@ -1634,8 +1679,15 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                 <div style={{ width: rulerSeconds * pxPerSecond }}>
                   <div
                     ref={rulerRef}
-                    className="relative h-8 cursor-pointer border-b border-solid border-neutral-fillLow"
-                    onPointerDown={(event) => seekFromPointer(event.clientX)}
+                    data-timeline-ruler
+                    className={clsx(
+                      'relative h-8 touch-none border-b border-solid border-neutral-fillLow',
+                      isScrubbing ? 'cursor-grabbing' : 'cursor-grab'
+                    )}
+                    onPointerDown={startScrub}
+                    onPointerMove={moveScrub}
+                    onPointerUp={endScrub}
+                    onPointerCancel={endScrub}
                   >
                     {Array.from({ length: rulerSeconds + 1 }, (_, second) => {
                       // 每 5 秒打标签，其余只画一根短刻度
@@ -1761,8 +1813,18 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                     className="pointer-events-none absolute top-0 z-10 h-full w-px bg-neutral-fillHigh"
                     style={{ left: currentTime * pxPerSecond }}
                   >
-                    {/* 顶部把手：上圆下尖，和参考稿一致 */}
-                    <span className="absolute -left-[7px] -top-0.5 block h-4 w-[15px] rounded-t-full rounded-b-[3px] border border-solid border-neutral-fillHigh bg-neutral-surface" />
+                    {/* 顶部把手：上圆下尖；自己也能拖，命中区比 1px 的线宽容多了 */}
+                    <span
+                      data-playhead-handle
+                      className={clsx(
+                        'pointer-events-auto absolute -left-[7px] -top-0.5 block h-4 w-[15px] touch-none rounded-b-[3px] rounded-t-full border border-solid border-neutral-fillHigh bg-neutral-surface',
+                        isScrubbing ? 'cursor-grabbing' : 'cursor-grab'
+                      )}
+                      onPointerDown={startScrub}
+                      onPointerMove={moveScrub}
+                      onPointerUp={endScrub}
+                      onPointerCancel={endScrub}
+                    />
                   </div>
                 </div>
               </div>
