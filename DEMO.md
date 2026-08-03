@@ -26,8 +26,20 @@ Batch) surface `No backend wired for this node yet`, exactly as in the real app.
 
 ## AI editing in the timeline
 
-Open a video node's **Edit** button to get the full-screen timeline editor. The prompt bar
-at the bottom takes a plain-language instruction and returns a **plan** rather than an
+Open a video node's **Edit** button to get the full-screen timeline editor. The timeline is
+built from that node's actual video — one clip spanning the real media, at its real
+duration — so every edit below changes what plays, not just what's drawn.
+
+Clips carry a source mapping (`sourceStart` / `sourceDuration`) alongside their timeline
+position, which is what makes the editing real: splitting divides the in-points so each
+half plays its own frames, deleting the head makes the tail start from its own footage,
+and retiming changes playback rate rather than content. Playback resolves the playhead to
+the active clip and seeks the video to the mapped source time, so gaps play nothing and
+hidden tracks don't drive the preview. Clips without a `sourceUrl` — captions, music beds —
+never hijack the picture.
+
+Split, duplicate and delete in the toolbar run through the same operations the AI uses.
+The prompt panel takes a plain-language instruction and returns a **plan** rather than an
 immediate mutation — the Flora-style propose → review → apply loop:
 
 1. **Prompt** — "trim to 15 seconds", "add captions", "lay in a music bed", "remove the

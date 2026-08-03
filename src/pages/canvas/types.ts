@@ -52,11 +52,23 @@ export type NodeBodyShape =
 export interface TimelineClip {
   id: string;
   label: string;
-  /** 起始秒与时长秒，渲染时按像素/秒换算。 */
+  /** 在时间线上的起始秒与时长秒，渲染时按像素/秒换算。 */
   start: number;
   duration: number;
   /** 有音频的片段会额外画一条波形。 */
   hasAudio: boolean;
+  /**
+   * 片段引用的媒体地址。有值的片段才驱动预览播放，
+   * 字幕/音乐这类没有画面的片段留空。
+   */
+  sourceUrl?: string;
+  /** 引用素材的入点（秒）。裁剪头部、切分都会改这个值。 */
+  sourceStart?: number;
+  /**
+   * 这段占用的素材原始长度（秒），缺省等于 duration。
+   * 与 duration 的比值就是播放速度 —— 变速/贴合时长靠它表达。
+   */
+  sourceDuration?: number;
 }
 
 export interface TimelineTrack {

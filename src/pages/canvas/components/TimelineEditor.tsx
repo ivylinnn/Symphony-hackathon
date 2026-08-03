@@ -13,7 +13,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { INITIAL_TIMELINE_TRACKS } from '../const';
 import { planEdit } from '../services/timeline-ai';
-import { applyOperations, buildPreview, summarizePreview, timelineDuration } from '../timeline-ops';
+import {
+  activeVideoClip,
+  applyOperations,
+  buildPreview,
+  clipPlaybackRate,
+  findClip,
+  findTrackIdOfClip,
+  sourceTimeAt,
+  summarizePreview,
+  timelineDuration
+} from '../timeline-ops';
 import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack } from '../types';
 import TimelineAgentBar from './TimelineAgentBar';
 
@@ -34,6 +44,8 @@ const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
 /** 预览视频与播放头允许的最大偏差（秒），超过才回拉。 */
 const DRIFT_TOLERANCE = 0.4;
+/** 读不到素材时长时（解码失败等）建轨道用的兜底时长。 */
+const FALLBACK_MEDIA_SECONDS = 6;
 
 /** 预览态下片段的描边样式，全用虚线以便和「选中」的实线区分开。 */
 const DIFF_CLASS: Record<ClipDiffStatus, string> = {
@@ -85,13 +97,21 @@ function ToolButton({
  * 上方预览、下方多轨时间线、右侧属性面板。
  */
 function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineEditorProps) {
-  const [tracks, setTracks] = useState<TimelineTrack[]>(INITIAL_TIMELINE_TRACKS);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>('clip-1');
+  /*
+   * 有真实视频时，时间线从这条视频建起来（等 loadedmetadata 拿到真实时长）；
+   * 没有视频的节点仍然用示例轨道，保持原有 demo 行为。
+   */
+  const [tracks, setTracks] = useState<TimelineTrack[]>(videoUrl ? [] : INITIAL_TIMELINE_TRACKS);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(videoUrl ? null : 'clip-1');
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(1);
   const rulerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
+  const seededRef = useRef(false);
+  /** 复制片段的自增后缀，保证 id 唯一。 */
+  const copySeqRef = useRef(1);
 
   /* AI 编辑：计划待确认时只做预览，应用后把上一版存进 undoSnapshot。 */
   const [plan, setPlan] = useState<TimelineEditPlan | null>(null);
@@ -172,9 +192,50 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setSelectedClipId(null);
   };
 
+  /** 播放头当前落在哪个有画面的片段上，决定预览播哪一段素材。 */
+  const active = useMemo(() => activeVideoClip(previewTracks, currentTime), [previewTracks, currentTime]);
+
   /*
-   * 时间线是时钟，视频只是预览：多轨内容可能比这条视频长，所以播放头仍由定时器推进，
-   * 视频跟随播放头走，偏差超过 DRIFT_TOLERANCE 才回拉一次，避免每帧 seek 造成卡顿。
+   * 拿到真实时长后，用整条视频建一条视频轨；只建一次，后续编辑不再被覆盖。
+   * 解码失败时也要建（用兜底时长），否则时间线会一直空着，编辑器直接不可用。
+   */
+  const seedFromMedia = (mediaDuration: number) => {
+    if (!videoUrl || seededRef.current) {
+      return;
+    }
+    seededRef.current = true;
+    setTracks([
+      {
+        id: 'track-video',
+        kind: 'video',
+        visible: true,
+        muted: false,
+        clips: [
+          {
+            id: 'clip-source',
+            label: sourceLabel,
+            start: 0,
+            duration: mediaDuration,
+            hasAudio: true,
+            sourceUrl: videoUrl,
+            sourceStart: 0,
+            sourceDuration: mediaDuration
+          }
+        ]
+      }
+    ]);
+    setSelectedClipId('clip-source');
+  };
+
+  const handleMetadata = () => {
+    const video = videoRef.current;
+    seedFromMedia(video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : FALLBACK_MEDIA_SECONDS);
+  };
+
+  /*
+   * 时间线是时钟：播放头由定时器推进，预览视频跟着播放头走。
+   * 每一拍都按当前片段把「时间线时间」换算成「素材时间」，所以裁剪、切分、
+   * 变速、删除都会直接改变播放内容 —— 跳过的片段就是跳过的画面。
    */
   useEffect(() => {
     if (!isPlaying) {
@@ -188,38 +249,52 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
           return duration;
         }
         const video = videoRef.current;
-        if (video && !video.seeking && Math.abs(video.currentTime - next) > DRIFT_TOLERANCE) {
-          video.currentTime = Math.min(next, video.duration || next);
+        const current = activeVideoClip(previewTracks, next);
+        if (video && current && !video.seeking) {
+          const target = sourceTimeAt(current.clip, next);
+          if (Math.abs(video.currentTime - target) > DRIFT_TOLERANCE) {
+            video.currentTime = target;
+          }
         }
         return next;
       });
     }, PLAYBACK_TICK_MS);
     return () => clearInterval(timer);
-  }, [duration, isPlaying]);
+  }, [duration, isPlaying, previewTracks]);
 
-  /* 把播放/暂停同步给预览视频；浏览器挡下带声播放时退回静音再试一次。 */
+  /* 播放/暂停同步给预览视频；空隙里没有画面就停住。浏览器挡下带声播放时退回静音重试。 */
   useEffect(() => {
     const video = videoRef.current;
     if (!video) {
       return;
     }
-    if (!isPlaying) {
+    if (!isPlaying || !active) {
       video.pause();
       return;
     }
+    video.playbackRate = Math.min(16, Math.max(0.0625, clipPlaybackRate(active.clip)));
     video.play().catch(() => {
       video.muted = true;
       video.play().catch(() => undefined);
     });
-  }, [isPlaying, videoUrl]);
+  }, [isPlaying, active]);
 
-  /** 统一的跳转入口：播放头和预览视频一起挪。 */
+  /* 轨道静音开关直接作用到预览。 */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && active) {
+      video.muted = active.track.muted;
+    }
+  }, [active]);
+
+  /** 统一的跳转入口：播放头和预览视频一起挪到对应的素材位置。 */
   const seekTo = (seconds: number) => {
     const clamped = Math.max(0, Math.min(duration, seconds));
     setCurrentTime(clamped);
     const video = videoRef.current;
-    if (video) {
-      video.currentTime = Math.min(clamped, video.duration || clamped);
+    const current = activeVideoClip(previewTracks, clamped);
+    if (video && current) {
+      video.currentTime = sourceTimeAt(current.clip, clamped);
     }
   };
 
@@ -248,26 +323,52 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setSelectedClipId(null);
   };
 
-  /** 在播放头处切开选中片段。 */
+  /** 在播放头处切开选中片段；走和 AI 计划同一套算子，素材入点才会跟着分。 */
   const splitSelectedClip = () => {
     if (!selectedClipId) {
       return;
     }
     setTracks((current) =>
-      current.map((track) => ({
-        ...track,
-        clips: track.clips.flatMap((clip) => {
-          const cutAt = currentTime - clip.start;
-          if (clip.id !== selectedClipId || cutAt <= 0 || cutAt >= clip.duration) {
-            return [clip];
-          }
-          return [
-            { ...clip, duration: cutAt },
-            { ...clip, id: `${clip.id}-b`, start: clip.start + cutAt, duration: clip.duration - cutAt }
-          ];
-        })
-      }))
+      applyOperations(current, [
+        { id: 'manual-split', label: 'Split', op: { type: 'split', clipId: selectedClipId, at: currentTime } }
+      ])
     );
+  };
+
+  /** 复制选中片段，接在它后面，并把后续片段整体后移让出位置。 */
+  const duplicateSelectedClip = () => {
+    if (!selectedClipId) {
+      return;
+    }
+    const source = findClip(tracks, selectedClipId);
+    const trackId = findTrackIdOfClip(tracks, selectedClipId);
+    if (!source || !trackId) {
+      return;
+    }
+    const copyId = `${source.id}-copy-${copySeqRef.current++}`;
+    setTracks((current) =>
+      applyOperations(current, [
+        // 先给副本腾位置，再插入，否则会和后面的片段叠在一起
+        ...current
+          .flatMap((track) => track.clips)
+          .filter((clip) => clip.start >= source.start + source.duration)
+          .map((clip) => ({
+            id: `shift-${clip.id}`,
+            label: 'Shift',
+            op: { type: 'set-timing' as const, clipId: clip.id, start: clip.start + source.duration, duration: clip.duration }
+          })),
+        {
+          id: 'manual-duplicate',
+          label: 'Duplicate',
+          op: {
+            type: 'add-clip' as const,
+            trackId,
+            clip: { ...source, id: copyId, start: source.start + source.duration }
+          }
+        }
+      ])
+    );
+    setSelectedClipId(copyId);
   };
 
   return (
@@ -312,6 +413,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   playsInline
                   preload="metadata"
                   title={isPlaying ? `Pause ${sourceLabel}` : `Play ${sourceLabel}`}
+                  onLoadedMetadata={handleMetadata}
+                  onError={() => seedFromMedia(FALLBACK_MEDIA_SECONDS)}
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="h-full cursor-pointer rounded-xl bg-neutral-fillHigh object-contain"
                 />
@@ -341,7 +444,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               <ToolButton title="Split clip at playhead" onClick={splitSelectedClip}>
                 <KsIconCut size={15} />
               </ToolButton>
-              <ToolButton title="Duplicate clip">
+              <ToolButton title="Duplicate clip" onClick={duplicateSelectedClip}>
                 <KsIconCopyContent size={15} />
               </ToolButton>
               <ToolButton title="Delete clip" onClick={deleteSelectedClip}>

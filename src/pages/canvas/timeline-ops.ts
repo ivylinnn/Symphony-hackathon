@@ -61,13 +61,20 @@ export const applyOperation = (
           if (clip.id !== op.clipId || cutAt <= 0 || cutAt >= clip.duration) {
             return [clip];
           }
+          // 素材入点按切分比例分摊，两半才各自播对应的那段画面
+          const ratio = cutAt / clip.duration;
+          const sourceDuration = clip.sourceDuration ?? clip.duration;
+          const sourceStart = clip.sourceStart ?? 0;
+          const consumed = sourceDuration * ratio;
           return [
-            { ...clip, duration: cutAt },
+            { ...clip, duration: cutAt, sourceDuration: consumed },
             {
               ...clip,
               id: `${clip.id}-b`,
               start: clip.start + cutAt,
-              duration: clip.duration - cutAt
+              duration: clip.duration - cutAt,
+              sourceStart: sourceStart + consumed,
+              sourceDuration: sourceDuration - consumed
             }
           ];
         })
@@ -145,6 +152,40 @@ export const buildPreview = (
     };
   });
 };
+
+/**
+ * 播放头落在这条轨道的哪个片段上。
+ * 片段区间取左闭右开，相邻片段的边界才不会同时命中两个。
+ */
+export const clipAtTime = (track: TimelineTrack, time: number): TimelineClip | undefined =>
+  track.clips.find((clip) => time >= clip.start && time < clip.start + clip.duration);
+
+/** 驱动预览的片段：第一条可见、且当前时间有画面的轨道。 */
+export const activeVideoClip = (
+  tracks: TimelineTrack[],
+  time: number
+): { clip: TimelineClip; track: TimelineTrack } | undefined => {
+  for (const track of tracks) {
+    if (!track.visible) {
+      continue;
+    }
+    const clip = clipAtTime(track, time);
+    if (clip?.sourceUrl) {
+      return { clip, track };
+    }
+  }
+  return undefined;
+};
+
+/** 片段被拉长/压缩后的播放速率，= 消耗的素材长度 / 时间线上的长度。 */
+export const clipPlaybackRate = (clip: TimelineClip): number => {
+  const sourceDuration = clip.sourceDuration ?? clip.duration;
+  return clip.duration > 0 ? sourceDuration / clip.duration : 1;
+};
+
+/** 时间线时间 → 素材内的时间，变速片段按比例映射。 */
+export const sourceTimeAt = (clip: TimelineClip, time: number): number =>
+  (clip.sourceStart ?? 0) + (time - clip.start) * clipPlaybackRate(clip);
 
 /** 预览里各类改动的条数，用于面板上的 "+2 −1" 摘要。 */
 export const summarizePreview = (previews: TrackPreview[]) => {
