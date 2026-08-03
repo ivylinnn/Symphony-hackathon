@@ -527,27 +527,31 @@ function AiEditorPanel({
             </div>
           );
         })}
+
+        {/* 五大核心用例：作为会话的一部分，跟在 agent 最新的内容后面；问卷答完才出现 */}
+        {messages.some((message) => message.role === 'form' && message.submitted) && !isBusy ? (
+          <div className="flex items-start gap-2">
+            {/* 占位对齐 agent 头像列，pill 和 agent 正文同一条基线 */}
+            <span className="size-6 shrink-0" />
+            <div data-use-cases className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+              {USE_CASES.map((useCase) => (
+                <button
+                  key={useCase.label}
+                  type="button"
+                  title={useCase.hint}
+                  onClick={() => (useCase.action === 'draw' ? onStartDraw() : onSubmit(useCase.prompt ?? useCase.label))}
+                  className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3 py-1 text-[11px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface"
+                >
+                  {useCase.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* 输入区常驻底部 */}
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
-        {/* 五大核心用例 pill：问卷答完之后常驻可选 */}
-        {messages.some((message) => message.role === 'form' && message.submitted) ? (
-          <div data-use-cases className="mb-2 flex flex-wrap gap-1.5">
-            {USE_CASES.map((useCase) => (
-              <button
-                key={useCase.label}
-                type="button"
-                title={useCase.hint}
-                disabled={isBusy}
-                onClick={() => (useCase.action === 'draw' ? onStartDraw() : onSubmit(useCase.prompt ?? useCase.label))}
-                className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3 py-1 text-[11px] text-neutral-highOnSurface transition-colors hover:border-primary-fill/40 hover:bg-primary-surface2 hover:text-primary-onSurface disabled:opacity-50"
-              >
-                {useCase.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',
