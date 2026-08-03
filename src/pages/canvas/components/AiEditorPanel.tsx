@@ -25,7 +25,6 @@ interface AiEditorPanelProps {
   /** 当前正在预览的计划消息 id，只有它显示应用/放弃按钮。 */
   pendingPlanId: string | null;
   skippedOpIds: Set<string>;
-  diff: DiffCounts | null;
   onSubmit: (prompt: string) => void;
   /** 从输入区上传素材，落进 My assets。 */
   onUpload: (files: FileList) => void;
@@ -35,29 +34,6 @@ interface AiEditorPanelProps {
   onApply: () => void;
   onDiscard: () => void;
   onRestore: (messageId: string) => void;
-}
-
-function DiffPill({ counts }: { counts: DiffCounts }) {
-  const parts: string[] = [];
-  if (counts.added) {
-    parts.push(`+${counts.added} clip${counts.added > 1 ? 's' : ''}`);
-  }
-  if (counts.removed) {
-    parts.push(`−${counts.removed} clip${counts.removed > 1 ? 's' : ''}`);
-  }
-  if (counts.changed) {
-    parts.push(`${counts.changed} retimed`);
-  }
-  if (counts.newTracks) {
-    parts.push(`+${counts.newTracks} track${counts.newTracks > 1 ? 's' : ''}`);
-  }
-  if (counts.format) {
-    parts.push(`format → ${counts.format}`);
-  }
-  if (parts.length === 0) {
-    return <span className="text-[11px] text-neutral-lowOnSurface">No net change</span>;
-  }
-  return <span className="text-[11px] tabular-nums text-neutral-mediumOnSurface">{parts.join(' · ')}</span>;
 }
 
 /** 思考过程：进行中逐条揭示，结束后折叠成一行摘要，可再展开。 */
@@ -139,6 +115,26 @@ function IntakeForm({
               ))}
             </div>
           )}
+
+          {/* 勾中触发选项后就地追问，答案单独存一格 */}
+          {field.followUp && isSelected(field, field.followUp.whenOption) ? (
+            <div className="mt-2 border-l-2 border-solid border-primary-fill/40 pl-2.5">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-mediumOnSurface">
+                {field.followUp.label}
+              </p>
+              <input
+                autoFocus
+                value={typeof draft[field.followUp.id] === 'string' ? (draft[field.followUp.id] as string) : ''}
+                placeholder={field.followUp.placeholder}
+                disabled={locked}
+                onChange={(event) => {
+                  const key = field.followUp!.id;
+                  setDraft((current) => ({ ...current, [key]: event.target.value }));
+                }}
+                className="w-full rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface px-2 py-1.5 text-[12px] text-neutral-highOnSurface outline-none focus:border-primary-fill disabled:opacity-60"
+              />
+            </div>
+          ) : null}
         </div>
       ))}
 
@@ -213,7 +209,6 @@ function AiEditorPanel({
   messages,
   pendingPlanId,
   skippedOpIds,
-  diff,
   onSubmit,
   onUpload,
   onSubmitIntake,
@@ -400,6 +395,32 @@ function AiEditorPanel({
                   </ul>
                 ) : null}
 
+                {/* 待确认时，应用/放弃就跟在这份计划下面，不再单独占一条固定操作条 */}
+                {isPending && message.plan.operations.length > 0 ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onDiscard}
+                      className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+                    >
+                      Discard
+                    </button>
+                    <button
+                      type="button"
+                      disabled={acceptedCount === 0}
+                      onClick={onApply}
+                      className={clsx(
+                        'whitespace-nowrap rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                        acceptedCount > 0
+                          ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
+                          : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+                      )}
+                    >
+                      Apply {acceptedCount > 0 ? `${acceptedCount} edit${acceptedCount > 1 ? 's' : ''}` : ''}
+                    </button>
+                  </div>
+                ) : null}
+
                 {message.status === 'applied' ? (
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="rounded bg-success-fill/15 px-1.5 py-0.5 text-[10px] font-semibold text-success-onSurface">
@@ -425,39 +446,6 @@ function AiEditorPanel({
           );
         })}
       </div>
-
-      {/* 待确认计划的操作条 */}
-      {pending && pending.plan.operations.length > 0 ? (
-        <div className="shrink-0 border-t border-solid border-neutral-fillLow px-3 py-2.5">
-          {diff ? (
-            <div className="mb-2">
-              <DiffPill counts={diff} />
-            </div>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onDiscard}
-              className="flex-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              disabled={acceptedCount === 0}
-              onClick={onApply}
-              className={clsx(
-                'flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors',
-                acceptedCount > 0
-                  ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
-                  : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
-              )}
-            >
-              Apply {acceptedCount > 0 ? `${acceptedCount} edit${acceptedCount > 1 ? 's' : ''}` : ''}
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {/* 输入区常驻底部 */}
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">

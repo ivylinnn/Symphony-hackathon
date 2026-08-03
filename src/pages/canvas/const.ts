@@ -457,6 +457,12 @@ export const INTAKE_FIELDS: IntakeField[] = [
     id: 'packaging',
     label: 'What packaging do you want on each clip? (multi-select)',
     kind: 'multi',
-    options: ['Captions', 'Title text overlay', 'Background music', 'Light motion graphics', 'Other']
+    options: ['Captions', 'Title text overlay', 'Background music', 'Light motion graphics', 'Other'],
+    followUp: {
+      whenOption: 'Light motion graphics',
+      id: 'graphicsBrief',
+      label: 'What should the graphics say?',
+      placeholder: 'e.g. breathable fabric, kangaroo pocket, built for movement'
+    }
   }
 ];

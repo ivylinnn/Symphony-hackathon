@@ -173,15 +173,32 @@ const SELLING_POINTS: Array<{ tag: string; headline: string }> = [
   { tag: 'Movement', headline: 'BUILT FOR MOVEMENT' },
 ];
 
+/**
+ * 用户自己写的卖点：按逗号/分号/换行/顿号切开，也认 " and "。
+ * 标签取首词，正文整体大写，和默认卖点保持同一种视觉语言。
+ */
+const parseSellingPoints = (brief: string): Array<{ tag: string; headline: string }> =>
+  brief
+    .split(/[,;，、\n]+|\s+\band\b\s+/i)
+    .map((part) => part.trim().replace(/^[-•*]\s*/, ''))
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((part) => ({ tag: part.split(/\s+/)[0].replace(/[^\p{L}\p{N}]/gu, ''), headline: part.toUpperCase() }));
+
 /** 把卖点均匀铺在整条片子上，每条留一点间隔，避免首尾贴边。 */
-const buildGraphicsClips = (total: number, count: number): WireClip[] => {
-  const slots = Math.max(1, Math.min(count, SELLING_POINTS.length));
+const buildGraphicsClips = (
+  total: number,
+  count: number,
+  points: Array<{ tag: string; headline: string }> = SELLING_POINTS
+): WireClip[] => {
+  const source = points.length > 0 ? points : SELLING_POINTS;
+  const slots = Math.max(1, Math.min(count, source.length));
   const slotLength = total / slots;
   // 每条卖点占本段的 70%，剩下的留白让画面喘口气
   const hold = Math.max(0.8, slotLength * 0.7);
-  return SELLING_POINTS.slice(0, slots).map((point, index) => ({
+  return source.slice(0, slots).map((point, index) => ({
     ClipId: nextId('clip-graphic'),
-    Label: point.tag,
+    Label: point.tag || `Point ${index + 1}`,
     Start: index * slotLength + (slotLength - hold) / 2,
     Duration: hold,
     HasAudio: false,
@@ -215,6 +232,8 @@ export async function planTimelineEdit(args: {
     clipCount?: string;
     targetLength?: string;
     packaging?: string[];
+    /** 用户在「Light motion graphics」下写的卖点文案。 */
+    graphicsBrief?: string;
   };
 }): Promise<WireAgentReply> {
   await delay(900);
@@ -229,7 +248,7 @@ export async function planTimelineEdit(args: {
 
   /* 0) 开场问卷：一次性把时长、字幕、音乐、标题条组合成首刀 */
   if (args.intake) {
-    const { platform, clipCount, targetLength, packaging = [] } = args.intake;
+    const { platform, clipCount, targetLength, packaging = [], graphicsBrief } = args.intake;
     const target = Number(targetLength?.match(/(\d+)/)?.[1] ?? 0);
     const factor = target > 0 && total > 0 ? target / total : 1;
     const finalTotal = target > 0 ? target : total;
@@ -331,9 +350,16 @@ export async function planTimelineEdit(args: {
     }
 
     if (wants('Light motion graphics')) {
-      const graphicsClips = buildGraphicsClips(finalTotal, Math.max(3, scenes.length));
+      const written = graphicsBrief ? parseSellingPoints(graphicsBrief) : [];
+      const graphicsClips = buildGraphicsClips(
+        finalTotal,
+        written.length > 0 ? written.length : Math.max(3, scenes.length),
+        written
+      );
       thinking.push(
-        `Pulling ${graphicsClips.length} selling points and spacing them across the ${finalTotal.toFixed(1)}s cut.`
+        written.length > 0
+          ? `Using the ${written.length} selling point${written.length > 1 ? 's' : ''} you wrote, spaced across the ${finalTotal.toFixed(1)}s cut.`
+          : `No copy given for the graphics, so pulling ${graphicsClips.length} selling points from the product brief.`
       );
       operations.push({
         Label: `Add motion graphics (${graphicsClips.length} selling points)`,
@@ -603,12 +629,20 @@ export async function planTimelineEdit(args: {
 
   /* 4e) 动态图形卖点 */
   if (has(prompt, 'motion graphic', 'selling point', 'product feature', 'graphics', '卖点', '动效')) {
-    const graphicsClips = buildGraphicsClips(Math.max(1, total), 4);
+    // 冒号后面的内容当成用户自己写的卖点："add motion graphics: waterproof, 2-year warranty"
+    const written = parseSellingPoints((args.prompt ?? '').split(/[:：]/).slice(1).join(':'));
+    const graphicsClips = buildGraphicsClips(
+      Math.max(1, total),
+      written.length > 0 ? written.length : 4,
+      written
+    );
     return {
       Kind: 'plan',
       Thinking: [
         survey,
-        `Pulling ${graphicsClips.length} product selling points from the brief.`,
+        written.length > 0
+          ? `Using the ${written.length} selling point${written.length > 1 ? 's' : ''} from your message.`
+          : `Pulling ${graphicsClips.length} product selling points from the brief.`,
         `Spacing them across the ${total.toFixed(1)}s cut so each gets a clear beat on screen.`,
       ],
       Summary: `Added motion graphics promoting ${graphicsClips.length} selling points — headline, rule and progress marker over the footage.`,

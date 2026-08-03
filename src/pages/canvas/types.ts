@@ -134,6 +134,13 @@ export interface IntakeField {
   placeholder?: string;
   /** 必答题没填完就不能提交。 */
   required?: boolean;
+  /** 勾中某个选项后追问一句，答案单独存进 answers[followUp.id]。 */
+  followUp?: {
+    whenOption: string;
+    id: string;
+    label: string;
+    placeholder: string;
+  };
 }
 
 /** 问卷答案：单选/文本存字符串，多选存数组。 */

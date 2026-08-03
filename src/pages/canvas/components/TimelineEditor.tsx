@@ -29,7 +29,6 @@ import {
   findClip,
   findTrackIdOfClip,
   sourceTimeAt,
-  summarizePreview,
   timelineDuration
 } from '../timeline-ops';
 import type {
@@ -248,14 +247,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
   /** 预览区实际画的画幅：待确认的画幅变更也先预览出来。 */
   const previewFormat = pendingFormat ?? format;
-
-  const diffCounts = useMemo(
-    () =>
-      plan
-        ? { ...summarizePreview(trackPreviews), format: pendingFormat && pendingFormat !== format ? pendingFormat : undefined }
-        : null,
-    [plan, trackPreviews, pendingFormat, format]
-  );
 
   const pxPerSecond = BASE_PX_PER_SECOND * zoom;
   const duration = Math.max(timelineDuration(previewTracks), 1);
@@ -591,6 +582,30 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setSelectedClipId(null);
   };
 
+  /*
+   * Delete / Backspace 删掉选中的片段。
+   * 焦点在输入框里时不接管，否则改字幕、写 prompt、填问卷都会被误删打断。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (typing || !selectedClipId) {
+        return;
+      }
+      // 阻止 Backspace 触发浏览器后退
+      event.preventDefault();
+      deleteSelectedClip();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedClipId]);
+
   /** 在播放头处切开选中片段；走和 AI 计划同一套算子，素材入点才会跟着分。 */
   const splitSelectedClip = () => {
     if (!selectedClipId) {
@@ -790,7 +805,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
             messages={messages}
             pendingPlanId={pendingPlanId}
             skippedOpIds={skippedOpIds}
-            diff={diffCounts}
             onSubmit={runAgent}
             onUpload={uploadAssets}
             onSubmitIntake={submitIntake}
@@ -1046,7 +1060,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               <ToolButton title="Duplicate clip" onClick={duplicateSelectedClip}>
                 <KsIconCopyContent size={15} />
               </ToolButton>
-              <ToolButton title="Delete clip" onClick={deleteSelectedClip}>
+              <ToolButton title="Delete clip (Delete)" onClick={deleteSelectedClip}>
                 <KsIconDelete size={15} />
               </ToolButton>
 
