@@ -18,8 +18,12 @@ import type { ClipDiffStatus, TimelineEditPlan, TimelineTrack } from '../types';
 import TimelineAgentBar from './TimelineAgentBar';
 
 interface TimelineEditorProps {
-  /** 编辑对象的名称，展示在 Source 区。 */
+  /** 编辑对象的名称，展示在标题和预览占位上。 */
   sourceLabel: string;
+  /** 来源节点的可播放视频；有值时预览区放真实视频而不是占位块。 */
+  videoUrl?: string;
+  /** 视频封面，也用作没有 videoUrl 时的静态预览图。 */
+  posterUrl?: string;
   onClose: () => void;
 }
 
@@ -28,6 +32,8 @@ const BASE_PX_PER_SECOND = 104;
 /** 标尺至少画这么多秒，内容更长时按内容延展。 */
 const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
+/** 预览视频与播放头允许的最大偏差（秒），超过才回拉。 */
+const DRIFT_TOLERANCE = 0.4;
 
 /** 预览态下片段的描边样式，全用虚线以便和「选中」的实线区分开。 */
 const DIFF_CLASS: Record<ClipDiffStatus, string> = {
@@ -78,13 +84,14 @@ function ToolButton({
  * 全屏时间线编辑器，参考 Flora 的 Timeline Editor。
  * 上方预览、下方多轨时间线、右侧属性面板。
  */
-function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
+function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineEditorProps) {
   const [tracks, setTracks] = useState<TimelineTrack[]>(INITIAL_TIMELINE_TRACKS);
   const [selectedClipId, setSelectedClipId] = useState<string | null>('clip-1');
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(1);
   const rulerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   /* AI 编辑：计划待确认时只做预览，应用后把上一版存进 undoSnapshot。 */
   const [plan, setPlan] = useState<TimelineEditPlan | null>(null);
@@ -165,7 +172,10 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
     setSelectedClipId(null);
   };
 
-  /* 播放时推进播放头，到片尾自动停。 */
+  /*
+   * 时间线是时钟，视频只是预览：多轨内容可能比这条视频长，所以播放头仍由定时器推进，
+   * 视频跟随播放头走，偏差超过 DRIFT_TOLERANCE 才回拉一次，避免每帧 seek 造成卡顿。
+   */
   useEffect(() => {
     if (!isPlaying) {
       return;
@@ -177,11 +187,41 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
           setIsPlaying(false);
           return duration;
         }
+        const video = videoRef.current;
+        if (video && !video.seeking && Math.abs(video.currentTime - next) > DRIFT_TOLERANCE) {
+          video.currentTime = Math.min(next, video.duration || next);
+        }
         return next;
       });
     }, PLAYBACK_TICK_MS);
     return () => clearInterval(timer);
   }, [duration, isPlaying]);
+
+  /* 把播放/暂停同步给预览视频；浏览器挡下带声播放时退回静音再试一次。 */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    if (!isPlaying) {
+      video.pause();
+      return;
+    }
+    video.play().catch(() => {
+      video.muted = true;
+      video.play().catch(() => undefined);
+    });
+  }, [isPlaying, videoUrl]);
+
+  /** 统一的跳转入口：播放头和预览视频一起挪。 */
+  const seekTo = (seconds: number) => {
+    const clamped = Math.max(0, Math.min(duration, seconds));
+    setCurrentTime(clamped);
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = Math.min(clamped, video.duration || clamped);
+    }
+  };
 
   /** 点击标尺跳转播放头。 */
   const seekFromPointer = (clientX: number) => {
@@ -189,7 +229,7 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
     if (!rect) {
       return;
     }
-    setCurrentTime(Math.max(0, Math.min(duration, (clientX - rect.left) / pxPerSecond)));
+    seekTo((clientX - rect.left) / pxPerSecond);
   };
 
   const toggleTrackFlag = (trackId: string, flag: 'visible' | 'muted') => {
@@ -261,9 +301,29 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
               </button>
             </div>
 
-            <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
-              <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
-            </div>
+            {/* 来源节点带视频就直接放它，播放由下方走带控制；否则退回占位块 */}
+            {videoUrl ? (
+              <video
+                key={videoUrl}
+                ref={videoRef}
+                src={videoUrl}
+                poster={posterUrl}
+                playsInline
+                preload="metadata"
+                title={sourceLabel}
+                className="h-full max-h-[420px] rounded-xl bg-neutral-fillHigh object-contain"
+              />
+            ) : posterUrl ? (
+              <img
+                src={posterUrl}
+                alt={sourceLabel}
+                className="h-full max-h-[420px] rounded-xl bg-neutral-fillHigh object-contain"
+              />
+            ) : (
+              <div className="flex h-full max-h-[420px] w-[236px] items-center justify-center rounded-xl bg-gradient-to-br from-neutral-surface2 to-primary-surface2">
+                <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
+              </div>
+            )}
           </div>
 
           {/* 时间线区 */}
@@ -284,7 +344,7 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
               </span>
 
               <div className="flex flex-1 items-center justify-center gap-1">
-                <ToolButton title="Jump to start" onClick={() => setCurrentTime(0)}>
+                <ToolButton title="Jump to start" onClick={() => seekTo(0)}>
                   ⏮
                 </ToolButton>
                 <button
@@ -295,7 +355,7 @@ function TimelineEditor({ sourceLabel, onClose }: TimelineEditorProps) {
                 >
                   {isPlaying ? '❚❚' : '▶'}
                 </button>
-                <ToolButton title="Jump to end" onClick={() => setCurrentTime(duration)}>
+                <ToolButton title="Jump to end" onClick={() => seekTo(duration)}>
                   ⏭
                 </ToolButton>
               </div>

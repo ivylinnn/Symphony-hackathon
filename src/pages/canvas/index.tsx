@@ -824,7 +824,12 @@ function CanvasPage() {
       ) : null}
 
       {editorNode ? (
-        <TimelineEditor sourceLabel={editorNode.title} onClose={() => setEditorNodeId(null)} />
+        <TimelineEditor
+          sourceLabel={editorNode.title}
+          videoUrl={editorNode.videoUrl}
+          posterUrl={editorNode.assetUrl}
+          onClose={() => setEditorNodeId(null)}
+        />
       ) : null}
 
       <AgentPanel
