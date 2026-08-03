@@ -766,7 +766,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                     </label>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-6 gap-2">
                       {visibleAssets.map((asset) => (
                         <button
                           key={asset.id}
