@@ -269,10 +269,10 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
         onClick={() => setIsOpen((open) => !open)}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span className="shrink-0 text-ai-deep">
+        <span className="shrink-0 text-data5-fillMedHigh">
           <KsIconAiGeneration size={17} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-highOnSurface">
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-neutral-highOnSurface">
           {headline}
         </span>
         <span className="shrink-0 text-neutral-lowOnSurface">
@@ -290,13 +290,13 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
                 <span
                   className={clsx(
                     'absolute inset-y-0 left-0 w-0.5',
-                    isActive ? 'bg-ai-fill' : 'bg-neutral-fillLow'
+                    isActive ? 'bg-primary-fill' : 'bg-neutral-fillLow'
                   )}
                 />
                 {step.title ? (
                   <p
                     className={clsx(
-                      'text-[13px] leading-[18px]',
+                      'text-[14px] leading-[20px]',
                       isActive ? 'font-semibold text-neutral-highOnSurface' : 'font-medium text-neutral-highOnSurface'
                     )}
                   >
@@ -305,7 +305,7 @@ function ThinkingBlock({ steps, revealed }: { steps: ThinkingStep[]; revealed: n
                 ) : null}
                 <p
                   className={clsx(
-                    'text-[13px] leading-[20px] text-neutral-mediumOnSurface',
+                    'text-[14px] leading-[22px] text-neutral-mediumOnSurface',
                     step.title && 'mt-1'
                   )}
                 >
@@ -373,7 +373,7 @@ function AiEditorPanel({
       <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
-            <span className="flex size-9 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
+            <span className="flex size-9 items-center justify-center rounded-full bg-[#e1f0fb] text-[#1a9ad6]">
               <KsIconAiAssistant size={18} />
             </span>
             <p className="text-[12px] leading-[17px] text-neutral-mediumOnSurface">
@@ -387,7 +387,7 @@ function AiEditorPanel({
           if (message.role === 'user') {
             return (
               <div key={message.id} className="flex justify-end">
-                <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] bg-ai-tint px-4 py-2.5 text-[13px] leading-[19px] text-neutral-highOnSurface">
+                <div className="max-w-[88%] whitespace-pre-wrap rounded-[16px] bg-[#d9e9fb] px-4 py-2.5 text-[14px] leading-[21px] text-neutral-highOnSurface">
                   {message.text}
                 </div>
               </div>
@@ -414,10 +414,10 @@ function AiEditorPanel({
           if (message.role === 'answer') {
             return (
               <div key={message.id} className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[#e1f0fb] text-[#1a9ad6]">
                   <KsIconAiAssistant size={13} />
                 </span>
-                <p className="min-w-0 flex-1 text-[13px] leading-[20px] text-neutral-highOnSurface">{message.text}</p>
+                <p className="min-w-0 flex-1 text-[14px] leading-[21px] text-neutral-highOnSurface">{message.text}</p>
               </div>
             );
           }
@@ -433,11 +433,11 @@ function AiEditorPanel({
           if (message.role === 'question') {
             return (
               <div key={message.id} className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[#e1f0fb] text-[#1a9ad6]">
                   <KsIconAiAssistant size={13} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] leading-[20px] text-neutral-highOnSurface">{message.text}</p>
+                  <p className="text-[14px] leading-[21px] text-neutral-highOnSurface">{message.text}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {message.options.map((option) => (
                       <button
@@ -470,11 +470,11 @@ function AiEditorPanel({
           const isPending = message.id === pendingPlanId;
           return (
             <div key={message.id} className="flex items-start gap-2">
-              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai-deep">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[#e1f0fb] text-[#1a9ad6]">
                 <KsIconAiAssistant size={13} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] leading-[20px] text-neutral-highOnSurface">{message.plan.summary}</p>
+                <p className="text-[14px] leading-[21px] text-neutral-highOnSurface">{message.plan.summary}</p>
 
                 {/* 待确认时，应用/放弃就跟在这份计划下面，不再单独占一条固定操作条 */}
                 {isPending && message.plan.operations.length > 0 ? (
@@ -556,7 +556,7 @@ function AiEditorPanel({
         <div
           className={clsx(
             'rounded-xl border border-solid bg-neutral-surface1 p-2 transition-colors',
-            isBusy ? 'border-ai-fill/60' : 'border-neutral-fillLow focus-within:border-primary-fill'
+            isBusy ? 'border-data5-fill/70' : 'border-neutral-fillLow focus-within:border-primary-fill'
           )}
         >
           {selectedClip ? (

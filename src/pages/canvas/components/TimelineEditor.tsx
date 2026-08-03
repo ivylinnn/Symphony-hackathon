@@ -1311,8 +1311,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
           ) : (
             <>
           <div className="flex shrink-0 items-center gap-1 px-3.5 py-3">
-            {/* ks/text/title/Md（16/24，semibold）× ks/color/data/data5 fillHigh */}
-            <span className="text-[16px] font-semibold leading-6 text-data5-fillHigh">Editing agent</span>
+            {/* Creative agent 参考：亮蓝标题，18/26 semibold */}
+            <span className="text-[18px] font-semibold leading-[26px] text-[#1a9ad6]">Editing agent</span>
             <span className="flex-1" />
             <button
               type="button"
