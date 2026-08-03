@@ -7,11 +7,17 @@ import {
   KsIconDelete,
   KsIconDownload,
   KsIconFolder,
+  KsIconAiGeneration,
   KsIconPen,
+  KsIconPlus,
   KsIconSearch,
   KsIconSend,
+  KsIconTips,
   KsIconSound,
+  KsIconSplit,
+  KsIconTextFile,
   KsIconUpload,
+  KsIconVideoClip,
   KsIconZoomIn,
   KsIconZoomOut
 } from '@fe-infra/keystone-icons-react';
@@ -72,6 +78,17 @@ const MIN_SEGMENTS = 2;
 /** 转场元素的时长，跨在两段分镜的接缝上。 */
 const TRANSITION_SECONDS = 0.5;
 
+/** 圈选弹层里的快捷动作，每条就是一句会真的跑起来的诉求。 */
+const REGION_ACTIONS: Array<{ label: string; prompt: string; icon: 'variations' | 'generate' | 'remove' }> = [
+  { label: 'Create variations', prompt: 'create a variation of this area', icon: 'variations' },
+  { label: 'Recolor', prompt: 'recolor this area', icon: 'generate' },
+  { label: 'Remove object', prompt: 'remove this object and fill the background', icon: 'remove' }
+];
+const REGION_ACTIONS_MORE: typeof REGION_ACTIONS = [
+  { label: 'Replace with product', prompt: 'replace with a product shot', icon: 'generate' },
+  { label: 'Blur this area', prompt: 'blur this area', icon: 'generate' }
+];
+
 /** 画幅比例 → CSS aspect-ratio，Uncrop 变体在这些版位画布之间切换。 */
 const FORMAT_ASPECT: Record<VideoFormatRatio, string> = {
   '9:16': '9 / 16',
@@ -91,6 +108,15 @@ const TRACK_TAG: Record<TimelineTrackKind, string> = {
   audio: 'MUS',
   caption: 'TXT',
   graphics: 'FX'
+};
+
+/** 轨道 gutter 里的图标，取代原来的文字标签。 */
+const TRACK_ICON: Record<TimelineTrackKind, (props: { size?: number }) => JSX.Element> = {
+  video: KsIconVideoClip,
+  transition: KsIconSplit,
+  audio: KsIconSound,
+  caption: KsIconTextFile,
+  graphics: KsIconAiGeneration
 };
 
 /** 轨道头第二行的可读名称。 */
@@ -205,6 +231,12 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [penPoints, setPenPoints] = useState<Array<[number, number]> | null>(null);
   const [drawnPath, setDrawnPath] = useState<string | null>(null);
   const [regionPrompt, setRegionPrompt] = useState('');
+  /** 圈选完成后弹层的锚点（相对预览区左上角的 px）。 */
+  const [regionAnchor, setRegionAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [showMoreRegionActions, setShowMoreRegionActions] = useState(false);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const regionFileRef = useRef<HTMLInputElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   /** 已应用的圈选编辑，渲染成画面上的调色蒙版。 */
   const [regionEdits, setRegionEdits] = useState<RegionEdit[]>([]);
   const regionSeqRef = useRef(0);
@@ -438,6 +470,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     }
     // 这轮圈选已经落地，清掉画面上的虚线
     setDrawnPath(null);
+    setRegionAnchor(null);
     setIsPenMode(false);
     setMessages((current) =>
       current.map((message) =>
@@ -452,6 +485,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
   const discardPlan = () => {
     setDrawnPath(null);
+    setRegionAnchor(null);
     setMessages((current) =>
       current.map((message) =>
         message.id === pendingPlanId && message.role === 'plan' ? { ...message, status: 'discarded' } : message
@@ -674,21 +708,42 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const endPenStroke = () => {
     setPenPoints((current) => {
       if (current && current.length >= 3) {
-        setDrawnPath(penPathFrom(current));
+        const path = penPathFrom(current);
+        setDrawnPath(path);
+        // 弹层锚在圈选区正下方；坐标换算成预览区内的 px
+        const frame = frameRef.current?.getBoundingClientRect();
+        const area = previewAreaRef.current?.getBoundingClientRect();
+        if (frame && area) {
+          const bounds = pathBounds(path);
+          setRegionAnchor({
+            left: frame.left - area.left + (bounds.x + bounds.width / 2) * (frame.width / 100),
+            top: frame.top - area.top + (bounds.y + bounds.height) * (frame.height / 100) + 10
+          });
+        }
       }
       return null;
     });
   };
 
   /** 圈选 + 指令交给 agent，走同一个会话与计划评审。 */
-  const submitRegionPrompt = () => {
-    const text = regionPrompt.trim();
+  const submitRegionPrompt = (preset?: string) => {
+    const text = (preset ?? regionPrompt).trim();
     if (!text || !drawnPath || isPlanning) {
       return;
     }
     setRegionPrompt('');
+    setShowMoreRegionActions(false);
+    // 收起弹层，但保留 drawnPath —— 计划待确认时画面上还要看到这块蒙版
+    setRegionAnchor(null);
     setActiveTool('agent');
     void runAgent(`Edit the circled area: ${text}`, undefined, { path: drawnPath });
+  };
+
+  const closeRegionPopover = () => {
+    setDrawnPath(null);
+    setRegionPrompt('');
+    setRegionAnchor(null);
+    setShowMoreRegionActions(false);
   };
 
   /** 画面上要渲染的圈选蒙版：已应用的 + 待确认计划里的（虚线描边）。 */
@@ -1185,53 +1240,18 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   </button>
                 ) : null}
               </div>
-              {isPenMode ? (
-                <div className="shrink-0 px-4 pt-2">
-                  {drawnPath ? (
-                    <div className="flex items-center gap-1.5 rounded-xl border border-solid border-primary-fill/40 bg-neutral-surface p-1.5">
-                      <input
-                        data-region-prompt
-                        autoFocus
-                        value={regionPrompt}
-                        placeholder="Describe the change — “update to blue”…"
-                        onChange={(event) => setRegionPrompt(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            submitRegionPrompt();
-                          } else if (event.key === 'Escape') {
-                            setDrawnPath(null);
-                            setRegionPrompt('');
-                          }
-                        }}
-                        className="min-w-0 flex-1 bg-transparent px-1 text-[12px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
-                      />
-                      <button
-                        type="button"
-                        title="Send"
-                        disabled={!regionPrompt.trim() || isPlanning}
-                        onClick={submitRegionPrompt}
-                        className={clsx(
-                          'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
-                          regionPrompt.trim() && !isPlanning
-                            ? 'bg-primary-fill text-neutral-onFill'
-                            : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
-                        )}
-                      >
-                        <KsIconSend size={13} />
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-neutral-lowOnSurface">
-                      Draw around the part you want to change — e.g. circle the shoes.
-                    </p>
-                  )}
-                </div>
+              {isPenMode && !drawnPath ? (
+                <p className="shrink-0 px-4 pt-2 text-[11px] text-neutral-lowOnSurface">
+                  Draw around the part you want to change — e.g. circle the shoes.
+                </p>
               ) : null}
-          <div className="relative flex min-h-0 flex-1 items-center justify-center p-6">
+
+          <div ref={previewAreaRef} className="relative flex min-h-0 flex-1 items-center justify-center p-6">
 
             {/* 来源节点带视频就直接放它，点画面或用下方走带都能播放/暂停；否则退回占位块 */}
             {videoUrl ? (
               <div
+                ref={frameRef}
                 data-preview-frame={previewFormat}
                 className={clsx(
                   'relative flex h-full max-h-full items-center justify-center overflow-hidden rounded-xl bg-neutral-fillHigh',
@@ -1402,6 +1422,102 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                 <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{sourceLabel}</span>
               </div>
             )}
+
+            {/* 圈选弹层：贴着圈出来的区域，输入 + 快捷动作 */}
+            {isPenMode && drawnPath && regionAnchor ? (
+              <div
+                data-region-popover
+                style={{ left: regionAnchor.left, top: regionAnchor.top }}
+                className="absolute z-30 w-[268px] -translate-x-1/2 overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_16px_40px_rgba(16,24,40,0.22)]"
+              >
+                <div className="flex items-center gap-1.5 px-2.5 py-2">
+                  <button
+                    type="button"
+                    title="Upload a reference image"
+                    onClick={() => regionFileRef.current?.click()}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-md text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+                  >
+                    <KsIconPlus size={15} />
+                  </button>
+                  <input
+                    ref={regionFileRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => {
+                      if (event.target.files?.length) {
+                        uploadAssets(event.target.files);
+                      }
+                      event.target.value = '';
+                    }}
+                  />
+                  <input
+                    data-region-prompt
+                    autoFocus
+                    value={regionPrompt}
+                    placeholder="Describe your idea"
+                    onChange={(event) => setRegionPrompt(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        submitRegionPrompt();
+                      } else if (event.key === 'Escape') {
+                        closeRegionPopover();
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
+                  />
+                  <button
+                    type="button"
+                    title="Send"
+                    disabled={!regionPrompt.trim() || isPlanning}
+                    onClick={() => submitRegionPrompt()}
+                    className={clsx(
+                      'flex size-7 shrink-0 items-center justify-center rounded-full transition-colors',
+                      regionPrompt.trim() && !isPlanning
+                        ? 'bg-primary-fill text-neutral-onFill'
+                        : 'bg-neutral-surface2 text-neutral-lowOnSurface'
+                    )}
+                  >
+                    <KsIconSend size={13} />
+                  </button>
+                </div>
+
+                <div className="border-t border-solid border-neutral-fillLow py-1">
+                  {[...REGION_ACTIONS, ...(showMoreRegionActions ? REGION_ACTIONS_MORE : [])].map((action) => (
+                    <button
+                      key={action.label}
+                      type="button"
+                      disabled={isPlanning}
+                      onClick={() => submitRegionPrompt(action.prompt)}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface1 disabled:opacity-50"
+                    >
+                      <span className="flex size-4 shrink-0 items-center justify-center text-neutral-mediumOnSurface">
+                        {action.icon === 'variations' ? (
+                          <KsIconCopyContent size={15} />
+                        ) : action.icon === 'remove' ? (
+                          <KsIconDelete size={15} />
+                        ) : (
+                          <KsIconAiGeneration size={15} />
+                        )}
+                      </span>
+                      {action.label}
+                    </button>
+                  ))}
+                  {!showMoreRegionActions ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreRegionActions(true)}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-neutral-lowOnSurface transition-colors hover:bg-neutral-surface1"
+                    >
+                      <span className="flex size-4 shrink-0 items-center justify-center">
+                        <KsIconTips size={14} />
+                      </span>
+                      See more
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
             </section>
           </div>
@@ -1415,6 +1531,26 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </span>
             </div>
             <div className="flex items-center gap-1 px-3 py-2">
+              <button
+                type="button"
+                title={isPlaying ? 'Pause' : 'Play'}
+                onClick={() => setIsPlaying((playing) => !playing)}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-fillHigh text-[13px] text-neutral-onFill transition-opacity hover:opacity-85"
+              >
+                {isPlaying ? '❚❚' : '▶'}
+              </button>
+              <span className="ml-1.5 mr-2 shrink-0 text-[14px] font-medium tabular-nums text-neutral-highOnSurface">
+                {formatTime(currentTime).slice(0, 5)}
+                <span className="text-neutral-lowOnSurface"> / {formatTime(duration).slice(0, 5)}</span>
+              </span>
+
+              <ToolButton title="Jump to start" onClick={() => seekTo(0)}>
+                ⏮
+              </ToolButton>
+              <ToolButton title="Jump to end" onClick={() => seekTo(duration)}>
+                ⏭
+              </ToolButton>
+              <span className="mx-1 h-4 w-px bg-neutral-fillLow" />
               <ToolButton title="Split clip at playhead" onClick={splitSelectedClip}>
                 <KsIconCut size={15} />
               </ToolButton>
@@ -1425,28 +1561,9 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                 <KsIconDelete size={15} />
               </ToolButton>
 
-              <div className="flex flex-1 items-center justify-center gap-1">
-                <ToolButton title="Jump to start" onClick={() => seekTo(0)}>
-                  ⏮
-                </ToolButton>
-                <button
-                  type="button"
-                  title={isPlaying ? 'Pause' : 'Play'}
-                  onClick={() => setIsPlaying((playing) => !playing)}
-                  className="flex size-8 items-center justify-center rounded-lg bg-neutral-surface2 text-neutral-highOnSurface transition-colors hover:bg-neutral-surface3"
-                >
-                  {isPlaying ? '❚❚' : '▶'}
-                </button>
-                <ToolButton title="Jump to end" onClick={() => seekTo(duration)}>
-                  ⏭
-                </ToolButton>
-                <span className="ml-2 text-[12px] tabular-nums text-neutral-highOnSurface">
-                  {formatTime(currentTime)}
-                  <span className="text-neutral-lowOnSurface"> / {formatTime(duration)}</span>
-                </span>
-              </div>
+              <span className="flex-1" />
 
-              <div className="ml-3 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <KsIconZoomOut size={14} className="text-neutral-lowOnSurface" />
                 <input
                   type="range"
@@ -1464,39 +1581,30 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
             <div className="flex border-t border-solid border-neutral-fillLow">
               {/* 轨道头 */}
-              <div className="w-[136px] shrink-0 border-r border-solid border-neutral-fillLow">
-                <div className="h-7 border-b border-solid border-neutral-fillLow" />
-                {trackPreviews.map(({ track, isNewTrack }, index) => {
-                  const ordinal =
-                    trackPreviews.slice(0, index).filter((item) => item.track.kind === track.kind).length + 1;
+              <div className="w-[56px] shrink-0 border-r border-solid border-neutral-fillLow">
+                <div className="h-8 border-b border-solid border-neutral-fillLow" />
+                {trackPreviews.map(({ track, isNewTrack }) => {
+                  const Icon = TRACK_ICON[track.kind];
                   return (
                     <div
                       key={track.id}
+                      title={`${TRACK_NAME[track.kind]} track`}
                       className={clsx(
-                        'flex h-[72px] flex-col justify-center gap-1 border-b border-solid border-neutral-fillLow px-2',
+                        'group relative flex h-[72px] items-center justify-center border-b border-solid border-neutral-fillLow',
                         isNewTrack && 'bg-success-fill/5'
                       )}
                     >
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={clsx(
-                            'shrink-0 rounded px-1 py-0.5 text-[9px] font-bold tracking-wide',
-                            isNewTrack
-                              ? 'bg-success-fill/15 text-success-onSurface'
-                              : 'bg-neutral-fillHigh text-neutral-onFill'
-                          )}
-                          title={
-                            isNewTrack ? `${track.kind} track — new from the pending AI edit` : `${track.kind} track`
-                          }
-                        >
-                          {TRACK_TAG[track.kind]}
-                        </span>
+                      <span className={clsx(isNewTrack ? 'text-success-onSurface' : 'text-neutral-mediumOnSurface')}>
+                        <Icon size={18} />
+                      </span>
+                      {/* 控件默认藏起来，保持 gutter 干净，hover 再露出来 */}
+                      <div className="absolute inset-x-0 bottom-0 hidden justify-center gap-0.5 bg-neutral-surface/95 py-0.5 group-hover:flex">
                         <button
                           type="button"
                           title={track.visible ? 'Hide track' : 'Show track'}
                           onClick={() => toggleTrackFlag(track.id, 'visible')}
                           className={clsx(
-                            'flex size-5 items-center justify-center rounded text-[10px]',
+                            'flex size-4 items-center justify-center rounded text-[9px]',
                             track.visible ? 'text-neutral-mediumOnSurface' : 'text-neutral-lowOnSurface opacity-50'
                           )}
                         >
@@ -1507,25 +1615,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                           title={track.muted ? 'Unmute track' : 'Mute track'}
                           onClick={() => toggleTrackFlag(track.id, 'muted')}
                           className={clsx(
-                            'flex size-5 items-center justify-center rounded',
+                            'flex size-4 items-center justify-center rounded',
                             track.muted ? 'text-neutral-lowOnSurface opacity-50' : 'text-neutral-mediumOnSurface'
                           )}
                         >
-                          <KsIconSound size={12} />
+                          <KsIconSound size={10} />
                         </button>
-                        <span className="flex-1" />
                         <button
                           type="button"
                           title="Delete track"
                           onClick={() => deleteTrack(track.id)}
-                          className="flex size-5 items-center justify-center rounded text-neutral-lowOnSurface transition-colors hover:bg-error-fillLow hover:text-error-fill"
+                          className="flex size-4 items-center justify-center rounded text-neutral-lowOnSurface transition-colors hover:text-error-fill"
                         >
-                          <KsIconDelete size={11} />
+                          <KsIconDelete size={10} />
                         </button>
                       </div>
-                      <span className="truncate text-[10px] text-neutral-lowOnSurface">
-                        {TRACK_NAME[track.kind]} {ordinal}
-                      </span>
                     </div>
                   );
                 })}
@@ -1536,18 +1640,32 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                 <div style={{ width: rulerSeconds * pxPerSecond }}>
                   <div
                     ref={rulerRef}
-                    className="relative h-7 cursor-pointer border-b border-solid border-neutral-fillLow"
+                    className="relative h-8 cursor-pointer border-b border-solid border-neutral-fillLow"
                     onPointerDown={(event) => seekFromPointer(event.clientX)}
                   >
-                    {Array.from({ length: rulerSeconds }, (_, second) => (
-                      <span
-                        key={second}
-                        className="absolute top-1.5 text-[10px] tabular-nums text-neutral-lowOnSurface"
-                        style={{ left: second * pxPerSecond + 4 }}
-                      >
-                        {`00:${String(second).padStart(2, '0')}`}
-                      </span>
-                    ))}
+                    {Array.from({ length: rulerSeconds + 1 }, (_, second) => {
+                      // 每 5 秒打标签，其余只画一根短刻度
+                      const isMajor = second % 5 === 0;
+                      return (
+                        <span key={second}>
+                          <span
+                            className={clsx(
+                              'absolute w-px bg-neutral-fillLow',
+                              isMajor ? 'top-0 h-3' : 'top-0 h-1.5'
+                            )}
+                            style={{ left: second * pxPerSecond }}
+                          />
+                          {isMajor ? (
+                            <span
+                              className="absolute top-3.5 text-[11px] tabular-nums text-neutral-mediumOnSurface"
+                              style={{ left: second * pxPerSecond + 5 }}
+                            >
+                              {`${String(Math.floor(second / 60)).padStart(2, '0')}:${String(second % 60).padStart(2, '0')}`}
+                            </span>
+                          ) : null}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   {trackPreviews.map(({ track, clips }) => (
@@ -1558,7 +1676,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                           return (
                             <div
                               key={`${clip.id}-editing`}
-                              className="absolute top-2 z-10 flex h-[56px] flex-col overflow-hidden rounded-md border border-primary-fill bg-primary-surface2"
+                              className="absolute top-2 z-10 flex h-[56px] flex-col overflow-hidden rounded-lg border border-primary-fill bg-primary-surface2"
                               style={{ left: clip.start * pxPerSecond, width: Math.max(120, clip.duration * pxPerSecond) }}
                               onPointerDown={(event) => event.stopPropagation()}
                             >
@@ -1604,7 +1722,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             }
                           }}
                           className={clsx(
-                            'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-md border text-left transition-colors',
+                            'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-lg border text-left transition-colors',
                             status === 'unchanged' && selectedClipId === clip.id
                               ? 'border-primary-fill bg-primary-surface2'
                               : status === 'unchanged'
@@ -1646,10 +1764,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
                   {/* 播放头 */}
                   <div
-                    className="pointer-events-none absolute top-0 z-10 h-full w-px bg-primary-fill"
+                    className="pointer-events-none absolute top-0 z-10 h-full w-px bg-neutral-fillHigh"
                     style={{ left: currentTime * pxPerSecond }}
                   >
-                    <span className="absolute -left-1 top-0 size-2 rounded-sm bg-primary-fill" />
+                    {/* 顶部把手：上圆下尖，和参考稿一致 */}
+                    <span className="absolute -left-[7px] -top-0.5 block h-4 w-[15px] rounded-t-full rounded-b-[3px] border border-solid border-neutral-fillHigh bg-neutral-surface" />
                   </div>
                 </div>
               </div>
