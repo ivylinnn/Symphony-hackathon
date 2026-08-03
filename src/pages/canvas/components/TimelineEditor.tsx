@@ -301,18 +301,27 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </button>
             </div>
 
-            {/* 来源节点带视频就直接放它，播放由下方走带控制；否则退回占位块 */}
+            {/* 来源节点带视频就直接放它，点画面或用下方走带都能播放/暂停；否则退回占位块 */}
             {videoUrl ? (
-              <video
-                key={videoUrl}
-                ref={videoRef}
-                src={videoUrl}
-                poster={posterUrl}
-                playsInline
-                preload="metadata"
-                title={sourceLabel}
-                className="h-full max-h-[420px] rounded-xl bg-neutral-fillHigh object-contain"
-              />
+              <div className="relative flex h-full max-h-[420px] items-center justify-center">
+                <video
+                  key={videoUrl}
+                  ref={videoRef}
+                  src={videoUrl}
+                  poster={posterUrl}
+                  playsInline
+                  preload="metadata"
+                  title={isPlaying ? `Pause ${sourceLabel}` : `Play ${sourceLabel}`}
+                  onClick={() => setIsPlaying((playing) => !playing)}
+                  className="h-full cursor-pointer rounded-xl bg-neutral-fillHigh object-contain"
+                />
+                {/* 暂停时给个可点提示，播放时不挡画面 */}
+                {!isPlaying ? (
+                  <span className="pointer-events-none absolute flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh/60 pl-1 text-[20px] text-neutral-onFill">
+                    ▶
+                  </span>
+                ) : null}
+              </div>
             ) : posterUrl ? (
               <img
                 src={posterUrl}
