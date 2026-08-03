@@ -149,6 +149,8 @@ interface DemoAsset {
   refClipId?: string;
   /** graphics 资产的缩略文案。 */
   preview?: string;
+  /** 加进时间线时的片段时长（秒）；不填按视频 3s / 图片 2s。 */
+  seconds?: number;
 }
 
 /** My assets 面板的示例素材，全部来自 public/ 下的真实文件。 */
@@ -159,7 +161,8 @@ const DEMO_ASSETS: DemoAsset[] = [
   { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
   { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' },
   { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' },
-  { id: 'asset-endcard-video', name: 'End card video', kind: 'video', url: '/end-card.mp4' }
+  { id: 'asset-endcard-video', name: 'End card video', kind: 'video', url: '/end-card.mp4' },
+  { id: 'asset-endcard-v2', name: 'End card v2', kind: 'video', url: '/end-card-v2.mp4', seconds: 5 }
 ];
 
 /** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
@@ -1081,7 +1084,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
       return;
     }
     assetSeqRef.current += 1;
-    const clipDuration = asset.kind === 'video' ? 3 : 2;
+    const clipDuration = asset.seconds ?? (asset.kind === 'video' ? 3 : 2);
     const clip = {
       id: `clip-asset-${assetSeqRef.current}`,
       label: asset.name,
@@ -1669,10 +1672,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                               color: fg,
                               // cqw 跟画幅宽度走：常规预览下相当于 ~72–80px 的成片字号，上限 80px
                               fontSize: `min(${13 * scale}cqw, ${80 * scale}px)`,
-                              lineHeight: 1.04,
-                              letterSpacing: '-0.01em',
+                              lineHeight: 1.02,
+                              letterSpacing: '-0.02em',
                               fontWeight: 900,
-                              fontFamily: "'Playfair Display', Didot, Georgia, 'Times New Roman', serif"
+                              fontFamily: "'Neue Haas Grotesk Display Pro', 'Neue Haas Grotesk Text Pro', 'Neue Haas Grotesk', 'Helvetica Now Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
                             }}
                           >
                             {words.map((word, wordIndex) => (
