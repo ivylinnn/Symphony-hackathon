@@ -46,6 +46,7 @@ import type {
   ClipDiffStatus,
   IntakeAnswers,
   RegionEdit,
+  TimelineClip,
   TimelineTrack,
   TimelineTrackKind,
   VideoFormatRatio
@@ -916,6 +917,69 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
     setTracks((current) =>
       current.map((track) => (track.id === trackId ? { ...track, [flag]: !track[flag] } : track))
     );
+  };
+
+  /*
+   * 片段可拖动：按住沿时间线横移，实时改写 start。
+   * 4px 阈值区分点选与拖动；预览（待确认计划）里的块不动真实数据，不拖。
+   */
+  const dragClipRef = useRef<{
+    clipId: string;
+    pointerId: number;
+    startX: number;
+    originStart: number;
+    moved: boolean;
+  } | null>(null);
+
+  const startClipDrag = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    clip: TimelineClip,
+    status: ClipDiffStatus
+  ) => {
+    if (status !== 'unchanged' || pendingPlanId) {
+      return;
+    }
+    dragClipRef.current = {
+      clipId: clip.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      originStart: clip.start,
+      moved: false
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveClipDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragClipRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    const dx = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) < 4) {
+      return;
+    }
+    drag.moved = true;
+    // 吸附到 0.1s 网格，拖完的时间轴不会带一堆毛刺小数
+    const newStart = Math.max(0, Math.round((drag.originStart + dx / pxPerSecond) * 10) / 10);
+    setTracks((current) =>
+      current.map((track) =>
+        track.clips.some((item) => item.id === drag.clipId)
+          ? {
+              ...track,
+              clips: track.clips
+                .map((item) => (item.id === drag.clipId ? { ...item, start: newStart } : item))
+                .sort((a, b) => a.start - b.start)
+            }
+          : track
+      )
+    );
+  };
+
+  const endClipDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragClipRef.current;
+    if (drag && event.pointerId === drag.pointerId) {
+      dragClipRef.current = null;
+    }
   };
 
   const deleteSelectedClip = () => {
@@ -2088,8 +2152,13 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                               setEditingCaptionId(clip.id);
                             }
                           }}
+                          onPointerDown={(event) => startClipDrag(event, clip, status)}
+                          onPointerMove={moveClipDrag}
+                          onPointerUp={endClipDrag}
+                          onPointerCancel={endClipDrag}
                           className={clsx(
-                            'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-lg border text-left transition-colors',
+                            'absolute top-2 flex h-[56px] touch-none flex-col overflow-hidden rounded-lg border text-left transition-colors',
+                            status === 'unchanged' && !pendingPlanId && 'cursor-grab active:cursor-grabbing',
                             status === 'unchanged' && selectedClipId === clip.id
                               ? 'border-primary-fill bg-primary-surface2'
                               : status === 'unchanged'
