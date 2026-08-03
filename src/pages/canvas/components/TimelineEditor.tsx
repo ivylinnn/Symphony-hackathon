@@ -1075,14 +1075,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
     );
   };
 
-  /** 素材列表：当前来源视频排最前，其余是 public/ 里的示例素材。 */
+  /** 素材列表：用户上传/生成的在前，其余是 public/ 里的示例素材（来源视频已在时间线上，不重复列出）。 */
   const allAssets = useMemo<DemoAsset[]>(
-    () => [
-      ...(videoUrl ? [{ id: 'asset-source', name: sourceLabel, kind: 'video' as const, url: videoUrl }] : []),
-      ...uploadedAssets,
-      ...DEMO_ASSETS
-    ],
-    [videoUrl, sourceLabel, uploadedAssets]
+    () => [...uploadedAssets, ...DEMO_ASSETS],
+    [uploadedAssets]
   );
 
   /** 从输入区上传：转成 object URL 进 My assets，并切到该页签让用户看到结果。 */
