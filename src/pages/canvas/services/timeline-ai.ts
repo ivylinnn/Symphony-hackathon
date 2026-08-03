@@ -27,7 +27,8 @@ interface WireOperation {
   Ratio?: string;
   Text?: string;
   Path?: string;
-  Color?: string;
+  Patch?: string;
+  Blend?: string;
   Clip?: WireClip;
   Track?: WireTrack;
 }
@@ -120,8 +121,14 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
     }
 
     case 'region-edit':
-      return typeof wire.Path === 'string' && wire.Path && typeof wire.Color === 'string' && wire.Color
-        ? { type: 'region-edit', path: wire.Path, color: wire.Color }
+      return typeof wire.Path === 'string' && wire.Path && typeof wire.Patch === 'string' && wire.Patch
+        ? {
+            type: 'region-edit',
+            path: wire.Path,
+            patchUrl: wire.Patch,
+            blend: wire.Blend === 'color' ? 'color' : 'normal',
+            prompt: wire.Label ?? 'Regenerated area'
+          }
         : undefined;
 
     default:

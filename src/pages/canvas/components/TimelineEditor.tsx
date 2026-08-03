@@ -408,7 +408,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         ...regionOps.map((operation) => {
           regionSeqRef.current += 1;
           const op = operation.op as Extract<typeof operation.op, { type: 'region-edit' }>;
-          return { id: `region-${regionSeqRef.current}`, path: op.path, color: op.color, label: operation.label };
+          return {
+            id: `region-${regionSeqRef.current}`,
+            path: op.path,
+            patchUrl: op.patchUrl,
+            blend: op.blend,
+            prompt: op.prompt,
+            label: operation.label
+          };
         })
       ]);
     }
@@ -615,6 +622,25 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     return clip && kind ? { id: clip.id, label: clip.label, kind } : null;
   }, [selectedClipId, tracks]);
 
+  /** 闭合路径的包围盒；生成的贴片按它铺开再裁到路径里。 */
+  const pathBounds = (path: string) => {
+    const nums = (path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const xs = nums.filter((_, i) => i % 2 === 0);
+    const ys = nums.filter((_, i) => i % 2 === 1);
+    if (xs.length === 0 || ys.length === 0) {
+      return { x: 0, y: 0, width: 100, height: 100 };
+    }
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    // 稍微外扩，避免贴片边缘和蒙版边缘出现缝隙
+    return {
+      x: minX - 1,
+      y: minY - 1,
+      width: Math.max(1, Math.max(...xs) - minX) + 2,
+      height: Math.max(1, Math.max(...ys) - minY) + 2
+    };
+  };
+
   /** 圈选路径：0-100 归一化坐标，随画幅缩放。 */
   const penPathFrom = (points: Array<[number, number]>) =>
     points.length ? `M ${points.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z` : '';
@@ -671,7 +697,15 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       .filter((operation) => operation.op.type === 'region-edit')
       .map((operation, index) => {
         const op = operation.op as Extract<typeof operation.op, { type: 'region-edit' }>;
-        return { id: `pending-region-${index}`, path: op.path, color: op.color, label: operation.label, pending: true };
+        return {
+          id: `pending-region-${index}`,
+          path: op.path,
+          patchUrl: op.patchUrl,
+          blend: op.blend,
+          prompt: op.prompt,
+          label: operation.label,
+          pending: true
+        };
       });
     return [...regionEdits.map((region) => ({ ...region, pending: false })), ...pending];
   }, [regionEdits, acceptedOperations]);
@@ -1221,30 +1255,39 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   className="size-full cursor-pointer object-contain"
                 />
                 {/* 圈选调色蒙版：mix-blend color 只换色相，画面细节保留 */}
-                {previewRegions.map((region) => (
-                  <svg
-                    key={region.id}
-                    data-region-overlay={region.pending ? 'pending' : 'applied'}
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    className="pointer-events-none absolute inset-0 size-full"
-                    style={{ mixBlendMode: 'color' }}
-                  >
-                    <path d={region.path} fill={region.color} fillOpacity={0.85} />
-                  </svg>
-                ))}
-                {previewRegions
-                  .filter((region) => region.pending)
-                  .map((region) => (
+                {previewRegions.map((region) => {
+                  const bounds = pathBounds(region.path);
+                  return (
                     <svg
-                      key={`${region.id}-outline`}
+                      key={region.id}
+                      data-region-overlay={region.pending ? 'pending' : 'applied'}
+                      data-region-blend={region.blend}
                       viewBox="0 0 100 100"
                       preserveAspectRatio="none"
                       className="pointer-events-none absolute inset-0 size-full"
                     >
-                      <path d={region.path} fill="none" stroke={region.color} strokeWidth={0.6} strokeDasharray="2.4 1.6" />
+                      <defs>
+                        <clipPath id={`mask-${region.id}`} clipPathUnits="userSpaceOnUse">
+                          <path d={region.path} />
+                        </clipPath>
+                      </defs>
+                      {/* 生成的画面只贴在蒙版里；recolor 用 color 混合保留原有明暗 */}
+                      <image
+                        href={region.patchUrl}
+                        x={bounds.x}
+                        y={bounds.y}
+                        width={bounds.width}
+                        height={bounds.height}
+                        preserveAspectRatio="none"
+                        clipPath={`url(#mask-${region.id})`}
+                        style={{ mixBlendMode: region.blend === 'color' ? 'color' : 'normal' }}
+                      />
+                      {region.pending ? (
+                        <path d={region.path} fill="none" stroke="#ffffff" strokeWidth={0.55} strokeDasharray="2.4 1.6" />
+                      ) : null}
                     </svg>
-                  ))}
+                  );
+                })}
                 {/* 正在画/画好待指令的轨迹 */}
                 {penPoints || drawnPath ? (
                   <svg

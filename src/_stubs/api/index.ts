@@ -94,7 +94,8 @@ export interface WireOperation {
   Ratio?: string;
   Text?: string;
   Path?: string;
-  Color?: string;
+  Patch?: string;
+  Blend?: 'color' | 'normal';
   Clip?: WireClip;
   Track?: WireTrack & { Visible?: boolean; Muted?: boolean };
 }
@@ -208,21 +209,67 @@ const buildGraphicsClips = (
   }));
 };
 
-/** 圈选重上色认识的颜色词；真实端点是任意 prompt 的生成式局部编辑。 */
-const REGION_COLORS: Array<{ names: string[]; label: string; hex: string }> = [
-  { names: ['blue', '蓝'], label: 'blue', hex: '#2f6bff' },
-  { names: ['red', '红'], label: 'red', hex: '#e5484d' },
-  { names: ['green', '绿'], label: 'green', hex: '#12a06a' },
-  { names: ['black', '黑'], label: 'black', hex: '#16181d' },
-  { names: ['white', '白'], label: 'white', hex: '#f2f3f5' },
-  { names: ['yellow', '黄'], label: 'yellow', hex: '#eab308' },
-  { names: ['orange', '橙'], label: 'orange', hex: '#f97316' },
-  { names: ['purple', '紫'], label: 'purple', hex: '#7c3aed' },
-  { names: ['pink', '粉'], label: 'pink', hex: '#ec4899' },
-  { names: ['gold', '金'], label: 'gold', hex: '#c9a86a' },
+/** 常见颜色词 → 一组配色，生成的贴片以此为主色。 */
+const COLOR_WORDS: Array<{ names: string[]; label: string; ramp: [string, string, string] }> = [
+  { names: ['blue', '蓝'], label: 'blue', ramp: ['#5b8cff', '#2f4fd6', '#16256b'] },
+  { names: ['red', '红'], label: 'red', ramp: ['#ff6b6f', '#d92d33', '#6b1114'] },
+  { names: ['green', '绿'], label: 'green', ramp: ['#4bd6a0', '#12a06a', '#0a4a32'] },
+  { names: ['black', '黑'], label: 'black', ramp: ['#3a3d44', '#1b1d22', '#0a0b0d'] },
+  { names: ['white', '白'], label: 'white', ramp: ['#ffffff', '#e4e7ec', '#a9b0ba'] },
+  { names: ['yellow', '黄'], label: 'yellow', ramp: ['#ffd75e', '#eab308', '#7a5a04'] },
+  { names: ['orange', '橙'], label: 'orange', ramp: ['#ffa457', '#f97316', '#7c3708'] },
+  { names: ['purple', '紫'], label: 'purple', ramp: ['#b18cff', '#7c3aed', '#3b1a75'] },
+  { names: ['pink', '粉'], label: 'pink', ramp: ['#ff8ec4', '#ec4899', '#7a1f4c'] },
+  { names: ['gold', '金'], label: 'gold', ramp: ['#e8c98a', '#c9a86a', '#6d5730'] },
+  { names: ['silver', '银'], label: 'silver', ramp: ['#e6eaef', '#b6bec9', '#6d757f'] },
+  { names: ['denim', 'jean'], label: 'denim', ramp: ['#7290c4', '#3f5f96', '#1d2c47'] },
+  { names: ['leather'], label: 'leather', ramp: ['#a9703f', '#6f4522', '#331e0e'] },
+  { names: ['grass', 'lawn'], label: 'grass', ramp: ['#7bc95a', '#3f8f2c', '#1d4413'] },
+  { names: ['sky', 'cloud'], label: 'sky', ramp: ['#a9d4ff', '#5aa2ee', '#2b5d94'] },
 ];
-const matchRegionColor = (prompt: string) =>
-  REGION_COLORS.find((color) => color.names.some((name) => prompt.includes(name)));
+
+/** 没提颜色时，用 prompt 的哈希稳定地挑一组配色，同样的话每次结果一致。 */
+const rampFor = (prompt: string) => {
+  const named = COLOR_WORDS.find((entry) => entry.names.some((name) => prompt.includes(name)));
+  if (named) {
+    return named;
+  }
+  let hash = 0;
+  for (let i = 0; i < prompt.length; i += 1) {
+    hash = (hash * 31 + prompt.charCodeAt(i)) >>> 0;
+  }
+  return COLOR_WORDS[hash % COLOR_WORDS.length];
+};
+
+/** 纯换色类指令：保留原有明暗只换色相，比整块替换更像真的。 */
+const isRecolor = (prompt: string) =>
+  /\b(recolor|colou?r|repaint|tint|make it|turn it|update to|change to)\b/.test(prompt) || /改成|换成|变成/.test(prompt);
+
+/**
+ * 「生成」圈选区域的新画面。
+ * demo 里按 prompt 的配色与哈希合成一张贴片；真实端点是 inpainting 模型，
+ * 但出入参一致：进去是 mask + prompt，出来是只贴在 mask 内的图。
+ */
+const renderRegionPatch = (prompt: string, ramp: [string, string, string]) => {
+  let hash = 7;
+  for (let i = 0; i < prompt.length; i += 1) {
+    hash = (hash * 33 + prompt.charCodeAt(i)) >>> 0;
+  }
+  const rand = (n: number) => ((hash >> (n * 3)) & 0xff) / 255;
+  const blobs = Array.from({ length: 5 }, (_, i) =>
+    `<ellipse cx="${(15 + rand(i) * 70).toFixed(1)}" cy="${(15 + rand(i + 2) * 70).toFixed(1)}" rx="${(14 + rand(i + 1) * 26).toFixed(1)}" ry="${(10 + rand(i + 3) * 22).toFixed(1)}" fill="${i % 2 ? ramp[0] : ramp[2]}" opacity="${(0.18 + rand(i + 4) * 0.3).toFixed(2)}"/>`
+  ).join('');
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1">` +
+    `<stop offset="0" stop-color="${ramp[0]}"/><stop offset="0.55" stop-color="${ramp[1]}"/><stop offset="1" stop-color="${ramp[2]}"/>` +
+    `</linearGradient><filter id="s"><feGaussianBlur stdDeviation="6"/></filter></defs>` +
+    `<rect width="100" height="100" fill="url(#g)"/>` +
+    `<g filter="url(#s)">${blobs}</g>` +
+    `<rect width="100" height="100" fill="url(#g)" opacity="0.35"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+};
 
 /** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
 const surveyLine = (tracks: WireTrack[]) => {
@@ -267,36 +314,29 @@ export async function planTimelineEdit(args: {
   const survey = surveyLine(tracks);
   const durationMatch = prompt.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)/);
 
-  /* -1) 圈选局部编辑：优先级最高，用户明确指着画面某处 */
+  /* -1) 圈选重生成：优先级最高，用户明确指着画面某处 */
   if (args.region?.Path) {
-    const color = matchRegionColor(prompt);
-    if (!color) {
-      return {
-        Kind: 'question',
-        Thinking: [
-          survey,
-          'A region is circled on the frame, but the instruction does not name a change I can stage here.',
-          'The demo pipeline supports recolors — the production model takes any edit.',
-        ],
-        Question: 'What should happen to the circled area?',
-        Options: ['turn it blue', 'turn it red', 'turn it black'],
-      };
-    }
+    const instruction = (args.prompt ?? '').replace(/^edit the circled area:\s*/i, '').trim();
+    const ramp = rampFor(prompt);
+    const recolor = isRecolor(prompt);
     return {
       Kind: 'plan',
       Thinking: [
         survey,
-        'A region is circled on the frame — treating this as a localized edit.',
-        `The instruction reads as a recolor → ${color.label}.`,
-        'Masking to the drawn path and carrying the change across the cut.',
+        'A region is circled on the frame — masking to that path and regenerating inside it.',
+        `Reading the instruction as “${instruction || prompt}” → ${ramp.label} palette.`,
+        recolor
+          ? 'Compositing on hue only, so the original shading and texture survive.'
+          : 'Replacing the masked content outright with the generated fill.',
       ],
-      Summary: `Recolored the circled area ${color.label} — masked to your drawing, applied across the cut.`,
+      Summary: `Regenerated the circled area as “${instruction || prompt}” — masked to your drawing and carried across the cut.`,
       Operations: [
         {
-          Label: `Recolor circled area → ${color.label}`,
+          Label: `Regenerate circled area → ${instruction || prompt}`,
           Type: 'region-edit',
           Path: args.region.Path,
-          Color: color.hex,
+          Patch: renderRegionPatch(prompt, ramp.ramp),
+          Blend: recolor ? 'color' : 'normal',
         },
       ],
     };

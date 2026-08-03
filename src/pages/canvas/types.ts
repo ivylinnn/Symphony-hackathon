@@ -104,15 +104,26 @@ export type TimelineEditOp =
   | { type: 'set-text'; clipId: string; text: string }
   /** 智能扩画：改画幅不改轨道，由编辑器状态承接。 */
   | { type: 'set-format'; ratio: VideoFormatRatio }
-  /** 圈选区域的局部改动（重上色等）；path 是 0-100 归一化坐标的 SVG 路径。 */
-  | { type: 'region-edit'; path: string; color: string };
+  /**
+   * 圈选区域的重生成：path 是 0-100 归一化坐标的闭合路径，
+   * patchUrl 是模型按 prompt 生成、只贴在这块蒙版里的画面。
+   */
+  | { type: 'region-edit'; path: string; patchUrl: string; blend: RegionBlend; prompt: string };
 
-/** 已应用到画面上的圈选编辑。 */
+/**
+ * 生成结果的合成方式。
+ * `color` 只替换色相、保留原有明暗（改色更真实）；`normal` 整块替换内容。
+ */
+export type RegionBlend = 'color' | 'normal';
+
+/** 已应用到画面上的圈选重生成。 */
 export interface RegionEdit {
   id: string;
   /** viewBox 0 0 100 100 下的闭合路径，跟随画幅缩放。 */
   path: string;
-  color: string;
+  patchUrl: string;
+  blend: RegionBlend;
+  prompt: string;
   label: string;
 }
 
