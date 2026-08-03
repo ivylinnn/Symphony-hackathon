@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_TIMELINE_TRACKS } from '../const';
 import { planEdit } from '../services/timeline-ai';
 import {
+  activeCaptionText,
   activeVideoClip,
   applyOperations,
   buildPreview,
@@ -336,6 +337,9 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   /** 播放头当前落在哪个有画面的片段上，决定预览播哪一段素材。 */
   const active = useMemo(() => activeVideoClip(previewTracks, currentTime), [previewTracks, currentTime]);
 
+  /** 当前时间点应叠在画面上的字幕；用 previewTracks，待确认的字幕也能先看到。 */
+  const captionText = useMemo(() => activeCaptionText(previewTracks, currentTime), [previewTracks, currentTime]);
+
   /*
    * 拿到真实时长后，用整条视频建一条视频轨；只建一次，后续编辑不再被覆盖。
    * 解码失败时也要建（用兜底时长），否则时间线会一直空着，编辑器直接不可用。
@@ -601,6 +605,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="size-full cursor-pointer object-contain"
                 />
+                {/* 字幕叠层：跟着播放头换行，视频行业惯用的底部居中样式 */}
+                {captionText ? (
+                  <span data-caption-overlay className="pointer-events-none absolute inset-x-3 bottom-7 text-center">
+                    <span className="rounded-md bg-neutral-fillHigh/75 box-decoration-clone px-1.5 py-0.5 text-[13px] font-semibold leading-[22px] text-neutral-onFill">
+                      {captionText}
+                    </span>
+                  </span>
+                ) : null}
                 {previewFormat !== '9:16' ? (
                   <span className="pointer-events-none absolute bottom-2 left-2 rounded bg-neutral-fillHigh/70 px-1.5 py-0.5 text-[10px] font-medium text-neutral-onFill">
                     AI-extended · {previewFormat}
@@ -781,6 +793,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                           >
                             {clip.label}
                           </span>
+                          {clip.text ? (
+                            <span className="truncate px-1.5 text-[9px] italic leading-[13px] text-neutral-mediumOnSurface">
+                              “{clip.text}”
+                            </span>
+                          ) : null}
                           {clip.hasAudio ? (
                             <span className="mt-auto flex h-4 items-end gap-px px-1 pb-1">
                               {Array.from({ length: 24 }, (_, bar) => (

@@ -72,6 +72,7 @@ export interface WireClip {
   Start: number;
   Duration: number;
   HasAudio?: boolean;
+  Text?: string;
 }
 
 export interface WireTrack {
@@ -147,6 +148,17 @@ const matchClip = (tracks: WireTrack[], prompt: string): WireClip | undefined =>
 };
 
 const has = (prompt: string, ...needles: string[]) => needles.some((n) => prompt.includes(n));
+
+/** 按分镜角色生成字幕文案；demo 里是固定稿，真实端点由模型听写/撰写。 */
+const CAPTION_COPY: Array<[RegExp, string]> = [
+  [/hook/i, 'Stop scrolling — this changes everything.'],
+  [/body/i, '72-hour results in one lightweight step.'],
+  [/proof/i, 'Clinically tested. Loved by 10,000+ customers.'],
+  [/cta/i, 'Tap to shop — 20% off ends tonight.'],
+  [/outro/i, 'Your new routine starts today.'],
+];
+const captionLine = (sceneLabel: string) =>
+  CAPTION_COPY.find(([re]) => re.test(sceneLabel))?.[1] ?? `${sceneLabel} — on-screen line.`;
 
 /** 读一遍时间线，作为思考轨迹的第一句，让它引用真实结构而不是套话。 */
 const surveyLine = (tracks: WireTrack[]) => {
@@ -443,6 +455,7 @@ export async function planTimelineEdit(args: {
                 Start: clip.Start,
                 Duration: clip.Duration,
                 HasAudio: false,
+                Text: captionLine(clip.Label),
               })),
             },
           },

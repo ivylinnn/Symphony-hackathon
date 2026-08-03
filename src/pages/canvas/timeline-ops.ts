@@ -181,6 +181,20 @@ export const activeVideoClip = (
   return undefined;
 };
 
+/** 播放头处应显示的字幕：第一条可见 caption 轨道上、当前时间命中的带文案片段。 */
+export const activeCaptionText = (tracks: TimelineTrack[], time: number): string | undefined => {
+  for (const track of tracks) {
+    if (track.kind !== 'caption' || !track.visible) {
+      continue;
+    }
+    const clip = clipAtTime(track, time);
+    if (clip?.text) {
+      return clip.text;
+    }
+  }
+  return undefined;
+};
+
 /** 片段被拉长/压缩后的播放速率，= 消耗的素材长度 / 时间线上的长度。 */
 export const clipPlaybackRate = (clip: TimelineClip): number => {
   const sourceDuration = clip.sourceDuration ?? clip.duration;

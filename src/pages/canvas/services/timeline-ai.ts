@@ -35,6 +35,7 @@ interface WireClip {
   Start?: number;
   Duration?: number;
   HasAudio?: boolean;
+  Text?: string;
 }
 
 interface WireTrack {
@@ -58,7 +59,8 @@ const toClip = (wire: WireClip | undefined): TimelineClip | undefined => {
     label: wire.Label ?? 'Untitled clip',
     start: Math.max(0, wire.Start),
     duration: Math.max(0.05, wire.Duration),
-    hasAudio: Boolean(wire.HasAudio)
+    hasAudio: Boolean(wire.HasAudio),
+    text: typeof wire.Text === 'string' && wire.Text ? wire.Text : undefined
   };
 };
 

@@ -57,6 +57,8 @@ export interface TimelineClip {
   duration: number;
   /** 有音频的片段会额外画一条波形。 */
   hasAudio: boolean;
+  /** 字幕片段叠在画面上的文案；非字幕片段留空。 */
+  text?: string;
   /**
    * 片段引用的媒体地址。有值的片段才驱动预览播放，
    * 字幕/音乐这类没有画面的片段留空。
