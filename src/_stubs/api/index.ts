@@ -246,7 +246,6 @@ export async function planTimelineEdit(args: {
   /** 开场问卷的结构化答案；有值时直接组合成一份复合首刀计划。 */
   intake?: {
     source?: string;
-    platform?: string;
     clipCount?: string;
     targetLength?: string;
     packaging?: string[];
@@ -384,7 +383,7 @@ export async function planTimelineEdit(args: {
 
   /* 0) 开场问卷：一次性把时长、字幕、音乐、标题条组合成首刀 */
   if (args.intake) {
-    const { platform, clipCount, targetLength, packaging = [], graphicsBrief } = args.intake;
+    const { clipCount, targetLength, packaging = [], graphicsBrief } = args.intake;
     const target = Number(targetLength?.match(/(\d+)/)?.[1] ?? 0);
     const factor = target > 0 && total > 0 ? target / total : 1;
     const finalTotal = target > 0 ? target : total;
@@ -513,10 +512,10 @@ export async function planTimelineEdit(args: {
     const packagingText = packaging.length ? packaging.join(', ').toLowerCase() : 'no extra packaging';
     const countText = clipCount ? `${clipCount} clip${clipCount === '1' ? '' : 's'}` : 'this cut';
     const summary = operations.length
-      ? `First pass for ${platform ?? 'your platform'} — ${countText} at ${
+      ? `First pass — ${countText} at ${
           target > 0 ? `~${target}s` : 'current length'
         } with ${packagingText}.`
-      : `Noted: ${platform ?? 'your platform'}, ${countText}, ${packagingText}. Nothing to change on the timeline yet — tell me what to cut.`;
+      : `Noted: ${countText}, ${packagingText}. Nothing to change on the timeline yet — tell me what to cut.`;
 
     return { Kind: 'plan', Thinking: thinking, Summary: summary, Operations: operations };
   }

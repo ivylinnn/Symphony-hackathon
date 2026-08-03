@@ -434,13 +434,6 @@ export const INTAKE_FIELDS: IntakeField[] = [
     options: ['This is the full video', 'This is a clip — I have more footage to upload']
   },
   {
-    id: 'platform',
-    label: 'Which platform are you cutting for?',
-    kind: 'single',
-    required: true,
-    options: ['TikTok', 'Instagram Reels', 'Xiaohongshu (小红书)', 'YouTube Shorts', 'Other']
-  },
-  {
     id: 'clipCount',
     label: 'How many short clips do you want to create?',
     kind: 'text',

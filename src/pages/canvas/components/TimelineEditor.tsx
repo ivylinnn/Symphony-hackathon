@@ -350,12 +350,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     );
     const packaging = Array.isArray(answers.packaging) ? answers.packaging : [];
     const parts = [
-      typeof answers.platform === 'string' && answers.platform ? answers.platform : null,
       typeof answers.clipCount === 'string' && answers.clipCount ? `${answers.clipCount} clips` : null,
       typeof answers.targetLength === 'string' && answers.targetLength ? `${answers.targetLength} each` : null,
       packaging.length ? packaging.join(', ') : null
     ].filter(Boolean);
-    void runAgent(`Cutting for ${parts.join(' · ')}`, answers);
+    void runAgent(`Cutting ${parts.join(' · ')}`, answers);
   };
 
   /** 回答澄清问题：把选项接在原始诉求后面重跑，答案因此真的会改变结果。 */
