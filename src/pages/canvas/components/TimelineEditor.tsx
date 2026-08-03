@@ -90,6 +90,9 @@ const REGION_ACTIONS_MORE: typeof REGION_ACTIONS = [
   { label: 'Blur this area', prompt: 'blur this area', icon: 'generate' }
 ];
 
+/** 静帧素材（片尾卡、产品图）的判断；这类片段用 <img> 预览而不是驱动视频。 */
+const isStillSource = (url?: string): url is string => !!url && /\.(png|jpe?g|webp|gif|svg)$/i.test(url);
+
 /** 画幅比例 → CSS aspect-ratio，Uncrop 变体在这些版位画布之间切换。 */
 const FORMAT_ASPECT: Record<VideoFormatRatio, string> = {
   '9:16': '9 / 16',
@@ -501,7 +504,13 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   };
 
   /** 播放头当前落在哪个有画面的片段上，决定预览播哪一段素材。 */
-  const active = useMemo(() => activeVideoClip(previewTracks, currentTime), [previewTracks, currentTime]);
+  /*
+   * 叠层采样时间：播放头正好停在末尾时，半开区间会什么都取不到，
+   * 而末尾恰恰是片尾卡所在 —— 往内收一帧，Jump to end 也能看到最后画面。
+   */
+  const sampleTime = Math.min(currentTime, Math.max(0, duration - 0.01));
+
+  const active = useMemo(() => activeVideoClip(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
   /**
    * 当前片段引用的是图片而不是视频时，预览要放 <img>。
@@ -509,14 +518,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
    */
   const activeStillUrl = useMemo(() => {
     const url = active?.clip.sourceUrl;
-    return url && /\.(png|jpe?g|webp|gif|svg)$/i.test(url) ? url : undefined;
+    return isStillSource(url) ? url : undefined;
   }, [active]);
 
   /** 当前时间点应叠在画面上的字幕；用 previewTracks，待确认的字幕也能先看到。 */
-  const captionText = useMemo(() => activeCaptionText(previewTracks, currentTime), [previewTracks, currentTime]);
+  const captionText = useMemo(() => activeCaptionText(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
   /** 当前时间点的动态图形卖点，同样用 previewTracks 以便未应用时先看到。 */
-  const graphicsCue = useMemo(() => activeGraphicsCue(previewTracks, currentTime), [previewTracks, currentTime]);
+  const graphicsCue = useMemo(() => activeGraphicsCue(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
   /*
    * 拿到真实时长后，用整条视频建一条视频轨；只建一次，后续编辑不再被覆盖。
@@ -605,7 +614,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
         }
         const video = videoRef.current;
         const current = activeVideoClip(previewTracks, next);
-        if (video && current && !video.seeking) {
+        if (video && current && !video.seeking && !isStillSource(current.clip.sourceUrl)) {
           const target = sourceTimeAt(current.clip, next);
           if (Math.abs(video.currentTime - target) > DRIFT_TOLERANCE) {
             video.currentTime = target;
@@ -623,7 +632,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     if (!video) {
       return;
     }
-    if (!isPlaying || !active) {
+    if (!isPlaying || !active || isStillSource(active.clip.sourceUrl)) {
       video.pause();
       return;
     }
@@ -939,9 +948,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
       start: timelineDuration(tracks),
       duration: clipDuration,
       hasAudio: asset.kind === 'video',
-      ...(asset.kind === 'video'
-        ? { sourceUrl: asset.url, sourceStart: 0, sourceDuration: clipDuration }
-        : {})
+      // 图片和视频都带素材地址，静帧靠它在预览里渲染
+      ...(asset.url ? { sourceUrl: asset.url, sourceStart: 0, sourceDuration: clipDuration } : {})
     };
     setTracks((current) =>
       applyOperations(current, [
