@@ -771,6 +771,13 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     setShowMoreRegionActions(false);
   };
 
+  /** 彻底退出圈选模式：清掉画到一半的轨迹和弹层，恢复普通预览交互。 */
+  const exitPenMode = () => {
+    setIsPenMode(false);
+    setPenPoints(null);
+    closeRegionPopover();
+  };
+
   /** 画面上要渲染的圈选蒙版：已应用的 + 待确认计划里的（虚线描边）。 */
   const previewRegions = useMemo(() => {
     const pending = acceptedOperations
@@ -874,6 +881,37 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedClipId]);
+
+  /*
+   * Esc 逐级退出圈选：先收起「描述修改」弹层（保留画笔），再退出画笔模式本身。
+   * 焦点在输入框里时不接管 —— 弹层输入框自带 Esc 收起逻辑，这里再处理会把
+   * 两级退出压成一步（React 同步重渲染后新监听器还会吃到同一个事件）。
+   */
+  useEffect(() => {
+    if (!isPenMode) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (typing) {
+        return;
+      }
+      event.preventDefault();
+      if (drawnPath) {
+        closeRegionPopover();
+      } else {
+        exitPenMode();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isPenMode, drawnPath]);
 
   /** 在播放头处切开选中片段；走和 AI 计划同一套算子，素材入点才会跟着分。 */
   const splitSelectedClip = () => {
@@ -1361,17 +1399,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   <button
                     type="button"
                     data-pen-toggle
-                    title={isPenMode ? 'Exit draw mode' : 'Draw an area, then describe the change'}
-                    onClick={() =>
-                      setIsPenMode((on) => {
-                        if (on) {
-                          setPenPoints(null);
-                          setDrawnPath(null);
-                          setRegionPrompt('');
-                        }
-                        return !on;
-                      })
-                    }
+                    title={isPenMode ? 'Exit draw mode (Esc)' : 'Draw an area, then describe the change'}
+                    onClick={() => (isPenMode ? exitPenMode() : setIsPenMode(true))}
                     className={clsx(
                       'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors',
                       isPenMode
@@ -1379,14 +1408,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                         : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2'
                     )}
                   >
-                    <KsIconPen size={13} />
-                    Draw to edit
+                    {isPenMode ? <KsIconClose size={13} /> : <KsIconPen size={13} />}
+                    {isPenMode ? 'Exit draw mode' : 'Draw to edit'}
                   </button>
                 ) : null}
               </div>
               {isPenMode && !drawnPath ? (
                 <p className="shrink-0 px-4 pt-2 text-[11px] text-neutral-lowOnSurface">
-                  Draw around the part you want to change — e.g. circle the shoes.
+                  Draw around the part you want to change — e.g. circle the shoes. Press Esc to exit draw mode.
                 </p>
               ) : null}
 
