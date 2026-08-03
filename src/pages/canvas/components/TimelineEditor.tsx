@@ -155,7 +155,8 @@ const DEMO_ASSETS: DemoAsset[] = [
   { id: 'asset-front', name: 'hoodie — front', kind: 'image', url: '/hoodie-front.webp' },
   { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
   { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' },
-  { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' }
+  { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' },
+  { id: 'asset-endcard-video', name: 'End card video', kind: 'video', url: '/end-card.mp4' }
 ];
 
 /** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
@@ -563,6 +564,16 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
     return isStillSource(url) ? url : undefined;
   }, [active]);
 
+  /**
+   * 预览元素实际要放的视频源：跟着当前片段走。
+   * 从素材库拖进来的其它视频（如片尾卡视频）有自己的 sourceUrl，
+   * 播放头进入这些片段时预览要换源，而不是继续在主素材里 seek。
+   */
+  const activeSourceUrl = useMemo(() => {
+    const url = active?.clip.sourceUrl;
+    return url && !isStillSource(url) ? url : videoUrl;
+  }, [active, videoUrl]);
+
   /** 当前时间点应叠在画面上的字幕；用 previewTracks，待确认的字幕也能先看到。 */
   const captionText = useMemo(() => activeCaptionText(previewTracks, sampleTime), [previewTracks, sampleTime]);
 
@@ -636,6 +647,11 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
   const handleMetadata = () => {
     const video = videoRef.current;
     seedFromMedia(video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : FALLBACK_MEDIA_SECONDS);
+    // 换源重挂后，新元素从 0 开始 —— 对齐到播放头对应的素材时间
+    const current = activeVideoClip(previewTracks, sampleTime);
+    if (video && current && !isStillSource(current.clip.sourceUrl)) {
+      video.currentTime = sourceTimeAt(current.clip, sampleTime);
+    }
   };
 
   /*
@@ -1459,9 +1475,9 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                 style={{ aspectRatio: FORMAT_ASPECT[previewFormat], containerType: 'inline-size' }}
               >
                 <video
-                  key={videoUrl}
+                  key={activeSourceUrl}
                   ref={videoRef}
-                  src={videoUrl}
+                  src={activeSourceUrl}
                   poster={posterUrl}
                   playsInline
                   preload="metadata"
