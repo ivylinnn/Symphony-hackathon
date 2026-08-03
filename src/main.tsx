@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -33,4 +34,10 @@ if (!container) {
   throw new Error('Root container #root not found');
 }
 
-createRoot(container).render(<App />);
+createRoot(container).render(
+  <>
+    <App />
+    {/* Vercel Analytics：生产部署上报页面访问，本地开发是 no-op */}
+    <Analytics />
+  </>
+);
