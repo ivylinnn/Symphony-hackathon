@@ -1670,8 +1670,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                             className="mt-3 block px-3 text-center uppercase"
                             style={{
                               color: fg,
-                              // cqw 跟画幅宽度走：常规预览下相当于 ~72–80px 的成片字号，上限 80px
-                              fontSize: `min(${13 * scale}cqw, ${80 * scale}px)`,
+                              // cqw 跟画幅宽度走；按用户要求整体压到原来的 80%
+                              fontSize: `min(${10.4 * scale}cqw, ${64 * scale}px)`,
                               lineHeight: 1.02,
                               letterSpacing: '-0.02em',
                               fontWeight: 900,
