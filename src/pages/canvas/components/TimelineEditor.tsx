@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { INITIAL_TIMELINE_TRACKS } from '../const';
 import { planEdit } from '../services/timeline-ai';
 import {
+  activeCaptionClip,
   activeCaptionText,
   activeVideoClip,
   applyOperations,
@@ -145,6 +146,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [zoom, setZoom] = useState(1);
   /** 当前画幅；Uncrop 变体应用后从 9:16 切到目标版位。 */
   const [format, setFormat] = useState<VideoFormatRatio>('9:16');
+  /** 正在内联编辑文案的字幕片段 id。 */
+  const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
@@ -513,6 +516,20 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     );
   };
 
+  /** 提交内联编辑的字幕文案；空串视为取消，不清空原文案。 */
+  const commitCaptionText = (clipId: string, raw: string) => {
+    setEditingCaptionId(null);
+    const text = raw.trim();
+    if (!text || findClip(tracks, clipId)?.text === text) {
+      return;
+    }
+    setTracks((current) =>
+      applyOperations(current, [
+        { id: 'manual-set-text', label: 'Edit caption', op: { type: 'set-text', clipId, text } }
+      ])
+    );
+  };
+
   /** 复制选中片段，接在它后面，并把后续片段整体后移让出位置。 */
   const duplicateSelectedClip = () => {
     if (!selectedClipId) {
@@ -605,9 +622,19 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onClick={() => setIsPlaying((playing) => !playing)}
                   className="size-full cursor-pointer object-contain"
                 />
-                {/* 字幕叠层：跟着播放头换行，视频行业惯用的底部居中样式 */}
+                {/* 字幕叠层：跟着播放头换行；双击直接进入该条字幕的内联编辑 */}
                 {captionText ? (
-                  <span data-caption-overlay className="pointer-events-none absolute inset-x-3 bottom-7 text-center">
+                  <span
+                    data-caption-overlay
+                    title="Double-click to edit this caption"
+                    onDoubleClick={() => {
+                      const clip = activeCaptionClip(tracks, currentTime);
+                      if (clip) {
+                        setEditingCaptionId(clip.id);
+                      }
+                    }}
+                    className="absolute inset-x-3 bottom-7 cursor-text text-center"
+                  >
                     <span className="rounded-md bg-neutral-fillHigh/75 box-decoration-clone px-1.5 py-0.5 text-[13px] font-semibold leading-[22px] text-neutral-onFill">
                       {captionText}
                     </span>
@@ -766,14 +793,57 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
                   {trackPreviews.map(({ track, clips }) => (
                     <div key={track.id} className="relative h-[72px] border-b border-solid border-neutral-fillLow">
-                      {clips.map(({ clip, status }) => (
+                      {clips.map(({ clip, status }) => {
+                        // 内联编辑态：input 不能嵌在 button 里，换成同样式的 div
+                        if (editingCaptionId === clip.id) {
+                          return (
+                            <div
+                              key={`${clip.id}-editing`}
+                              className="absolute top-2 z-10 flex h-[56px] flex-col overflow-hidden rounded-md border border-primary-fill bg-primary-surface2"
+                              style={{ left: clip.start * pxPerSecond, width: Math.max(120, clip.duration * pxPerSecond) }}
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <span className="truncate px-1.5 pt-1 text-[10px] font-medium text-neutral-highOnSurface">
+                                {clip.label}
+                              </span>
+                              <input
+                                autoFocus
+                                defaultValue={clip.text ?? ''}
+                                title="Edit caption text"
+                                onFocus={(event) => event.target.select()}
+                                onBlur={(event) => commitCaptionText(clip.id, event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    commitCaptionText(clip.id, event.currentTarget.value);
+                                  } else if (event.key === 'Escape') {
+                                    setEditingCaptionId(null);
+                                  }
+                                }}
+                                className="mx-1.5 mb-1 mt-auto rounded border border-solid border-primary-fill/40 bg-neutral-surface px-1 py-0.5 text-[10px] italic text-neutral-highOnSurface outline-none"
+                              />
+                            </div>
+                          );
+                        }
+                        return (
                         <button
                           key={`${clip.id}-${status}`}
                           type="button"
-                          title={status === 'removed' ? `${clip.label} — will be removed` : clip.label}
+                          title={
+                            status === 'removed'
+                              ? `${clip.label} — will be removed`
+                              : track.kind === 'caption' && clip.text
+                                ? `${clip.label} — double-click to edit the caption`
+                                : clip.label
+                          }
                           // 幽灵块只是预览，不参与选中
                           disabled={status === 'removed'}
                           onClick={() => setSelectedClipId(clip.id)}
+                          onDoubleClick={() => {
+                            // 只有真实存在的字幕片段可编辑；预览中的幽灵/新增块不行
+                            if (track.kind === 'caption' && clip.text && status === 'unchanged') {
+                              setEditingCaptionId(clip.id);
+                            }
+                          }}
                           className={clsx(
                             'absolute top-2 flex h-[56px] flex-col overflow-hidden rounded-md border text-left transition-colors',
                             status === 'unchanged' && selectedClipId === clip.id
@@ -810,7 +880,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             </span>
                           ) : null}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   ))}
 

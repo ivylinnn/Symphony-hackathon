@@ -25,6 +25,7 @@ interface WireOperation {
   Flag?: string;
   Value?: boolean;
   Ratio?: string;
+  Text?: string;
   Clip?: WireClip;
   Track?: WireTrack;
 }
@@ -104,6 +105,11 @@ const toOp = (wire: WireOperation): TimelineEditOp | undefined => {
     case 'set-track-flag':
       return wire.TrackId && (wire.Flag === 'visible' || wire.Flag === 'muted') && typeof wire.Value === 'boolean'
         ? { type: 'set-track-flag', trackId: wire.TrackId, flag: wire.Flag, value: wire.Value }
+        : undefined;
+
+    case 'set-text':
+      return wire.ClipId && typeof wire.Text === 'string' && wire.Text
+        ? { type: 'set-text', clipId: wire.ClipId, text: wire.Text }
         : undefined;
 
     case 'set-format': {

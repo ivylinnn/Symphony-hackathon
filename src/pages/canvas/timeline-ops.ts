@@ -97,6 +97,11 @@ export const applyOperation = (
         track.id === op.trackId ? { ...track, [op.flag]: op.value } : track
       );
 
+    case 'set-text':
+      return mapClips(tracks, (clips) =>
+        clips.map((clip) => (clip.id === op.clipId ? { ...clip, text: op.text } : clip))
+      );
+
     case 'set-format':
       // 画幅不属于轨道数据，由编辑器状态在 apply 时承接；这里保持轨道不变
       return tracks;
@@ -138,7 +143,8 @@ export const buildPreview = (
       if (!original) {
         return { clip, status: 'added' };
       }
-      const moved = original.start !== clip.start || original.duration !== clip.duration;
+      const moved =
+        original.start !== clip.start || original.duration !== clip.duration || original.text !== clip.text;
       return { clip, status: moved ? 'changed' : 'unchanged' };
     });
 
@@ -181,19 +187,23 @@ export const activeVideoClip = (
   return undefined;
 };
 
-/** 播放头处应显示的字幕：第一条可见 caption 轨道上、当前时间命中的带文案片段。 */
-export const activeCaptionText = (tracks: TimelineTrack[], time: number): string | undefined => {
+/** 播放头处命中的字幕片段：第一条可见 caption 轨道上、当前时间有文案的那段。 */
+export const activeCaptionClip = (tracks: TimelineTrack[], time: number): TimelineClip | undefined => {
   for (const track of tracks) {
     if (track.kind !== 'caption' || !track.visible) {
       continue;
     }
     const clip = clipAtTime(track, time);
     if (clip?.text) {
-      return clip.text;
+      return clip;
     }
   }
   return undefined;
 };
+
+/** 播放头处应显示的字幕文案。 */
+export const activeCaptionText = (tracks: TimelineTrack[], time: number): string | undefined =>
+  activeCaptionClip(tracks, time)?.text;
 
 /** 片段被拉长/压缩后的播放速率，= 消耗的素材长度 / 时间线上的长度。 */
 export const clipPlaybackRate = (clip: TimelineClip): number => {

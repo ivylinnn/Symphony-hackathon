@@ -100,6 +100,8 @@ export type TimelineEditOp =
   | { type: 'add-clip'; trackId: string; clip: TimelineClip }
   | { type: 'add-track'; track: TimelineTrack }
   | { type: 'set-track-flag'; trackId: string; flag: 'visible' | 'muted'; value: boolean }
+  /** 改写字幕片段的文案（内联编辑与 AI 改稿共用）。 */
+  | { type: 'set-text'; clipId: string; text: string }
   /** 智能扩画：改画幅不改轨道，由编辑器状态承接。 */
   | { type: 'set-format'; ratio: VideoFormatRatio };
 

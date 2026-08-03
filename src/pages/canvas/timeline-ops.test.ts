@@ -106,6 +106,13 @@ describe('applyOperations', () => {
     expect(after).toEqual(tracks());
   });
 
+  it('rewrites caption text via set-text', () => {
+    const after = applyOperations(tracks(), [
+      op('a', { type: 'set-text', clipId: 'clip-1', text: 'New line.' })
+    ]);
+    expect(after[0].clips[0].text).toBe('New line.');
+  });
+
   it('passes set-format through without touching tracks', () => {
     // 画幅由编辑器状态承接，轨道数据必须原样保留
     const after = applyOperations(tracks(), [op('a', { type: 'set-format', ratio: '1:1' })]);

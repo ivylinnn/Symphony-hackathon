@@ -83,7 +83,7 @@ export interface WireTrack {
 
 export interface WireOperation {
   Label: string;
-  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-format';
+  Type: 'set-timing' | 'split' | 'delete' | 'add-clip' | 'add-track' | 'set-track-flag' | 'set-text' | 'set-format';
   ClipId?: string;
   TrackId?: string;
   Start?: number;
@@ -92,6 +92,7 @@ export interface WireOperation {
   Flag?: 'visible' | 'muted';
   Value?: boolean;
   Ratio?: string;
+  Text?: string;
   Clip?: WireClip;
   Track?: WireTrack & { Visible?: boolean; Muted?: boolean };
 }
