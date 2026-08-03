@@ -10,14 +10,12 @@ import {
   KsIconAiGeneration,
   KsIconCamera,
   KsIconCrop,
-  KsIconFullScreen,
   KsIconHd,
   KsIconPen,
   KsIconPeople,
   KsIconPlus,
   KsIconRedo,
   KsIconRotate,
-  KsIconSection,
   KsIconSeperateAudio,
   KsIconSpeed,
   KsIconSearch,
@@ -707,18 +705,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
         link.click();
       }
     }
-  };
-
-  const downloadSource = () => {
-    if (!videoUrl) {
-      return;
-    }
-    const link = document.createElement('a');
-    link.href = videoUrl;
-    link.download = `${sourceLabel || 'video'}.mp4`;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.click();
   };
 
   /** 顶栏 +：清空会话，从问候和问卷重新开始（时间线保持现状）。 */
@@ -1566,7 +1552,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                     {[
                       { label: 'Extract frame', hint: 'Save the current frame as an image', icon: <KsIconCamera size={13} />, run: extractPreviewFrame },
                       { label: 'Enhance', hint: 'Boost clarity and color (HD)', icon: <KsIconHd size={13} />, active: isPreviewEnhanced, run: () => setIsPreviewEnhanced((on) => !on) },
-                      { label: 'Trim', hint: 'Tighten the cut with the agent', icon: <KsIconSection size={13} />, run: () => runViewerAgent('Trim the cut tighter') },
                       { label: 'Separate audio', hint: 'Detach the audio into its own track', icon: <KsIconSeperateAudio size={13} />, run: () => runViewerAgent('Separate the audio into its own track') },
                       { label: 'Crop', hint: 'Reframe for another placement', icon: <KsIconCrop size={13} />, run: () => runViewerAgent('Reformat this video for another social platform') },
                       { label: 'Analyze', hint: 'Open the transcript', icon: <KsIconTextFile size={13} />, run: () => setAssetsTab('transcript') },
@@ -1590,6 +1575,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                         {action.label}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      data-pen-toggle
+                      title={isPenMode ? 'Exit draw mode (Esc)' : 'Draw an area, then describe the change'}
+                      onClick={() => (isPenMode ? exitPenMode() : setIsPenMode(true))}
+                      className={clsx(
+                        'flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[10.5px] font-medium transition-colors',
+                        isPenMode
+                          ? 'bg-primary-fill text-neutral-onFill'
+                          : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2 hover:text-neutral-highOnSurface'
+                      )}
+                    >
+                      {isPenMode ? <KsIconClose size={13} /> : <KsIconPen size={13} />}
+                      {isPenMode ? 'Exit draw mode' : 'Draw to edit'}
+                    </button>
                     <span className="relative shrink-0">
                       <button
                         type="button"
@@ -1626,44 +1626,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
                         </span>
                       ) : null}
                     </span>
-                    <span className="mx-0.5 h-4 w-px shrink-0 bg-neutral-fillLow" />
-                    <button
-                      type="button"
-                      title="Download video"
-                      onClick={downloadSource}
-                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 hover:text-neutral-highOnSurface"
-                    >
-                      <KsIconDownload size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      title="Full screen"
-                      onClick={() => void videoRef.current?.requestFullscreen()}
-                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2 hover:text-neutral-highOnSurface"
-                    >
-                      <KsIconFullScreen size={13} />
-                    </button>
                   </div>
                 ) : (
                   <span className="flex-1" />
                 )}
-                {videoUrl ? (
-                  <button
-                    type="button"
-                    data-pen-toggle
-                    title={isPenMode ? 'Exit draw mode (Esc)' : 'Draw an area, then describe the change'}
-                    onClick={() => (isPenMode ? exitPenMode() : setIsPenMode(true))}
-                    className={clsx(
-                      'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors',
-                      isPenMode
-                        ? 'bg-primary-fill text-neutral-onFill'
-                        : 'text-neutral-mediumOnSurface hover:bg-neutral-surface2'
-                    )}
-                  >
-                    {isPenMode ? <KsIconClose size={13} /> : <KsIconPen size={13} />}
-                    {isPenMode ? 'Exit draw mode' : 'Draw to edit'}
-                  </button>
-                ) : null}
               </div>
               {isPenMode && !drawnPath ? (
                 <p className="shrink-0 px-4 pt-2 text-[11px] text-neutral-lowOnSurface">
