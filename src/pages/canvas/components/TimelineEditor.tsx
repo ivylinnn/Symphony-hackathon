@@ -1204,19 +1204,27 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                     <span className="absolute right-3 top-3 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
                       #{graphicsCue.clip.label.split(' ')[0]}
                     </span>
-                    <span className="absolute left-3 top-1/2 -translate-y-6 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
-                      {String(graphicsCue.index + 1).padStart(2, '0')}/{String(graphicsCue.total).padStart(2, '0')}
-                    </span>
-                    <span className="absolute right-3 top-1/2 -translate-y-6 animate-hud-in text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-onFill">
-                      Details
-                    </span>
 
-                    {/* key 带 clip id，切换卖点时重新播放入场动效 */}
-                    <span key={graphicsCue.clip.id} className="absolute inset-x-4 top-1/2 block">
-                      <span className="block animate-graphic-in text-[26px] font-extrabold uppercase leading-[30px] tracking-tight text-neutral-onFill drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
-                        {graphicsCue.clip.text}
+                    {/* key 带 clip id，切换卖点时重新播放入场动效；版式对齐参考稿：
+                        细字距计数行 → 全宽深色横带上的重磅无衬线大标题 → 短粗下划线 */}
+                    <span key={graphicsCue.clip.id} className="absolute inset-x-0 top-[42%] block">
+                      <span className="mb-1.5 flex items-center justify-between px-4">
+                        <span className="animate-hud-in text-[8px] font-medium tracking-[0.32em] text-neutral-onFill/80 tabular-nums">
+                          {String(graphicsCue.index + 1).padStart(2, '0')} / {String(graphicsCue.total).padStart(2, '0')}
+                        </span>
+                        <span className="animate-hud-in text-[8px] font-medium uppercase tracking-[0.32em] text-neutral-onFill/80">
+                          Details
+                        </span>
                       </span>
-                      <span className="mt-2 block h-px w-10 origin-left animate-rule-in bg-neutral-onFill" />
+                      <span className="block animate-hud-in bg-neutral-fillHigh/60 px-4 pb-2.5 pt-2">
+                        <span
+                          className="block animate-graphic-in text-[30px] font-extrabold uppercase leading-[32px] tracking-[-0.02em] text-neutral-onFill"
+                          style={{ fontFamily: "-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" }}
+                        >
+                          {graphicsCue.clip.text}
+                        </span>
+                      </span>
+                      <span className="ml-4 mt-2 block h-[3px] w-5 origin-left animate-rule-in bg-neutral-onFill" />
                     </span>
 
                     <span className="absolute inset-x-0 bottom-3 flex justify-center gap-1">
