@@ -105,11 +105,16 @@ export const useCanvasGraph = () => {
     []
   );
 
-  /** 素材库条目落到画布上，直接生成对应类型的节点。 */
-  const addAssetNode = useCallback(
-    (asset: LibraryAsset, centerX: number, centerY: number) => addNodeAt(asset.kind, centerX, centerY, asset.name),
-    [addNodeAt]
-  );
+  /** 素材库条目落到画布上，直接生成对应类型的节点；带真实地址的素材直接可见。 */
+  const addAssetNode = useCallback((asset: LibraryAsset, centerX: number, centerY: number) => {
+    const node = buildNodeAtCenter(asset.kind, centerX, centerY, asset.name);
+    if (asset.url && asset.kind !== 'audio') {
+      node.assetUrl = asset.url;
+      node.status = 'done';
+    }
+    setNodes((current) => [...current, node]);
+    return node.id;
+  }, []);
 
   const { connect, connectToBestInput } = useCanvasConnections({ nodes, setEdges });
 

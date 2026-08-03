@@ -1,6 +1,9 @@
-import { KsIconAiAssistant, KsIconChevronRight, KsIconSend } from '@fe-infra/keystone-icons-react';
+import { KsIconAiAssistant, KsIconChevronRight, KsIconSend, KsIconUpload } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
+
+import { addImageToMyAssets } from '../services/my-assets';
+import type { LibraryAsset } from '../types';
 
 export interface AgentMessage {
   id: string;
@@ -41,7 +44,17 @@ function MessageBubble({ message }: { message: AgentMessage }) {
  */
 function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend }: AgentPanelProps) {
   const [draft, setDraft] = useState('');
+  /* 从输入框上传的图片，落进 My assets 后在这里给个回执。 */
+  const [attachments, setAttachments] = useState<LibraryAsset[]>([]);
   const historyRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files) {
+      return;
+    }
+    setAttachments((current) => [...current, ...[...files].map((file) => addImageToMyAssets(file))]);
+  };
 
   /* 新消息进来时滚到底部。 */
   useEffect(() => {
@@ -97,6 +110,27 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend }: AgentPanelPr
       </div>
 
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
+        {attachments.length > 0 ? (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {attachments.map((asset) => (
+              <span
+                key={asset.id}
+                title={`"${asset.name}" was added to My assets`}
+                className="flex max-w-full items-center gap-1.5 rounded-lg bg-neutral-surface2 py-1 pl-1 pr-2"
+              >
+                <span className="size-6 shrink-0 overflow-hidden rounded-md bg-neutral-surface3">
+                  {asset.url ? <img src={asset.url} alt={asset.name} className="size-full object-cover" draggable={false} /> : null}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-medium leading-[13px] text-neutral-highOnSurface">
+                    {asset.name}
+                  </span>
+                  <span className="block text-[9px] leading-[11px] text-neutral-lowOnSurface">Added to My assets</span>
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-2 focus-within:border-primary-fill">
           <textarea
             value={draft}
@@ -112,7 +146,26 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend }: AgentPanelPr
             }}
             className="w-full resize-none bg-transparent text-[13px] leading-[18px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
           />
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              title="Upload an image to My assets"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+            >
+              <KsIconUpload size={14} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                handleFiles(event.target.files);
+                event.target.value = '';
+              }}
+            />
             <button
               type="button"
               title="Send"
