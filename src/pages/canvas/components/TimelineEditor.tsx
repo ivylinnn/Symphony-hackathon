@@ -7,7 +7,11 @@ import {
   KsIconDelete,
   KsIconDownload,
   KsIconFolder,
-  KsIconSound
+  KsIconSearch,
+  KsIconSound,
+  KsIconUpload,
+  KsIconZoomIn,
+  KsIconZoomOut
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -76,6 +80,30 @@ const TRACK_TAG: Record<TimelineTrackKind, string> = {
   audio: 'MUS',
   caption: 'TXT'
 };
+
+/** 轨道头第二行的可读名称。 */
+const TRACK_NAME: Record<TimelineTrackKind, string> = {
+  video: 'Video',
+  transition: 'Transition',
+  audio: 'Music',
+  caption: 'Captions'
+};
+
+interface DemoAsset {
+  id: string;
+  name: string;
+  kind: 'video' | 'image';
+  url: string;
+}
+
+/** My assets 面板的示例素材，全部来自 public/ 下的真实文件。 */
+const DEMO_ASSETS: DemoAsset[] = [
+  { id: 'asset-tracksuit', name: 'tracksuit trend', kind: 'video', url: '/tracksuit-trend.mp4' },
+  { id: 'asset-garlic', name: 'garlic paste ad', kind: 'video', url: '/garlic-paste-ad.mp4' },
+  { id: 'asset-front', name: 'hoodie — front', kind: 'image', url: '/hoodie-front.webp' },
+  { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
+  { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' }
+];
 
 /** 各类轨道的片段配色，扫一眼就能区分画面、转场、音乐和字幕。 */
 const TRACK_TONE: Record<TimelineTrackKind, string> = {
@@ -148,6 +176,10 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
   const [format, setFormat] = useState<VideoFormatRatio>('9:16');
   /** 正在内联编辑文案的字幕片段 id。 */
   const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null);
+  /** 中栏素材面板的页签与搜索词。 */
+  const [assetsTab, setAssetsTab] = useState<'assets' | 'library' | 'transcript'>('assets');
+  const [assetSearch, setAssetSearch] = useState('');
+  const assetSeqRef = useRef(0);
   const rulerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** 只根据素材时长建一次轨道，避免重新加载 metadata 时冲掉用户的编辑。 */
@@ -516,6 +548,59 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
     );
   };
 
+  /** 素材列表：当前来源视频排最前，其余是 public/ 里的示例素材。 */
+  const allAssets = useMemo<DemoAsset[]>(
+    () => [
+      ...(videoUrl ? [{ id: 'asset-source', name: sourceLabel, kind: 'video' as const, url: videoUrl }] : []),
+      ...DEMO_ASSETS
+    ],
+    [videoUrl, sourceLabel]
+  );
+  const visibleAssets = allAssets.filter((asset) =>
+    asset.name.toLowerCase().includes(assetSearch.trim().toLowerCase())
+  );
+
+  /** Transcript 页签的数据源：字幕轨里的所有 cue，按时间排序。 */
+  const captionCues = useMemo(
+    () =>
+      tracks
+        .filter((track) => track.kind === 'caption')
+        .flatMap((track) => track.clips.filter((clip) => clip.text))
+        .sort((a, b) => a.start - b.start),
+    [tracks]
+  );
+
+  /** 点素材缩略图：接到视频轨末尾成为新片段，视频素材带自己的画面。 */
+  const addAssetToTimeline = (asset: DemoAsset) => {
+    const videoTrack = tracks.find((track) => track.kind === 'video');
+    if (!videoTrack) {
+      return;
+    }
+    assetSeqRef.current += 1;
+    const clipDuration = asset.kind === 'video' ? 3 : 2;
+    const clip = {
+      id: `clip-asset-${assetSeqRef.current}`,
+      label: asset.name,
+      start: timelineDuration(tracks),
+      duration: clipDuration,
+      hasAudio: asset.kind === 'video',
+      ...(asset.kind === 'video'
+        ? { sourceUrl: asset.url, sourceStart: 0, sourceDuration: clipDuration }
+        : {})
+    };
+    setTracks((current) =>
+      applyOperations(current, [
+        { id: 'manual-add-asset', label: 'Add asset', op: { type: 'add-clip', trackId: videoTrack.id, clip } }
+      ])
+    );
+    setSelectedClipId(clip.id);
+  };
+
+  const deleteTrack = (trackId: string) => {
+    setTracks((current) => current.filter((track) => track.id !== trackId));
+    setSelectedClipId(null);
+  };
+
   /** 提交内联编辑的字幕文案；空串视为取消，不清空原文案。 */
   const commitCaptionText = (clipId: string, raw: string) => {
     setEditingCaptionId(null);
@@ -568,34 +653,193 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
 
   return (
     <div className="absolute inset-0 z-40 flex flex-col bg-neutral-surface1" data-timeline-editor>
+      {/* 顶栏：关闭 / 项目名 / 导出动作 */}
+      <header className="flex h-12 shrink-0 items-center gap-1.5 border-b border-solid border-neutral-fillLow bg-neutral-surface px-3">
+        <button
+          type="button"
+          title="Close timeline editor"
+          onClick={onClose}
+          className="flex size-8 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconClose size={15} />
+        </button>
+        <span className="flex-1 truncate text-center text-[13px] font-semibold text-neutral-highOnSurface">
+          {sourceLabel}
+        </span>
+        <button
+          type="button"
+          title="Save to library"
+          className="flex size-8 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconFolder size={15} />
+        </button>
+        <button
+          type="button"
+          title="Download"
+          className="flex size-8 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconDownload size={15} />
+        </button>
+        <button
+          type="button"
+          title="Export (demo)"
+          className="ml-1 rounded-lg bg-primary-fill px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
+        >
+          Export
+        </button>
+      </header>
+
       <div className="flex min-h-0 flex-1">
+        {/* 左：AI 会话面板 */}
+        <aside
+          data-ai-sidebar
+          className="flex w-[340px] shrink-0 flex-col overflow-hidden border-r border-solid border-neutral-fillLow bg-neutral-surface"
+        >
+          <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+            <span className="flex size-5 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
+              <KsIconAiAssistant size={12} />
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">AI</span>
+          </div>
+          <AiEditorPanel
+            isBusy={isPlanning}
+            messages={messages}
+            pendingPlanId={pendingPlanId}
+            skippedOpIds={skippedOpIds}
+            diff={diffCounts}
+            onSubmit={runAgent}
+            onAnswer={answerQuestion}
+            onToggleOp={toggleOperation}
+            onApply={applyPlan}
+            onDiscard={discardPlan}
+            onRestore={restoreVersion}
+          />
+        </aside>
+
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* 预览区 */}
+          <div className="flex min-h-0 flex-1">
+            {/* 中：素材面板 */}
+            <section className="flex min-w-0 flex-1 flex-col border-r border-solid border-neutral-fillLow bg-neutral-surface">
+              <div className="flex shrink-0 items-center gap-4 border-b border-solid border-neutral-fillLow px-4 pt-3">
+                {(
+                  [
+                    ['assets', 'My assets'],
+                    ['library', 'Library'],
+                    ['transcript', 'Transcript']
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setAssetsTab(key)}
+                    className={clsx(
+                      'border-b-2 border-solid pb-2 text-[11px] font-semibold uppercase tracking-wide transition-colors',
+                      assetsTab === key
+                        ? 'border-primary-fill text-neutral-highOnSurface'
+                        : 'border-transparent text-neutral-lowOnSurface hover:text-neutral-mediumOnSurface'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  title="Upload media (demo)"
+                  className="mb-1 flex size-7 items-center justify-center rounded-md text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+                >
+                  <KsIconUpload size={14} />
+                </button>
+              </div>
+
+              {assetsTab === 'assets' ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="shrink-0 px-4 py-3">
+                    <label className="flex items-center gap-2 rounded-lg bg-neutral-surface1 px-2.5 py-1.5">
+                      <KsIconSearch size={13} className="shrink-0 text-neutral-lowOnSurface" />
+                      <input
+                        value={assetSearch}
+                        placeholder="Search"
+                        onChange={(event) => setAssetSearch(event.target.value)}
+                        className="w-full bg-transparent text-[12px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
+                      />
+                    </label>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      {visibleAssets.map((asset) => (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          title={`Add “${asset.name}” to the end of the video track`}
+                          onClick={() => addAssetToTimeline(asset)}
+                          className="text-left"
+                        >
+                          <span className="relative block aspect-square overflow-hidden rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface2 transition-transform hover:-translate-y-0.5">
+                            {asset.kind === 'image' ? (
+                              <img src={asset.url} alt={asset.name} className="size-full object-cover" />
+                            ) : (
+                              <video src={asset.url} muted playsInline preload="metadata" className="size-full object-cover" />
+                            )}
+                            {asset.kind === 'video' ? (
+                              <span className="absolute bottom-1 right-1 rounded bg-neutral-fillHigh/70 px-1 text-[9px] text-neutral-onFill">
+                                ▶
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="mt-1 block truncate text-[11px] text-neutral-mediumOnSurface">{asset.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {visibleAssets.length === 0 ? (
+                      <p className="mt-6 text-center text-[12px] text-neutral-lowOnSurface">
+                        No assets match “{assetSearch}”.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : assetsTab === 'library' ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
+                  <KsIconFolder size={22} className="text-neutral-lowOnSurface" />
+                  <p className="text-[12px] text-neutral-mediumOnSurface">
+                    The brand library connects here in the full product.
+                  </p>
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                  {captionCues.length > 0 ? (
+                    <ul className="flex flex-col gap-1">
+                      {captionCues.map((cue) => (
+                        <li key={cue.id}>
+                          <button
+                            type="button"
+                            title="Jump to this line"
+                            onClick={() => seekTo(cue.start)}
+                            className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-surface1"
+                          >
+                            <span className="shrink-0 text-[11px] tabular-nums text-neutral-lowOnSurface">
+                              {formatTime(cue.start).slice(0, 5)}
+                            </span>
+                            <span className="text-[12px] leading-[17px] text-neutral-highOnSurface">{cue.text}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-6 text-center text-[12px] text-neutral-lowOnSurface">
+                      Add subtitles and the transcript shows up here.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* 右：预览 Viewer */}
+            <section className="flex w-[38%] min-w-[320px] shrink-0 flex-col">
+              <div className="shrink-0 px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+                Viewer
+              </div>
           <div className="relative flex min-h-0 flex-1 items-center justify-center p-6">
-            <div className="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
-              <button
-                type="button"
-                title="Close timeline editor"
-                onClick={onClose}
-                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
-              >
-                <KsIconClose size={14} />
-              </button>
-              <button
-                type="button"
-                title="Save to library"
-                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
-              >
-                <KsIconFolder size={14} />
-              </button>
-              <button
-                type="button"
-                title="Download"
-                className="flex size-7 items-center justify-center rounded-md hover:bg-neutral-onFill/15"
-              >
-                <KsIconDownload size={14} />
-              </button>
-            </div>
 
             {/* 来源节点带视频就直接放它，点画面或用下方走带都能播放/暂停；否则退回占位块 */}
             {videoUrl ? (
@@ -664,9 +908,17 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               </div>
             )}
           </div>
+            </section>
+          </div>
 
-          {/* 时间线区 */}
+          {/* 时间线区：横跨素材区与预览区下方 */}
           <div className="shrink-0 border-t border-solid border-neutral-fillLow bg-neutral-surface">
+            <div className="flex items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-1.5">
+              <span className="flex items-center gap-1.5 rounded-md bg-neutral-surface2 px-2.5 py-1 text-[11px] font-medium text-neutral-highOnSurface">
+                <span className="size-1.5 rounded-full bg-primary-fill" />
+                Main Timeline
+              </span>
+            </div>
             <div className="flex items-center gap-1 px-3 py-2">
               <ToolButton title="Split clip at playhead" onClick={splitSelectedClip}>
                 <KsIconCut size={15} />
@@ -677,10 +929,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               <ToolButton title="Delete clip" onClick={deleteSelectedClip}>
                 <KsIconDelete size={15} />
               </ToolButton>
-
-              <span className="ml-3 min-w-[68px] text-[12px] tabular-nums text-neutral-highOnSurface">
-                {formatTime(currentTime)}
-              </span>
 
               <div className="flex flex-1 items-center justify-center gap-1">
                 <ToolButton title="Jump to start" onClick={() => seekTo(0)}>
@@ -697,14 +945,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                 <ToolButton title="Jump to end" onClick={() => seekTo(duration)}>
                   ⏭
                 </ToolButton>
+                <span className="ml-2 text-[12px] tabular-nums text-neutral-highOnSurface">
+                  {formatTime(currentTime)}
+                  <span className="text-neutral-lowOnSurface"> / {formatTime(duration)}</span>
+                </span>
               </div>
 
-              <span className="min-w-[68px] text-right text-[12px] tabular-nums text-neutral-lowOnSurface">
-                {formatTime(duration)}
-              </span>
-
               <div className="ml-3 flex items-center gap-2">
-                <span className="text-neutral-lowOnSurface">−</span>
+                <KsIconZoomOut size={14} className="text-neutral-lowOnSurface" />
                 <input
                   type="range"
                   min={0.5}
@@ -715,7 +963,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   onChange={(event) => setZoom(Number(event.target.value))}
                   className="w-24 accent-primary-fill"
                 />
-                <span className="text-neutral-lowOnSurface">+</span>
+                <KsIconZoomIn size={14} className="text-neutral-lowOnSurface" />
               </div>
             </div>
 
@@ -723,53 +971,69 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
               {/* 轨道头 */}
               <div className="w-[136px] shrink-0 border-r border-solid border-neutral-fillLow">
                 <div className="h-7 border-b border-solid border-neutral-fillLow" />
-                {trackPreviews.map(({ track, isNewTrack }, index) => (
-                  <div
-                    key={track.id}
-                    className={clsx(
-                      'flex h-[72px] items-center gap-1.5 border-b border-solid border-neutral-fillLow px-2',
-                      isNewTrack && 'bg-success-fill/5'
-                    )}
-                  >
-                    <span
+                {trackPreviews.map(({ track, isNewTrack }, index) => {
+                  const ordinal =
+                    trackPreviews.slice(0, index).filter((item) => item.track.kind === track.kind).length + 1;
+                  return (
+                    <div
+                      key={track.id}
                       className={clsx(
-                        'w-3 shrink-0 text-[11px] tabular-nums',
-                        isNewTrack ? 'text-success-onSurface' : 'text-neutral-lowOnSurface'
-                      )}
-                      title={isNewTrack ? 'New track from the pending AI edit' : undefined}
-                    >
-                      {isNewTrack ? '+' : index + 1}
-                    </span>
-                    <span
-                      className="shrink-0 rounded bg-neutral-surface2 px-1 text-[9px] font-semibold tracking-wide text-neutral-mediumOnSurface"
-                      title={`${track.kind} track`}
-                    >
-                      {TRACK_TAG[track.kind]}
-                    </span>
-                    <button
-                      type="button"
-                      title={track.visible ? 'Hide track' : 'Show track'}
-                      onClick={() => toggleTrackFlag(track.id, 'visible')}
-                      className={clsx(
-                        'flex size-6 items-center justify-center rounded-md text-[11px]',
-                        track.visible ? 'text-neutral-mediumOnSurface' : 'text-neutral-lowOnSurface opacity-50'
+                        'flex h-[72px] flex-col justify-center gap-1 border-b border-solid border-neutral-fillLow px-2',
+                        isNewTrack && 'bg-success-fill/5'
                       )}
                     >
-                      👁
-                    </button>
-                    <button
-                      type="button"
-                      title={track.muted ? 'Unmute track' : 'Mute track'}
-                      onClick={() => toggleTrackFlag(track.id, 'muted')}
-                      className={clsx(
-                        'flex size-6 items-center justify-center rounded-md',
-                        track.muted ? 'text-neutral-lowOnSurface opacity-50' : 'text-neutral-mediumOnSurface'
-                      )}
-                    >
-                      <KsIconSound size={13} />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-1">
+                        <span
+                          className={clsx(
+                            'shrink-0 rounded px-1 py-0.5 text-[9px] font-bold tracking-wide',
+                            isNewTrack
+                              ? 'bg-success-fill/15 text-success-onSurface'
+                              : 'bg-neutral-fillHigh text-neutral-onFill'
+                          )}
+                          title={
+                            isNewTrack ? `${track.kind} track — new from the pending AI edit` : `${track.kind} track`
+                          }
+                        >
+                          {TRACK_TAG[track.kind]}
+                        </span>
+                        <button
+                          type="button"
+                          title={track.visible ? 'Hide track' : 'Show track'}
+                          onClick={() => toggleTrackFlag(track.id, 'visible')}
+                          className={clsx(
+                            'flex size-5 items-center justify-center rounded text-[10px]',
+                            track.visible ? 'text-neutral-mediumOnSurface' : 'text-neutral-lowOnSurface opacity-50'
+                          )}
+                        >
+                          👁
+                        </button>
+                        <button
+                          type="button"
+                          title={track.muted ? 'Unmute track' : 'Mute track'}
+                          onClick={() => toggleTrackFlag(track.id, 'muted')}
+                          className={clsx(
+                            'flex size-5 items-center justify-center rounded',
+                            track.muted ? 'text-neutral-lowOnSurface opacity-50' : 'text-neutral-mediumOnSurface'
+                          )}
+                        >
+                          <KsIconSound size={12} />
+                        </button>
+                        <span className="flex-1" />
+                        <button
+                          type="button"
+                          title="Delete track"
+                          onClick={() => deleteTrack(track.id)}
+                          className="flex size-5 items-center justify-center rounded text-neutral-lowOnSurface transition-colors hover:bg-error-fillLow hover:text-error-fill"
+                        >
+                          <KsIconDelete size={11} />
+                        </button>
+                      </div>
+                      <span className="truncate text-[10px] text-neutral-lowOnSurface">
+                        {TRACK_NAME[track.kind]} {ordinal}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* 标尺 + 轨道 */}
@@ -898,32 +1162,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
           </div>
         </div>
 
-        {/* 右侧 AI 编辑面板 */}
-        <aside className="flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-solid border-neutral-fillLow bg-neutral-surface">
-          <div className="flex shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3 py-2.5">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
-              <KsIconAiAssistant size={12} />
-            </span>
-            <span className="flex-1 truncate text-[12px] font-semibold text-neutral-highOnSurface">AI editor</span>
-            <span className="shrink-0 text-[11px] tabular-nums text-neutral-lowOnSurface">
-              {formatTime(duration)}
-            </span>
-          </div>
-
-          <AiEditorPanel
-            isBusy={isPlanning}
-            messages={messages}
-            pendingPlanId={pendingPlanId}
-            skippedOpIds={skippedOpIds}
-            diff={diffCounts}
-            onSubmit={runAgent}
-            onAnswer={answerQuestion}
-            onToggleOp={toggleOperation}
-            onApply={applyPlan}
-            onDiscard={discardPlan}
-            onRestore={restoreVersion}
-          />
-        </aside>
       </div>
     </div>
   );
