@@ -57,11 +57,16 @@ module.exports = {
           '0%': { opacity: '0' },
           '100%': { opacity: '0.75' },
         },
+        'mask-up': {
+          '0%': { transform: 'translateY(118%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
       },
       animation: {
         'graphic-in': 'graphic-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
         'rule-in': 'rule-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both',
         'hud-in': 'hud-in 500ms ease-out both',
+        'mask-up': 'mask-up 720ms cubic-bezier(0.19, 1, 0.22, 1) both',
       },
     },
   },

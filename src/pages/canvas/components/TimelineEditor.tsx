@@ -23,7 +23,7 @@ import {
   KsIconZoomOut
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import { INITIAL_TIMELINE_TRACKS, INTAKE_FIELDS } from '../const';
 import { planEdit } from '../services/timeline-ai';
@@ -1573,7 +1573,8 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                           </span>
                         );
                       }
-                      // headline（默认）：计数行 + 大标题 + 短粗线
+                      // headline（默认）：编辑刊物式排版 —— 计数行 + 衬线大标题逐词从遮罩里升起 + 细线拉开
+                      const words = (clip.text ?? '').split(/\s+/).filter(Boolean);
                       return (
                         <span key={clip.id} className="absolute inset-x-0 block" style={{ top: `${y ?? 44}%` }}>
                           {total > 1 ? (
@@ -1588,12 +1589,32 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             </span>
                           ) : null}
                           <span
-                            className="mt-2 block animate-graphic-in px-4 font-bold uppercase"
-                            style={{ color: fg, fontSize: 27 * scale, lineHeight: 1.07, letterSpacing: '-0.015em', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                            className="mt-2 block px-4 uppercase"
+                            style={{ color: fg, fontSize: 28 * scale, lineHeight: 1.14, letterSpacing: '0.01em', fontWeight: 600, fontFamily: "'Playfair Display', Didot, Georgia, 'Times New Roman', serif" }}
                           >
-                            {clip.text}
+                            {words.map((word, wordIndex) => (
+                              <Fragment key={wordIndex}>
+                                {/* 每个词包一层 overflow-hidden 遮罩，词从遮罩下缘升起，逐词错峰 */}
+                                <span className="inline-block overflow-hidden align-bottom pb-[0.08em] pr-[0.05em]">
+                                  <span
+                                    className="inline-block animate-mask-up"
+                                    style={{
+                                      animationDelay: `${0.12 + wordIndex * 0.11}s`,
+                                      // 末词转斜体，衬线大标题里混一笔 italic 是杂志排版的惯用对比
+                                      ...(words.length > 1 && wordIndex === words.length - 1 ? { fontStyle: 'italic' } : {})
+                                    }}
+                                  >
+                                    {word}
+                                  </span>
+                                </span>
+                                {wordIndex < words.length - 1 ? ' ' : null}
+                              </Fragment>
+                            ))}
                           </span>
-                          <span className="ml-4 mt-3 block h-[3px] w-7 origin-left animate-rule-in" style={{ background: accent }} />
+                          <span
+                            className="ml-4 mt-2.5 block h-px w-12 origin-left animate-rule-in"
+                            style={{ background: accent, animationDelay: `${0.2 + words.length * 0.11}s` }}
+                          />
                         </span>
                       );
                     })}
