@@ -1432,7 +1432,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                   previewFormat !== '9:16' && 'bg-gradient-to-r from-primary-surface3/60 via-neutral-fillHigh to-primary-surface3/60',
                   pendingFormat && pendingFormat !== format && 'border border-dashed border-primary-fill'
                 )}
-                style={{ aspectRatio: FORMAT_ASPECT[previewFormat] }}
+                style={{ aspectRatio: FORMAT_ASPECT[previewFormat], containerType: 'inline-size' }}
               >
                 <video
                   key={videoUrl}
@@ -1573,10 +1573,14 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                           </span>
                         );
                       }
-                      // headline（默认）：编辑刊物式排版 —— 计数行 + 衬线大标题逐词从遮罩里升起 + 细线拉开
+                      // headline（默认）：时装杂志式排版 —— 画面正中、最大字重的衬线大标题逐词从遮罩里升起
                       const words = (clip.text ?? '').split(/\s+/).filter(Boolean);
+                      // 没有显式 y 时垂直居中；set-style 挪过位置后改用 top 定位，保持“往上/往下挪”的语义
+                      const positioned = y == null
+                        ? { top: '50%', transform: 'translateY(-50%)' }
+                        : { top: `${y}%` };
                       return (
-                        <span key={clip.id} className="absolute inset-x-0 block" style={{ top: `${y ?? 44}%` }}>
+                        <span key={clip.id} className="absolute inset-x-0 block" style={positioned}>
                           {total > 1 ? (
                             <span className="flex items-center gap-2 px-4">
                               <span className="animate-hud-in text-[8px] font-medium tabular-nums tracking-[0.34em]" style={{ color: `${fg}b3` }}>
@@ -1589,13 +1593,21 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             </span>
                           ) : null}
                           <span
-                            className="mt-2 block px-4 uppercase"
-                            style={{ color: fg, fontSize: 28 * scale, lineHeight: 1.14, letterSpacing: '0.01em', fontWeight: 600, fontFamily: "'Playfair Display', Didot, Georgia, 'Times New Roman', serif" }}
+                            className="mt-3 block px-3 text-center uppercase"
+                            style={{
+                              color: fg,
+                              // cqw 跟画幅宽度走：常规预览下相当于 ~72–80px 的成片字号，上限 80px
+                              fontSize: `min(${13 * scale}cqw, ${80 * scale}px)`,
+                              lineHeight: 1.04,
+                              letterSpacing: '-0.01em',
+                              fontWeight: 900,
+                              fontFamily: "'Playfair Display', Didot, Georgia, 'Times New Roman', serif"
+                            }}
                           >
                             {words.map((word, wordIndex) => (
                               <Fragment key={wordIndex}>
                                 {/* 每个词包一层 overflow-hidden 遮罩，词从遮罩下缘升起，逐词错峰 */}
-                                <span className="inline-block overflow-hidden align-bottom pb-[0.08em] pr-[0.05em]">
+                                <span className="inline-block max-w-full overflow-hidden align-bottom pb-[0.08em] pr-[0.05em]">
                                   <span
                                     className="inline-block animate-mask-up"
                                     style={{
@@ -1612,7 +1624,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, onClose }: TimelineE
                             ))}
                           </span>
                           <span
-                            className="ml-4 mt-2.5 block h-px w-12 origin-left animate-rule-in"
+                            className="mx-auto mt-3 block h-px w-12 animate-rule-in"
                             style={{ background: accent, animationDelay: `${0.2 + words.length * 0.11}s` }}
                           />
                         </span>
