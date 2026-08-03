@@ -72,9 +72,6 @@ const BASE_PX_PER_SECOND = 104;
 /** 标尺至少画这么多秒，内容更长时按内容延展。 */
 const MIN_RULER_SECONDS = 9;
 const PLAYBACK_TICK_MS = 100;
-/** 用户上传的片尾卡视频：默认接在正片末尾。 */
-const END_CARD_VIDEO_URL = '/end-card.mp4';
-const END_CARD_VIDEO_SECONDS = 5.1;
 /** 预览视频与播放头允许的最大偏差（秒），超过才回拉。 */
 const DRIFT_TOLERANCE = 0.4;
 /** 思考步骤逐条揭示的间隔（毫秒）。 */
@@ -161,7 +158,6 @@ const DEMO_ASSETS: DemoAsset[] = [
   { id: 'asset-back', name: 'hoodie — back', kind: 'image', url: '/hoodie-back.webp' },
   { id: 'asset-pocket', name: 'hoodie — pocket', kind: 'image', url: '/hoodie-pocket.webp' },
   { id: 'asset-endcard', name: 'End card', kind: 'image', url: '/end-card.svg' },
-  { id: 'asset-endcard-video', name: 'End card video', kind: 'video', url: '/end-card.mp4' },
   { id: 'asset-endcard-v2', name: 'End card v2', kind: 'video', url: '/end-card-v2.mp4', seconds: 5 }
 ];
 
@@ -616,18 +612,6 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
       sourceStart: index * segmentLength,
       sourceDuration: segmentLength
     }));
-
-    // 用户上传的片尾卡视频（public/end-card.mp4，约 5.1s）固定接在正片之后收尾
-    videoClips.push({
-      id: 'clip-endcard-video',
-      label: 'End card video',
-      start: mediaDuration,
-      duration: END_CARD_VIDEO_SECONDS,
-      hasAudio: true,
-      sourceUrl: END_CARD_VIDEO_URL,
-      sourceStart: 0,
-      sourceDuration: END_CARD_VIDEO_SECONDS
-    });
 
     // 转场跨在接缝上，所以起点要往前挪半个转场长度
     const transitionClips = Array.from({ length: segments - 1 }, (_, index) => ({
