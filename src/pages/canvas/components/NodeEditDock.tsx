@@ -22,17 +22,24 @@ const PLAYBACK_TICK_MS = 100;
 /** 从视频里抽多少帧铺进视频轨。 */
 const FILMSTRIP_FRAMES = 8;
 
-/** 视频轨按广告结构切成 Hook / Body / CTA 三段，跨度随真实时长等比伸缩。 */
-const buildVideoClips = (duration: number) => [
-  { id: 'clip-hook', label: 'Hook', start: 0, duration: duration / 3 },
-  { id: 'clip-body', label: 'Body', start: duration / 3, duration: duration / 3 },
-  { id: 'clip-cta', label: 'CTA', start: (duration * 2) / 3, duration: duration / 3 }
-];
+/**
+ * 视频轨按广告结构切段：最后 2 秒单独切出来做 CTA，
+ * 其余时长对半分给 Hook / Body。
+ */
+const buildVideoClips = (duration: number) => {
+  const ctaSeconds = Math.min(2, duration / 3);
+  const half = (duration - ctaSeconds) / 2;
+  return [
+    { id: 'clip-hook', label: 'Hook', start: 0, duration: half },
+    { id: 'clip-body', label: 'Body', start: half, duration: half },
+    { id: 'clip-cta', label: 'CTA', start: duration - ctaSeconds, duration: ctaSeconds }
+  ];
+};
 
 /** 卖点动效应用后，预览切到的成片（带 selling-point 贴片的渲染版本）。 */
 export const SELLING_POINT_VIDEO_URL = '/video-with-selling-points.mp4';
-/** 片尾卡素材（summer sale 5s）：应用后接在时间线所有元素之后。 */
-export const END_CARD_VIDEO_URL = '/end-card-summer-sale.mp4';
+/** 片尾卡素材：应用后接在时间线所有元素之后。 */
+export const END_CARD_VIDEO_URL = '/end-card.mp4';
 /** 片尾卡时长（秒）。 */
 const END_CARD_SECONDS = 5;
 
@@ -450,7 +457,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
               {/* 片尾卡：接在所有元素之后的独立片段，原视频不动 */}
               {hasEndCard ? (
                 <div
-                  title="Summer sale end card (5s)"
+                  title="Branded end card (5s)"
                   data-end-card-clip
                   className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/60 bg-primary-surface2"
                   style={{ left: duration * pxPerSecond + 2, width: END_CARD_SECONDS * pxPerSecond - 2 }}
