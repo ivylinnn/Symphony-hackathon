@@ -13,7 +13,7 @@ import Minimap from './components/Minimap';
 import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
-import TimelineEditor from './components/TimelineEditor';
+import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W } from './components/NodeEditDock';
 import {
   AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
@@ -31,7 +31,7 @@ import { buildNode } from './graph-ops';
 import { useCanvasGraph } from './hooks/use-canvas-graph';
 import { useCanvasViewport } from './hooks/use-canvas-viewport';
 import { buildScriptGraph } from './services/agent';
-import type { CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection } from './types';
+import type { CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection, Viewport } from './types';
 import {
   getFitViewport,
   getFocusNodeViewport,
@@ -73,8 +73,8 @@ interface AddPanelAnchor {
 /** 鼠标中键，用于强制平移。 */
 const MIDDLE_BUTTON = 1;
 
-/** 点 Edit 后先推近节点再抬起剪辑器的等待时长；视口缓动 τ=60ms，这个时点已基本落定。 */
-const EDITOR_ZOOM_MS = 420;
+/** 编辑模式聚焦节点时四周留的余量，比 fit-view 更贴近一些。 */
+const EDIT_FOCUS_PADDING = 48;
 
 /** 画布上的一条评论（世界坐标）。 */
 interface CanvasComment {
@@ -185,9 +185,8 @@ function CanvasPage() {
   const [isPanning, setIsPanning] = useState(false);
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>(null);
   const [addPanelAnchor, setAddPanelAnchor] = useState<AddPanelAnchor | null>(null);
-  const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
-  /** 打开编辑器时携带的启动动作：一条直接交给 agent 的指令，或直接进入圈选模式。 */
-  const [editorLaunch, setEditorLaunch] = useState<{ prompt?: string; draw?: boolean } | null>(null);
+  /** 内联编辑模式：正在编辑的节点 + 随入口带上的第一条 agent 指令。 */
+  const [editDock, setEditDock] = useState<{ nodeId: string; prompt?: string } | null>(null);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -212,36 +211,41 @@ function CanvasPage() {
   const { viewport, setViewport, animateViewportTo, stopAnimation, zoomIn, zoomOut, resetZoom } =
     useCanvasViewport({ containerRef });
 
-  /** Edit 入场运镜的定时器；连点或卸载时要清掉，避免旧的打开动作追着触发。 */
-  const editorZoomTimerRef = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (editorZoomTimerRef.current !== null) {
-        window.clearTimeout(editorZoomTimerRef.current);
+  /** 进入编辑模式前的视口，退出时把镜头拉回去。 */
+  const preEditViewportRef = useRef<Viewport | null>(null);
+
+  /**
+   * 进入内联编辑模式：镜头推近节点，同时右侧 agent 坞和底部时间线坞滑入。
+   * 聚焦视口按「容器扣掉两个坞」的剩余区域计算，节点正好停在预览位。
+   */
+  const enterEditMode = useCallback(
+    (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || (node.kind !== 'timeline' && node.kind !== 'video')) {
+        return;
       }
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        preEditViewportRef.current = viewport;
+        animateViewportTo(
+          getFocusNodeViewport(node, rect.width - EDIT_DOCK_RIGHT_W, rect.height - EDIT_DOCK_BOTTOM_H, EDIT_FOCUS_PADDING)
+        );
+      }
+      // 圈选入口暂时并入 agent 指令，等画笔搬进画布后再还原
+      const prompt = launch?.prompt ?? (launch?.draw ? 'Select an area of the frame to modify' : undefined);
+      setEditDock({ nodeId, prompt });
     },
-    []
+    [animateViewportTo, nodes, viewport]
   );
 
-  /** 打开剪辑器前先把视口推近到目标节点，缩放落定后再抬起编辑面板，衔接成一次连续的 zoom-in。 */
-  const openEditorWithZoom = useCallback(
-    (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      const node = nodes.find((item) => item.id === nodeId);
-      if (rect && node) {
-        animateViewportTo(getFocusNodeViewport(node, rect.width, rect.height));
-      }
-      if (editorZoomTimerRef.current !== null) {
-        window.clearTimeout(editorZoomTimerRef.current);
-      }
-      editorZoomTimerRef.current = window.setTimeout(() => {
-        editorZoomTimerRef.current = null;
-        setEditorLaunch(launch ?? null);
-        setEditorNodeId(nodeId);
-      }, EDITOR_ZOOM_MS);
-    },
-    [animateViewportTo, nodes]
-  );
+  /** 退出编辑模式：坞收起，镜头拉回进入前的视口。 */
+  const exitEditMode = useCallback(() => {
+    setEditDock(null);
+    if (preEditViewportRef.current) {
+      animateViewportTo(preEditViewportRef.current);
+      preEditViewportRef.current = null;
+    }
+  }, [animateViewportTo]);
 
   /** 空画布展示 agent composer；有节点后自动让位。 */
   const isCanvasEmpty = nodes.length === 0;
@@ -1128,9 +1132,9 @@ function CanvasPage() {
   }, [nodes, selectedIds]);
 
   /** 打开时间线编辑器的节点；Timeline 节点和 Video 节点（Edit CTA）都能进全屏编辑态。 */
-  const editorNode = useMemo(
-    () => nodes.find((node) => node.id === editorNodeId && (node.kind === 'timeline' || node.kind === 'video')) ?? null,
-    [editorNodeId, nodes]
+  const editDockNode = useMemo(
+    () => nodes.find((node) => node.id === editDock?.nodeId && (node.kind === 'timeline' || node.kind === 'video')) ?? null,
+    [editDock, nodes]
   );
 
   /** 点阵背景跟随视口平移和缩放，制造无限画布的感觉。 */
@@ -1203,7 +1207,7 @@ function CanvasPage() {
               showAddButton={selectedIds.length <= 1}
               onResizePointerDown={handleResizePointerDown}
               onDropOnCard={handleDropOnCard}
-              onOpenEditor={openEditorWithZoom}
+              onOpenEditor={enterEditMode}
               onRunTool={runTool}
               onRun={handleVideoRun}
               onTextChange={handleTextChange}
@@ -1455,17 +1459,13 @@ function CanvasPage() {
         <ContentStrategiesPopover onPick={applyStrategy} onClose={() => setIsStrategiesOpen(false)} />
       ) : null}
 
-      {editorNode ? (
-        <TimelineEditor
-          sourceLabel={editorNode.title}
-          videoUrl={editorNode.videoUrl}
-          posterUrl={editorNode.assetUrl}
-          initialPrompt={editorLaunch?.prompt}
-          initialDraw={editorLaunch?.draw}
-          onClose={() => {
-            setEditorNodeId(null);
-            setEditorLaunch(null);
-          }}
+      {/* 内联编辑模式：画布保持可见，右侧滑入编辑 agent，底部滑入时间线轨道 */}
+      {editDockNode ? (
+        <NodeEditDock
+          nodeTitle={editDockNode.title}
+          posterUrl={editDockNode.assetUrl}
+          initialPrompt={editDock?.prompt}
+          onClose={exitEditMode}
         />
       ) : null}
 

@@ -100,6 +100,15 @@ module.exports = {
           '0%': { opacity: '0', transform: 'scale(0.94)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        /* 内联编辑坞入场：右侧 agent 从右滑入、底部时间线从下滑入，和镜头推近同步。 */
+        'dock-in-right': {
+          '0%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+        'dock-in-up': {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
       },
       animation: {
         'graphic-in': 'graphic-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
@@ -108,6 +117,8 @@ module.exports = {
         'mask-up': 'mask-up 720ms cubic-bezier(0.19, 1, 0.22, 1) both',
         'draw-path': 'draw-path 2.2s cubic-bezier(0.65, 0, 0.35, 1) both',
         'editor-in': 'editor-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'dock-in-right': 'dock-in-right 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'dock-in-up': 'dock-in-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
       },
     },
   },

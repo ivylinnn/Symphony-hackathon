@@ -70,16 +70,11 @@ const hoverNode = (kind: CanvasNodeKind) => {
 /** 按 data-node-kind 统计画布上的节点卡片，避免受卡片内文案重复影响。 */
 const countNodes = (kind: CanvasNodeKind) => container.querySelectorAll(`[data-node-kind="${kind}"]`).length;
 
-/** 双击打开剪辑器：入场前有一段推近运镜，用假定时器把它跑完再断言。 */
+/** 双击进入内联编辑模式：坞随镜头推近同步滑入，状态是同步落位的。 */
 const openEditorByDblClick = (kind: CanvasNodeKind) => {
-  jest.useFakeTimers();
   act(() => {
     query(`[data-node-kind="${kind}"]`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   });
-  act(() => {
-    jest.advanceTimersByTime(600);
-  });
-  jest.useRealTimers();
 };
 
 beforeAll(() => {
@@ -319,35 +314,37 @@ describe('CanvasPage', () => {
     expect(NODE_KIND_CONFIG.batch.category).toBe('edit');
   });
 
-  it('opens the timeline editor by double-clicking a Timeline node', () => {
+  it('enters the in-canvas edit mode by double-clicking a Timeline node', () => {
     renderCanvas();
 
     // 先从面板加一个 Timeline 节点
     clickByTitle('Add node');
     clickByTitle('Add Timeline node');
-    expect(query('[data-timeline-editor]')).toBeNull();
+    expect(query('[data-edit-dock-agent]')).toBeNull();
+    expect(query('[data-edit-dock-timeline]')).toBeNull();
 
     openEditorByDblClick('timeline');
 
-    const editor = query('[data-timeline-editor]');
-    expect(editor).not.toBeNull();
-    // 时间线编辑器该有的部件：轨道、播放、属性面板
-    const text = editor?.textContent ?? '';
-    expect(text).toContain('Timeline Editor');
-    expect(text).toContain('Source');
-    expect(text).toContain('Layout');
-    expect(query('[title="Split clip at playhead"]')).not.toBeNull();
+    // 编辑模式不再整页接管：右侧是编辑 agent，底部是时间线轨道，画布仍在
+    const agentDock = query('[data-edit-dock-agent]');
+    expect(agentDock).not.toBeNull();
+    expect(agentDock?.textContent).toContain('Editing agent');
+    const timelineDock = query('[data-edit-dock-timeline]');
+    expect(timelineDock).not.toBeNull();
     expect(query('[title="Play"]')).not.toBeNull();
+    expect(query('[title="Split clip at playhead"]')).not.toBeNull();
+    expect(query('[data-node-kind="timeline"]')).not.toBeNull();
   });
 
-  it('closes the timeline editor', () => {
+  it('closes the in-canvas edit mode', () => {
     renderCanvas();
     clickByTitle('Add node');
     clickByTitle('Add Timeline node');
     openEditorByDblClick('timeline');
 
-    clickByTitle('Close timeline editor');
-    expect(query('[data-timeline-editor]')).toBeNull();
+    clickByTitle('Close editor');
+    expect(query('[data-edit-dock-agent]')).toBeNull();
+    expect(query('[data-edit-dock-timeline]')).toBeNull();
   });
 
   it('builds a connected Hook/Body/CTA script from an agent prompt', async () => {
