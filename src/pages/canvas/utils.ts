@@ -119,6 +119,27 @@ export const getFitViewport = (nodes: CanvasNode[], containerWidth: number, cont
   };
 };
 
+/** 聚焦单个节点的视口：节点居中并放大到接近充满容器，剪辑器入场的推近运镜用。 */
+export const getFocusNodeViewport = (node: CanvasNode, containerWidth: number, containerHeight: number): Viewport => {
+  if (containerWidth === 0 || containerHeight === 0) {
+    return { x: 0, y: 0, zoom: 1 };
+  }
+
+  const height = getNodeHeight(node);
+  const zoom = clampZoom(
+    Math.min(
+      (containerWidth - FIT_VIEW_PADDING * 2) / node.width,
+      (containerHeight - FIT_VIEW_PADDING * 2) / height
+    )
+  );
+
+  return {
+    zoom,
+    x: containerWidth / 2 - (node.x + node.width / 2) * zoom,
+    y: containerHeight / 2 - (node.y + height / 2) * zoom
+  };
+};
+
 /** 屏幕/世界坐标下的矩形，框选用。 */
 export interface Rect {
   x: number;

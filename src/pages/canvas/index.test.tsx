@@ -70,6 +70,18 @@ const hoverNode = (kind: CanvasNodeKind) => {
 /** 按 data-node-kind 统计画布上的节点卡片，避免受卡片内文案重复影响。 */
 const countNodes = (kind: CanvasNodeKind) => container.querySelectorAll(`[data-node-kind="${kind}"]`).length;
 
+/** 双击打开剪辑器：入场前有一段推近运镜，用假定时器把它跑完再断言。 */
+const openEditorByDblClick = (kind: CanvasNodeKind) => {
+  jest.useFakeTimers();
+  act(() => {
+    query(`[data-node-kind="${kind}"]`)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  });
+  act(() => {
+    jest.advanceTimersByTime(600);
+  });
+  jest.useRealTimers();
+};
+
 beforeAll(() => {
   // jsdom 不实现 PointerEvent / 指针捕获
   if (typeof window.PointerEvent === 'undefined') {
@@ -315,10 +327,7 @@ describe('CanvasPage', () => {
     clickByTitle('Add Timeline node');
     expect(query('[data-timeline-editor]')).toBeNull();
 
-    const card = query('[data-node-kind="timeline"]');
-    act(() => {
-      card?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    });
+    openEditorByDblClick('timeline');
 
     const editor = query('[data-timeline-editor]');
     expect(editor).not.toBeNull();
@@ -335,9 +344,7 @@ describe('CanvasPage', () => {
     renderCanvas();
     clickByTitle('Add node');
     clickByTitle('Add Timeline node');
-    act(() => {
-      query('[data-node-kind="timeline"]')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    });
+    openEditorByDblClick('timeline');
 
     clickByTitle('Close timeline editor');
     expect(query('[data-timeline-editor]')).toBeNull();

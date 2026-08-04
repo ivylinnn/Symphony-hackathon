@@ -34,6 +34,7 @@ import { buildScriptGraph } from './services/agent';
 import type { CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection } from './types';
 import {
   getFitViewport,
+  getFocusNodeViewport,
   getNodeHeight,
   isNodeInRect,
   type Rect,
@@ -71,6 +72,9 @@ interface AddPanelAnchor {
 
 /** 鼠标中键，用于强制平移。 */
 const MIDDLE_BUTTON = 1;
+
+/** 点 Edit 后先推近节点再抬起剪辑器的等待时长；视口缓动 τ=60ms，这个时点已基本落定。 */
+const EDITOR_ZOOM_MS = 420;
 
 /** 画布上的一条评论（世界坐标）。 */
 interface CanvasComment {
@@ -207,6 +211,37 @@ function CanvasPage() {
 
   const { viewport, setViewport, animateViewportTo, stopAnimation, zoomIn, zoomOut, resetZoom } =
     useCanvasViewport({ containerRef });
+
+  /** Edit 入场运镜的定时器；连点或卸载时要清掉，避免旧的打开动作追着触发。 */
+  const editorZoomTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (editorZoomTimerRef.current !== null) {
+        window.clearTimeout(editorZoomTimerRef.current);
+      }
+    },
+    []
+  );
+
+  /** 打开剪辑器前先把视口推近到目标节点，缩放落定后再抬起编辑面板，衔接成一次连续的 zoom-in。 */
+  const openEditorWithZoom = useCallback(
+    (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      const node = nodes.find((item) => item.id === nodeId);
+      if (rect && node) {
+        animateViewportTo(getFocusNodeViewport(node, rect.width, rect.height));
+      }
+      if (editorZoomTimerRef.current !== null) {
+        window.clearTimeout(editorZoomTimerRef.current);
+      }
+      editorZoomTimerRef.current = window.setTimeout(() => {
+        editorZoomTimerRef.current = null;
+        setEditorLaunch(launch ?? null);
+        setEditorNodeId(nodeId);
+      }, EDITOR_ZOOM_MS);
+    },
+    [animateViewportTo, nodes]
+  );
 
   /** 空画布展示 agent composer；有节点后自动让位。 */
   const isCanvasEmpty = nodes.length === 0;
@@ -1168,10 +1203,7 @@ function CanvasPage() {
               showAddButton={selectedIds.length <= 1}
               onResizePointerDown={handleResizePointerDown}
               onDropOnCard={handleDropOnCard}
-              onOpenEditor={(nodeId, launch) => {
-                setEditorLaunch(launch ?? null);
-                setEditorNodeId(nodeId);
-              }}
+              onOpenEditor={openEditorWithZoom}
               onRunTool={runTool}
               onRun={handleVideoRun}
               onTextChange={handleTextChange}

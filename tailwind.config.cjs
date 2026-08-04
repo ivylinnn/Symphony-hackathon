@@ -95,6 +95,11 @@ module.exports = {
           '0%': { strokeDashoffset: '1' },
           '100%': { strokeDashoffset: '0' },
         },
+        /* 剪辑器入场：接住画布推近节点的运镜，微缩放+淡入延续 zoom-in。 */
+        'editor-in': {
+          '0%': { opacity: '0', transform: 'scale(0.94)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
       },
       animation: {
         'graphic-in': 'graphic-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
@@ -102,6 +107,7 @@ module.exports = {
         'hud-in': 'hud-in 500ms ease-out both',
         'mask-up': 'mask-up 720ms cubic-bezier(0.19, 1, 0.22, 1) both',
         'draw-path': 'draw-path 2.2s cubic-bezier(0.65, 0, 0.35, 1) both',
+        'editor-in': 'editor-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both',
       },
     },
   },

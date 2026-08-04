@@ -1280,7 +1280,7 @@ function TimelineEditor({ sourceLabel, videoUrl, posterUrl, initialPrompt, initi
   };
 
   return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-neutral-surface1" data-timeline-editor>
+    <div className="absolute inset-0 z-40 flex animate-editor-in flex-col bg-neutral-surface1" data-timeline-editor>
       {/* 顶栏：关闭 / 项目名 / 导出动作 */}
       <header className="flex h-12 shrink-0 items-center gap-1.5 border-b border-solid border-neutral-fillLow bg-neutral-surface px-3">
         <button
