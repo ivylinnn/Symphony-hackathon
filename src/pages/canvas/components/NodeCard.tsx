@@ -45,8 +45,10 @@ interface NodeCardProps {
   onDropOnCard: (nodeId: string) => void;
   /** 打开全屏编辑器；launch 可带一条指令（进门就交给 agent）或直接进入圈选模式。 */
   onOpenEditor: (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => void;
-  /** 视频卡中央的 Refine：长出下游精修工作流（分镜 + 配音 + 成片节点）。 */
+  /** 视频卡底部的 Refine：长出下游精修工作流（分镜 + 配音 + 成片节点）。 */
   onRefine: (nodeId: string) => void;
+  /** 上游接了 storyboard 的成片：底部按钮保持普通运行，不再重复 Refine。 */
+  isRefinedCut: boolean;
   onRunTool: (nodeId: string, kind: EditNodeKind) => void;
   /** 执行本节点，调用平台的生成能力。 */
   onRun: (nodeId: string) => void;
@@ -214,7 +216,6 @@ function NodeBody({
   isEnhanced = false,
   onTextChange,
   onOpenEditor,
-  onRefine,
   onStoryboardGenerate,
   onOperationGenerate,
   onAudioGenerate,
@@ -228,7 +229,6 @@ function NodeBody({
   isEnhanced?: boolean;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
-  onRefine: (nodeId: string) => void;
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
   onOperationGenerate: (nodeId: string) => void;
   onAudioGenerate: (nodeId: string) => void;
@@ -324,17 +324,17 @@ function NodeBody({
           ) : (
             <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{node.title}</span>
           )}
-          {/* 悬停时的剪辑入口，点开进全屏编辑器 */}
+          {/* 悬停时的剪辑入口：所有视频卡中央都是 Edit，直接进剪辑模式 */}
           {node.kind === 'video' && isHovered ? (
             <button
               type="button"
-              title="Refine — draft the storyboard, audio and final-cut nodes"
+              title="Open the editor"
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => onRefine(node.id)}
+              onClick={() => onOpenEditor(node.id)}
               className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-neutral-fillHigh/85 px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill shadow-[0_4px_12px_rgba(16,24,40,0.30)] transition-transform hover:scale-105"
             >
-              <KsIconAiGeneration size={13} />
-              Refine
+              <KsIconCut size={13} />
+              Edit
             </button>
           ) : null}
         </div>
@@ -477,8 +477,16 @@ function NodeBody({
   );
 }
 
-/** 卡片底部的运行入口 + 状态/错误说明。 */
-function RunFooter({ node, onRun }: { node: CanvasNode; onRun: (nodeId: string) => void }) {
+/** 卡片底部的运行入口 + 状态/错误说明。isRefineEntry 时按钮变成 Refine，长出下游精修工作流。 */
+function RunFooter({
+  node,
+  onRun,
+  isRefineEntry = false
+}: {
+  node: CanvasNode;
+  onRun: (nodeId: string) => void;
+  isRefineEntry?: boolean;
+}) {
   const isRunning = node.status === 'generating';
   return (
     <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 px-3 pb-2">
@@ -487,18 +495,26 @@ function RunFooter({ node, onRun }: { node: CanvasNode; onRun: (nodeId: string) 
       </span>
       <button
         type="button"
-        title="Run this node"
+        title={isRefineEntry ? 'Refine — draft the storyboard, audio and final-cut nodes' : 'Run this node'}
         disabled={isRunning}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => onRun(node.id)}
         className={clsx(
-          'flex size-6 shrink-0 items-center justify-center rounded-full transition-colors',
+          'flex h-6 shrink-0 items-center justify-center rounded-full transition-colors',
+          isRefineEntry ? 'gap-1 px-2.5 text-[10px] font-semibold' : 'size-6',
           isRunning
             ? 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
             : 'bg-primary-fill text-neutral-onFill hover:opacity-90'
         )}
       >
-        <KsIconArrowRight size={13} />
+        {isRefineEntry ? (
+          <>
+            <KsIconAiGeneration size={11} />
+            Refine
+          </>
+        ) : (
+          <KsIconArrowRight size={13} />
+        )}
       </button>
     </div>
   );
@@ -525,6 +541,7 @@ function NodeCard({
   onRun,
   onTextChange,
   onRefine,
+  isRefinedCut,
   onStoryboardGenerate,
   onOperationGenerate,
   onAudioGenerate,
@@ -537,6 +554,8 @@ function NodeCard({
   const config = NODE_KIND_CONFIG[node.kind];
   /** 端口与操作条只在 hover / 选中 / 正在连线时露出，画布才不会显得杂乱。 */
   const isActive = isHovered || isSelected || isConnecting;
+  // 已产出画面但还没长出精修链的视频卡：底部运行按钮换成 Refine 入口
+  const isRefineEntry = node.kind === 'video' && Boolean(node.videoUrl || node.assetUrl) && !isRefinedCut;
   const lastOutputIndex = config.outputs.length - 1;
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -654,7 +673,6 @@ function NodeCard({
             onTextChange={(text) => onTextChange(node.id, text)}
             onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}
-            onRefine={onRefine}
             onOperationGenerate={onOperationGenerate}
             onAudioGenerate={onAudioGenerate}
             onVariationEvent={onVariationEvent}
@@ -663,18 +681,21 @@ function NodeCard({
 
         <RunFooter
           node={node}
+          isRefineEntry={isRefineEntry}
           onRun={
-            config.body === 'operation'
-              ? onOperationGenerate
-              : config.body === 'storyboard'
-                ? (nodeId) => onStoryboardGenerate(nodeId)
-                : config.body === 'audio-clips'
-                  ? onAudioGenerate
-                : config.body === 'strategy'
-                  ? (nodeId) => onVariationEvent(nodeId, { type: 'expand-strategy' })
-                  : config.body === 'variation-set'
-                    ? (nodeId) => onVariationEvent(nodeId, { type: 'toggle-expanded' })
-                    : onRun
+            isRefineEntry
+              ? onRefine
+              : config.body === 'operation'
+                ? onOperationGenerate
+                : config.body === 'storyboard'
+                  ? (nodeId) => onStoryboardGenerate(nodeId)
+                  : config.body === 'audio-clips'
+                    ? onAudioGenerate
+                  : config.body === 'strategy'
+                    ? (nodeId) => onVariationEvent(nodeId, { type: 'expand-strategy' })
+                    : config.body === 'variation-set'
+                      ? (nodeId) => onVariationEvent(nodeId, { type: 'toggle-expanded' })
+                      : onRun
           }
         />
       </div>

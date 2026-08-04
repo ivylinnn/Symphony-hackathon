@@ -1577,6 +1577,13 @@ function CanvasPage() {
               onAudioGenerate={handleAudioGenerate}
               onVariationEvent={handleVariationEvent}
               onRefine={handleRefine}
+              isRefinedCut={
+                node.kind === 'video' &&
+                edges.some(
+                  (edge) =>
+                    edge.target === node.id && nodes.find((item) => item.id === edge.source)?.kind === 'storyboard'
+                )
+              }
               isEditing={editDock?.nodeId === node.id}
               onExitEditor={exitEditMode}
               onDuplicate={duplicateNode}
