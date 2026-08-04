@@ -42,9 +42,9 @@ interface AgentPanelProps {
 /* ------------------------------------------------------------------ */
 
 /** 剪辑步骤的快捷诉求。 */
-const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Motion graphics', 'Swap product'];
-/** Motion graphics 的追问入口：先问卖点，再按卖点落图形。 */
-const MOTION_GRAPHICS_ACTION = 'Motion graphics';
+const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Add selling points', 'Swap product'];
+/** 卖点动效的追问入口：先问卖点，再按卖点落图形。 */
+const MOTION_GRAPHICS_ACTION = 'Add selling points';
 /** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
 const SELLING_POINT_SUGGESTIONS = ['Breathable fabric', 'Kangaroo pocket', '20% off summer sale'];
 /** agent 假装思考的时长（毫秒），演示用。 */
