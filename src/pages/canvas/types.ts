@@ -279,6 +279,8 @@ export interface VariationSpec {
   confidence: number;
   rationale: string;
   thumbnail?: string;
+  /** 这条变体对应的成片；落成节点/进编辑器时时间线绑它。 */
+  videoUrl?: string;
   status: VariationStatus;
 }
 
@@ -295,6 +297,8 @@ export type VariationEvent =
   | { type: 'more-like-this'; variationId: string }
   | { type: 'open-variation'; variationId: string }
   | { type: 'expand-to-canvas' }
+  /** 容器底部的补充指令：整组变体按这句话重新调整。 */
+  | { type: 'refine'; prompt: string }
   /** 容器内容的自然高度变化：节点高度跟着贴合内容。 */
   | { type: 'content-resize'; height: number };
 

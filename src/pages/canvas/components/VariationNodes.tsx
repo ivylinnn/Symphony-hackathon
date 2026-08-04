@@ -1,6 +1,6 @@
-import { KsIconAiGeneration, KsIconChevronDown, KsIconChevronRight, KsIconCut } from '@fe-infra/keystone-icons-react';
+import { KsIconAiGeneration, KsIconChevronDown, KsIconChevronRight, KsIconCut, KsIconSend } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import type { CanvasNode, VariationEvent, VariationPlan, VariationSpec, VariationStatus } from '../types';
 import {
@@ -386,6 +386,58 @@ function VariationControls({ node, onEvent }: { node: CanvasNode; onEvent: OnEve
   );
 }
 
+/** 容器底部的补充指令输入：一句话调整整组变体（配速、语气、UGC 感…）。 */
+function RefineComposer({ node, onEvent }: { node: CanvasNode; onEvent: OnEvent }) {
+  const [draft, setDraft] = useState('');
+  const isBusy = node.status === 'generating';
+
+  const submit = () => {
+    const prompt = draft.trim();
+    if (!prompt || isBusy) {
+      return;
+    }
+    onEvent({ type: 'refine', prompt });
+    setDraft('');
+  };
+
+  return (
+    <div
+      className="mt-2 flex items-end gap-1.5 rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-2 focus-within:border-primary-fill"
+      data-variation-refine
+    >
+      <textarea
+        value={draft}
+        rows={2}
+        placeholder="Anything else? e.g. lean more UGC, faster pacing, show the pocket sooner…"
+        onChange={(event) => setDraft(event.target.value)}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        className="min-w-0 flex-1 resize-none bg-transparent text-[12px] leading-[17px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
+      />
+      <button
+        type="button"
+        title="Apply this guidance to the set"
+        disabled={!draft.trim() || isBusy}
+        onClick={submit}
+        onPointerDown={(event) => event.stopPropagation()}
+        className={clsx(
+          'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
+          draft.trim() && !isBusy
+            ? 'bg-primary-fill text-neutral-onFill hover:opacity-90'
+            : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+        )}
+      >
+        <KsIconSend size={13} />
+      </button>
+    </div>
+  );
+}
+
 function GeneratingRow({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-neutral-mediumOnSurface">
@@ -474,13 +526,17 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
             ))}
           </div>
           <VariationControls node={node} onEvent={onEvent} />
+          <RefineComposer node={node} onEvent={onEvent} />
         </div>
       ) : (
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
-          {variations.map((variation) => (
-            <MiniCard key={variation.id} variation={variation} onEvent={onEvent} />
-          ))}
-        </div>
+        <>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {variations.map((variation) => (
+              <MiniCard key={variation.id} variation={variation} onEvent={onEvent} />
+            ))}
+          </div>
+          <RefineComposer node={node} onEvent={onEvent} />
+        </>
       )}
     </div>
   );

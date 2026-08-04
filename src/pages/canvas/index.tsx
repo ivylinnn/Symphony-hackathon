@@ -1060,20 +1060,27 @@ function CanvasPage() {
     [addPrebuiltGraph, patchNode]
   );
 
-  /** 把一条变体落成画布上真正的 video 节点（缩略图当封面，hook 当文案）。 */
+  /** 把一条变体落成画布上真正的 video 节点：方向对应的成片当视频，缩略图当封面。 */
   const materializeVariation = useCallback(
-    (setNode: CanvasNode, spec: VariationSpec, index: number, count: number): CanvasNode => ({
-      ...buildNode(
-        'video',
-        setNode.x + setNode.width + 140,
-        setNode.y + (index - (count - 1) / 2) * 330,
-        spec.name
-      ),
-      status: 'done' as const,
-      assetUrl: spec.thumbnail,
-      text: spec.hook,
-      note: `${spec.audience} · ${spec.whatChanged}`
-    }),
+    (setNode: CanvasNode, spec: VariationSpec, index: number, count: number): CanvasNode => {
+      // 带成片的卡要按 9:16 视频撑高，否则用媒体卡默认尺寸
+      const videoHeight = Math.round(12 + ((NODE_DEFAULT_WIDTH - 24) * 16) / 9 + 8 + 24 + 36);
+      const rowGap = spec.videoUrl ? videoHeight + 44 : 330;
+      return {
+        ...buildNode(
+          'video',
+          setNode.x + setNode.width + 140,
+          setNode.y + (index - (count - 1) / 2) * rowGap,
+          spec.name
+        ),
+        status: 'done' as const,
+        assetUrl: spec.thumbnail,
+        videoUrl: spec.videoUrl,
+        ...(spec.videoUrl ? { height: videoHeight } : {}),
+        text: spec.hook,
+        note: `${spec.audience} · ${spec.whatChanged}`
+      };
+    },
     []
   );
 
@@ -1161,6 +1168,15 @@ function CanvasPage() {
             width: expanded ? VARIATION_SET_EXPANDED_WIDTH : VARIATION_SET_WIDTH,
             height: expanded ? VARIATION_SET_EXPANDED_HEIGHT : VARIATION_SET_HEIGHT
           });
+          break;
+        }
+
+        case 'refine': {
+          // 补充指令：整组变体按这句话重调（demo：走一遍生成态，把指令记在卡片脚注上）
+          patchNode(nodeId, { status: 'generating' });
+          window.setTimeout(() => {
+            patchNode(nodeId, { status: 'done', note: `Refined: ${event.prompt}` });
+          }, DEMO_GENERATING_MS);
           break;
         }
 

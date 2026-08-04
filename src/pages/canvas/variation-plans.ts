@@ -119,6 +119,17 @@ const CONCEPT_THUMBS = {
   'summer-lifestyle': '/concept-lifestyle.png'
 } as const;
 
+/**
+ * 每条创意方向引用的成片。
+ * 目前用仓库里的现有素材占位；要换成方向专属的视频，
+ * 上传文件后改这里的路径（或按同名覆盖文件）即可。
+ */
+export const DIRECTION_VIDEOS: Record<string, string> = {
+  'trend-led': '/tracksuit-trend.mp4',
+  'benefit-demo': '/video-with-selling-points.mp4',
+  'summer-lifestyle': '/hoodie-ad.mp4'
+};
+
 /** 每条创意方向下的变体种子；生成时按 plan 填充受众和促销。 */
 const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
   'trend-led': [
@@ -224,7 +235,7 @@ const QUICK_EXPLORE_SEEDS: VariationSeed[] = [
   }
 ];
 
-const fillSeed = (seed: VariationSeed, plan: VariationPlan, index: number): VariationSpec => ({
+const fillSeed = (seed: VariationSeed, plan: VariationPlan, index: number, videoUrl?: string): VariationSpec => ({
   id: createId('variation'),
   name: seed.name,
   whatChanged: seed.whatChanged,
@@ -233,19 +244,29 @@ const fillSeed = (seed: VariationSeed, plan: VariationPlan, index: number): Vari
   confidence: seed.confidence,
   rationale: seed.rationale,
   thumbnail: seed.thumbnail ?? THUMBS[index % THUMBS.length],
+  videoUrl,
   status: 'draft'
 });
 
 /** 按创意方向生成一组变体卡。 */
 export const buildStrategyVariations = (strategyId: string, plan: VariationPlan): VariationSpec[] => {
   const seeds = SEEDS_BY_STRATEGY[strategyId] ?? SEEDS_BY_STRATEGY['trend-led'];
-  return seeds.slice(0, Math.max(1, Math.min(plan.count, seeds.length))).map((seed, index) => fillSeed(seed, plan, index));
+  const videoUrl = DIRECTION_VIDEOS[strategyId];
+  return seeds
+    .slice(0, Math.max(1, Math.min(plan.count, seeds.length)))
+    .map((seed, index) => fillSeed(seed, plan, index, videoUrl));
 };
 
 /** 快速探索：直接给 N 个刻意不同的概念，适合早期发散。 */
+const QUICK_EXPLORE_VIDEOS = [
+  DIRECTION_VIDEOS['trend-led'],
+  DIRECTION_VIDEOS['benefit-demo'],
+  DIRECTION_VIDEOS['summer-lifestyle']
+];
+
 export const buildQuickExploreVariations = (plan: VariationPlan): VariationSpec[] =>
   QUICK_EXPLORE_SEEDS.slice(0, Math.max(1, Math.min(plan.count, QUICK_EXPLORE_SEEDS.length))).map((seed, index) =>
-    fillSeed(seed, plan, index)
+    fillSeed(seed, plan, index, QUICK_EXPLORE_VIDEOS[index])
   );
 
 /** 深分支：拿一条变体当基准，只动 hook 和 CTA 的三个受控版本。 */
@@ -282,6 +303,7 @@ export const buildControlledVariations = (base: VariationSpec, plan: VariationPl
     confidence: seed.confidence,
     rationale: seed.rationale,
     thumbnail: THUMBS[(index + 3) % THUMBS.length],
+    videoUrl: base.videoUrl,
     status: 'draft'
   }));
 };
