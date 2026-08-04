@@ -102,13 +102,13 @@ afterEach(() => {
 });
 
 describe('CanvasPage', () => {
-  it('renders the seeded graph including the edit nodes', () => {
+  it('seeds the canvas with product images, brand kit and product brief', () => {
     renderCanvas();
 
-    expect(countNodes('hook')).toBe(1);
-    expect(countNodes('video')).toBe(1);
-    expect(countNodes('split-av')).toBe(1);
-    expect(countNodes('split-tracks')).toBe(1);
+    // 首屏三张种子卡：产品图 + 品牌资产两路汇入 Product brief
+    expect(countNodes('product-images')).toBe(1);
+    expect(countNodes('brand-kit')).toBe(1);
+    expect(countNodes('product-brief')).toBe(1);
     expect(container.querySelectorAll('svg path').length).toBeGreaterThan(0);
   });
 

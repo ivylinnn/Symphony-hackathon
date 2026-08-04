@@ -49,6 +49,20 @@ export const appendEdge = (
   return [...edges, { id: createId('edge'), source, sourceOutput, target, targetInput }];
 };
 
+/**
+ * 首屏种子图：产品图 + 品牌资产汇入 Product brief 的最小工作流。
+ * 用户一进画布就能看到「一份产品源」长什么样，再从 brief 里探索变体。
+ */
+export const buildSeedGraph = (): { nodes: CanvasNode[]; edges: CanvasEdge[] } => {
+  const productImages = { ...buildNode('product-images', 140, 100), status: 'done' as const };
+  const brandKit = { ...buildNode('brand-kit', 140, 620), status: 'done' as const };
+  const brief = { ...buildNode('product-brief', 640, 260), status: 'done' as const };
+  let edges: CanvasEdge[] = [];
+  edges = appendEdge(edges, productImages.id, 'out', brief.id, 'image');
+  edges = appendEdge(edges, brandKit.id, 'out', brief.id, 'image');
+  return { nodes: [productImages, brandKit, brief], edges };
+};
+
 /** Agent 生成脚本节点时的纵向间距。 */
 const SCRIPT_ROW_GAP = 220;
 

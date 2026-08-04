@@ -270,6 +270,19 @@ function CanvasPage() {
   /** 空画布展示 agent composer；有节点后自动让位。 */
   const isCanvasEmpty = nodes.length === 0;
 
+  /** 首屏带着种子工作流进场：挂载后把节点整体框进视野。 */
+  const didInitialFitRef = useRef(false);
+  useEffect(() => {
+    if (didInitialFitRef.current || nodes.length === 0) {
+      return;
+    }
+    didInitialFitRef.current = true;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setViewport(getFitViewport(nodes, rect.width, rect.height));
+    }
+  }, [nodes, setViewport]);
+
   const toWorld = useCallback(
     (clientX: number, clientY: number) => {
       const rect = containerRef.current?.getBoundingClientRect();

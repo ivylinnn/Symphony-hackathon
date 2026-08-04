@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { NODE_KIND_CONFIG } from '../const';
-import { appendEdge, buildNode, buildNodeAtCenter, buildScriptNodes, createId } from '../graph-ops';
+import { appendEdge, buildNode, buildNodeAtCenter, buildScriptNodes, buildSeedGraph, createId } from '../graph-ops';
 import type { AdsNativeNodeKind, CanvasEdge, CanvasNode, CanvasNodeKind, EditNodeKind, LibraryAsset } from '../types';
 import { findMatchingInput } from '../utils';
 import { useCanvasBulkOps } from './use-canvas-bulk-ops';
@@ -20,9 +20,13 @@ const DUPLICATE_OFFSET = 32;
  * 从页面组件里拆出来，避免 index.tsx 同时扛交互和数据两件事。
  */
 export const useCanvasGraph = () => {
-  // 画布从空态开始：首屏由内容策略弹层引导，选中策略后落一张预置工作流
-  const [nodes, setNodes] = useState<CanvasNode[]>([]);
-  const [edges, setEdges] = useState<CanvasEdge[]>([]);
+  // 首屏落一套种子工作流：产品图 + 品牌资产 → Product brief
+  const seedRef = useRef<ReturnType<typeof buildSeedGraph> | null>(null);
+  if (!seedRef.current) {
+    seedRef.current = buildSeedGraph();
+  }
+  const [nodes, setNodes] = useState<CanvasNode[]>(seedRef.current.nodes);
+  const [edges, setEdges] = useState<CanvasEdge[]>(seedRef.current.edges);
 
   /** 把一组预构建的节点和连线整体落到画布上（内容策略模板用）。 */
   const addPrebuiltGraph = useCallback((newNodes: CanvasNode[], newEdges: CanvasEdge[]) => {
