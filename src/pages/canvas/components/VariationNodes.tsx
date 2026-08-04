@@ -1,6 +1,6 @@
 import { KsIconAiGeneration, KsIconChevronDown, KsIconChevronRight, KsIconCut } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 
 import type { CanvasNode, VariationEvent, VariationPlan, VariationSpec, VariationStatus } from '../types';
 import {
@@ -403,6 +403,29 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
   const variations = node.variations ?? [];
   const isExpanded = Boolean(node.variationsExpanded);
 
+  /*
+   * 高度贴合内容：卡片高度是固定值（端口/fitView 依赖），
+   * 所以内容自然高度一变就上报，由 index 把节点高度 patch 成正好包住内容。
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const hasContent = node.status !== 'generating' && variations.length > 0;
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (!element || !hasContent) {
+      return;
+    }
+    const report = () => onEvent({ type: 'content-resize', height: element.scrollHeight });
+    report();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    return () => observer.disconnect();
+    // onEvent 每次渲染都是新引用；观察目标只随展开态/卡数变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasContent, isExpanded, variations.length]);
+
   if (node.status === 'generating') {
     return <GeneratingRow>Generating {node.variationPlan?.count ?? ''} controlled variations…</GeneratingRow>;
   }
@@ -416,7 +439,7 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={bodyRef} className="flex flex-col">
       <div className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-neutral-highOnSurface">
           {variations.length} concepts
@@ -444,7 +467,7 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
       </div>
 
       {isExpanded ? (
-        <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-0.5">
+        <div className="mt-2">
           <div className="grid grid-cols-2 gap-2">
             {variations.map((variation) => (
               <FullCard key={variation.id} variation={variation} onEvent={onEvent} />
@@ -453,7 +476,7 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
           <VariationControls node={node} onEvent={onEvent} />
         </div>
       ) : (
-        <div className="mt-2 grid min-h-0 flex-1 grid-cols-3 content-start gap-1.5 overflow-y-auto">
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
           {variations.map((variation) => (
             <MiniCard key={variation.id} variation={variation} onEvent={onEvent} />
           ))}

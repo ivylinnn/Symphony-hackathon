@@ -1154,12 +1154,22 @@ function CanvasPage() {
           break;
 
         case 'toggle-expanded': {
+          // 高度先给个估值免得闪动，随后 content-resize 会贴合实际内容
           const expanded = !node.variationsExpanded;
           patchNode(nodeId, {
             variationsExpanded: expanded,
             width: expanded ? VARIATION_SET_EXPANDED_WIDTH : VARIATION_SET_WIDTH,
             height: expanded ? VARIATION_SET_EXPANDED_HEIGHT : VARIATION_SET_HEIGHT
           });
+          break;
+        }
+
+        case 'content-resize': {
+          // 内容自然高度 + 卡片上下留白（pt-3=12 / pb-9=36）+ 边框 2
+          const height = Math.round(event.height + 12 + 36 + 2);
+          if (height > 60 && Math.abs((node.height ?? 0) - height) > 2) {
+            patchNode(nodeId, { height });
+          }
           break;
         }
 

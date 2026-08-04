@@ -294,7 +294,9 @@ export type VariationEvent =
   | { type: 'select-variation'; variationId: string }
   | { type: 'more-like-this'; variationId: string }
   | { type: 'open-variation'; variationId: string }
-  | { type: 'expand-to-canvas' };
+  | { type: 'expand-to-canvas' }
+  /** 容器内容的自然高度变化：节点高度跟着贴合内容。 */
+  | { type: 'content-resize'; height: number };
 
 /** 节点生成状态，驱动卡片上的状态条展示。 */
 export type CanvasNodeStatus = 'idle' | 'generating' | 'done';
