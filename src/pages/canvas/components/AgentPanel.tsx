@@ -2,7 +2,7 @@ import { KsIconAiAssistant, KsIconAiGeneration, KsIconChevronDown, KsIconSend } 
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
-import { EDIT_DOCK_RIGHT_W } from './NodeEditDock';
+import { EDIT_DOCK_RIGHT_W, END_CARD_VIDEO_URL } from './NodeEditDock';
 
 export interface AgentMessage {
   id: string;
@@ -22,8 +22,8 @@ export interface AgentEditingContext {
   initialPrompt?: string;
   /** 卖点动效确认后回调：由画布落时间线贴片并换成渲染版视频。 */
   onApplySellingPoints: (points: string[]) => void;
-  /** 片尾卡：在时间线结尾贴一张品牌 end card。 */
-  onApplyEndCard: () => void;
+  /** 片尾卡：用户附上的视频整段替换 CTA 段（传素材地址）。 */
+  onApplyEndCard: (url: string) => void;
   /** 促销贴片：把优惠文案落到时间线上。 */
   onApplyPromotion: (text: string) => void;
 }
@@ -75,6 +75,8 @@ interface EditMessage {
   content: string;
   /** 气泡下方的多选选项（卖点建议）。 */
   options?: string[];
+  /** 片尾卡附件入口：渲染「上传视频 / 用品牌默认」按钮。 */
+  upload?: boolean;
 }
 
 let editMessageSeq = 0;
@@ -132,9 +134,11 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
   /* —— 剪辑对话的本地状态 —— */
   const [editMessages, setEditMessages] = useState<EditMessage[]>([]);
   const [isEditBusy, setIsEditBusy] = useState(false);
-  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | 'promotion' | null>(null);
+  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | 'promotion' | 'end-card' | null>(null);
   const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
   const replyTimerRef = useRef<number | null>(null);
+  /** 片尾卡附件的本地文件选择框。 */
+  const endCardFileRef = useRef<HTMLInputElement>(null);
 
   const isEditing = Boolean(editing);
   const busy = isEditing ? isEditBusy : isBusy;
@@ -224,14 +228,13 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
     }
 
     if (prompt === END_CARD_ACTION) {
-      editReply(() => {
-        editing.onApplyEndCard();
-        return {
-          id: nextEditMessageId(),
-          role: 'agent',
-          content: 'Added the branded end card — it replaces the CTA clip on the timeline and plays the final 5 seconds right in the preview.'
-        };
-      });
+      setPendingIntent('end-card');
+      editReply(() => ({
+        id: nextEditMessageId(),
+        role: 'agent',
+        content: 'Attach the end card video — it will replace the CTA section at the end of the cut. Upload your own, or use the brand default.',
+        upload: true
+      }));
       return;
     }
 
@@ -252,6 +255,35 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
       role: 'agent',
       content: 'Done — applied to the timeline below. Scrub through the cut and tell me what to adjust: pacing, captions, or assets.'
     }));
+  };
+
+  /**
+   * 片尾卡落地：视频整段替换 CTA 段并可在预览里直接播放，
+   * 然后顺势接上 Add promotion 的问答（选优惠 → 落贴片）。
+   */
+  const applyEndCard = (url: string, label: string) => {
+    if (!editing || isEditBusy) {
+      return;
+    }
+    setPendingIntent(null);
+    setEditMessages((current) => [...current, { id: nextEditMessageId(), role: 'user', content: `Attached ${label}` }]);
+    setIsEditBusy(true);
+    replyTimerRef.current = window.setTimeout(() => {
+      replyTimerRef.current = null;
+      setIsEditBusy(false);
+      editing.onApplyEndCard(url);
+      setPendingIntent('promotion');
+      setEditMessages((current) => [
+        ...current,
+        {
+          id: nextEditMessageId(),
+          role: 'agent',
+          content:
+            'End card is in — it replaces the CTA section, so pressing play runs straight into it in the preview. Want a promotion over the cut too? Pick an offer below or type your own.',
+          options: PROMO_SUGGESTIONS
+        }
+      ]);
+    }, AGENT_REPLY_MS);
   };
 
   /* 进入剪辑步骤：重开一段该节点的对话，并把入口带来的指令替用户发出去。 */
@@ -286,6 +318,8 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
 
   /** 只有最新的带选项消息才渲染可点选项，旧问题不再响应。 */
   const lastOptionsMessageId = [...editMessages].reverse().find((message) => message.options)?.id ?? null;
+  /** 同理：只有最新的附件请求消息渲染上传按钮。 */
+  const lastUploadMessageId = [...editMessages].reverse().find((message) => message.upload)?.id ?? null;
 
   const togglePoint = (point: string) =>
     setSelectedPoints((current) =>
@@ -410,6 +444,27 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
                     </button>
                   </div>
                 ) : null}
+                {/* 片尾卡附件入口：本地上传或用品牌默认素材 */}
+                {message.upload && message.id === lastUploadMessageId && pendingIntent === 'end-card' ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-end-card-upload
+                      onClick={() => endCardFileRef.current?.click()}
+                      className="rounded-full bg-neutral-fillHigh px-3 py-1 text-[11px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
+                    >
+                      ⇪ Upload end card video
+                    </button>
+                    <button
+                      type="button"
+                      data-end-card-default
+                      onClick={() => applyEndCard(END_CARD_VIDEO_URL, 'the brand end card')}
+                      className="rounded-full border border-solid border-primary-fill bg-neutral-surface px-2.5 py-1 text-[11px] font-medium text-primary-onSurface transition-colors hover:bg-primary-surface2"
+                    >
+                      Use brand end card (5s)
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
             {isEditBusy ? (
@@ -423,6 +478,22 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
           messages.map((message) => <MessageBubble key={message.id} message={message} onAction={onAction} />)
         )}
       </div>
+
+      {/* 片尾卡的本地视频选择框：选中即以 object URL 附给时间线 */}
+      <input
+        ref={endCardFileRef}
+        type="file"
+        accept="video/mp4,video/webm,video/quicktime,video/*"
+        data-end-card-file
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            applyEndCard(URL.createObjectURL(file), `“${file.name}”`);
+          }
+          event.target.value = '';
+        }}
+      />
 
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
         {isEditing ? (

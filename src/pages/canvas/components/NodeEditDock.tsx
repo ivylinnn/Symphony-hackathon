@@ -106,8 +106,8 @@ interface NodeEditDockProps {
   posterUrl?: string;
   /** Creative agent 确认的卖点，按顺序落成图形轨上的 callout。 */
   sellingPoints: string[];
-  /** Creative agent 贴的品牌片尾卡：贴在时间线结尾。 */
-  hasEndCard: boolean;
+  /** 用户附上的片尾卡素材：有值时整段替换时间线的 CTA 段。 */
+  endCardUrl: string | null;
   /** Creative agent 落的促销文案；有值时在图形轨后半段铺一条 promo 贴片。 */
   promotion: string | null;
   /** 退出编辑模式的过场：播放滑出动画，动画结束由画布卸载。 */
@@ -119,7 +119,8 @@ interface NodeEditDockProps {
  * 内联编辑模式的底部时间线坞（agent 对话在右侧的 Creative agent 面板里）。
  * 画布把镜头推近节点后，本组件从底部滑入，绑定该节点的视频做播放同步。
  */
-function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, promotion, isClosing, onClose }: NodeEditDockProps) {
+function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, endCardUrl, promotion, isClosing, onClose }: NodeEditDockProps) {
+  const hasEndCard = Boolean(endCardUrl);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -201,7 +202,19 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
       // 片尾段：进度跟着 overlay 走，主片保持暂停
       if (hasEndCard && inEndSegmentRef.current) {
         const overlay = findEndCardVideo();
-        if (overlay) {
+        // 用户用节点原生控制条把主片又播起来了：拖回主片段就交还，落在被裁的 CTA 区就按住
+        if (!video.paused) {
+          if (video.currentTime < mainSeconds - PLAYBACK_TICK_MS / 1000) {
+            inEndSegmentRef.current = false;
+            if (overlay) {
+              overlay.pause();
+              overlay.style.opacity = '0';
+            }
+          } else {
+            video.pause();
+          }
+        }
+        if (inEndSegmentRef.current && overlay) {
           setCurrentTime(Math.min(totalDuration, mainSeconds + overlay.currentTime));
           setIsPlaying(!overlay.paused && !overlay.ended);
           return;
@@ -265,12 +278,12 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
 
   /* 片尾卡上时间线时，从 end card 视频里抽几帧铺它自己的清单块。 */
   useEffect(() => {
-    if (!hasEndCard) {
+    if (!endCardUrl) {
       setEndCardStrip([]);
       return;
     }
     let cancelled = false;
-    extractFilmstrip(END_CARD_VIDEO_URL, 3)
+    extractFilmstrip(endCardUrl, 3)
       .then((frames) => {
         if (!cancelled) {
           setEndCardStrip(frames);
@@ -280,7 +293,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     return () => {
       cancelled = true;
     };
-  }, [hasEndCard]);
+  }, [endCardUrl]);
 
   /* 兜底播放：没有真实视频可绑时，本地推进播放头，到尾停住。 */
   useEffect(() => {

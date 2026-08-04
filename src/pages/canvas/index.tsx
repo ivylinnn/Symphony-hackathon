@@ -13,7 +13,7 @@ import Minimap from './components/Minimap';
 import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
-import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, END_CARD_VIDEO_URL, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
+import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
 import {
   AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
@@ -211,7 +211,7 @@ function CanvasPage() {
   /** Creative agent 确认的卖点，交给时间线坞落成图形轨 callout。 */
   const [editSellingPoints, setEditSellingPoints] = useState<string[]>([]);
   /** Creative agent 贴的品牌片尾卡。 */
-  const [editHasEndCard, setEditHasEndCard] = useState(false);
+  const [editEndCardUrl, setEditEndCardUrl] = useState<string | null>(null);
   /** Creative agent 落的促销文案。 */
   const [editPromotion, setEditPromotion] = useState<string | null>(null);
   /** 退出编辑模式的过场：坞和面板先滑出，动画结束再卸载。 */
@@ -264,7 +264,7 @@ function CanvasPage() {
       const prompt = launch?.prompt ?? (launch?.draw ? 'Select an area of the frame to modify' : undefined);
       setEditDock({ nodeId, prompt });
       setEditSellingPoints([]);
-      setEditHasEndCard(false);
+      setEditEndCardUrl(null);
       setEditPromotion(null);
       // 剪辑步骤强制展开 Creative agent，剪辑对话就在这一个面板里
       setIsAgentOpen(true);
@@ -289,7 +289,7 @@ function CanvasPage() {
       setIsEditClosing(false);
       setEditDock(null);
       setEditSellingPoints([]);
-      setEditHasEndCard(false);
+      setEditEndCardUrl(null);
       setEditPromotion(null);
       setIsAgentOpen(false);
     }, EDIT_EXIT_MS);
@@ -1585,7 +1585,7 @@ function CanvasPage() {
                 )
               }
               isEditing={editDock?.nodeId === node.id}
-              endCardUrl={editDock?.nodeId === node.id && editHasEndCard ? END_CARD_VIDEO_URL : null}
+              endCardUrl={editDock?.nodeId === node.id ? editEndCardUrl : null}
               onExitEditor={exitEditMode}
               onDuplicate={duplicateNode}
               onDelete={removeNode}
@@ -1853,7 +1853,7 @@ function CanvasPage() {
           videoUrl={editDockNode.videoUrl}
           posterUrl={editDockNode.assetUrl}
           sellingPoints={editSellingPoints}
-          hasEndCard={editHasEndCard}
+          endCardUrl={editEndCardUrl}
           promotion={editPromotion}
           isClosing={isEditClosing}
           onClose={exitEditMode}
@@ -1881,8 +1881,8 @@ function CanvasPage() {
                     height: VIDEO_READY_HEIGHT
                   });
                 },
-                // 原视频不动：片尾卡只作为时间线末尾的元素出现
-                onApplyEndCard: () => setEditHasEndCard(true),
+                // 用户附上的片尾卡：整段替换时间线的 CTA 段，预览可直接播
+                onApplyEndCard: (url) => setEditEndCardUrl(url),
                 onApplyPromotion: (text) => setEditPromotion(text)
               }
             : null
