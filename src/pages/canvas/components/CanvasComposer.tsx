@@ -140,6 +140,21 @@ function CanvasComposer({
     setMenu(null);
   };
 
+  /** 本机选 PDF：作为 product brief 挂到提示词框上。 */
+  const pickBriefPdf = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,.pdf';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) {
+        addAttachment({ kind: 'brief', label: file.name });
+      }
+    };
+    input.click();
+    setMenu(null);
+  };
+
   const hasImages = attachments.some((item) => item.kind === 'image');
   const hasBrief = attachments.some((item) => item.kind === 'brief');
   /** 上传了产品图 / 挂了 product brief / 写了提示词，都可以发起生成。 */
@@ -220,11 +235,8 @@ function CanvasComposer({
                           />
                           <MenuItem
                             icon={<KsIconTextFile size={14} />}
-                            label="Add product brief"
-                            onClick={() => {
-                              addAttachment({ kind: 'brief', label: 'Product brief' });
-                              setMenu(null);
-                            }}
+                            label="Upload product brief (PDF)"
+                            onClick={pickBriefPdf}
                           />
                         </MenuSection>
                         <MenuSection title="Reference">
@@ -343,7 +355,9 @@ function CanvasComposer({
                       />
                     ) : null}
                   </span>
-                  <span className="text-[12px] font-medium text-neutral-highOnSurface">{attachment.label}</span>
+                  <span className="max-w-[160px] truncate text-[12px] font-medium text-neutral-highOnSurface">
+                    {attachment.label}
+                  </span>
                   <button
                     type="button"
                     title="Remove"
