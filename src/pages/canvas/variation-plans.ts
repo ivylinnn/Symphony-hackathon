@@ -182,15 +182,16 @@ const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
   ],
   'summer-lifestyle': [
     {
-      name: 'Golden-hour story',
-      thumbnail: CONCEPT_THUMBS['summer-lifestyle'],
-      whatChanged: 'Background moved to a beach sunset; softer pacing.',
-      hook: 'The tee that survived every plan you didn’t make.',
+      name: 'Street style with skateboard',
+      thumbnail: '/skateboard.png',
+      whatChanged: 'Styled as a golden-hour street-skate moment; slower push-in pacing.',
+      hook: 'The tee that keeps up with every kickflip ({offer}).',
       confidence: 79,
-      rationale: 'Lifestyle settings lift saves/shares — good for awareness.'
+      rationale: 'Street-style settings lift saves/shares — good for awareness.'
     },
     {
       name: 'City day-in-the-life',
+      thumbnail: '/street-errand.png',
       whatChanged: 'Background swapped to city errands; faster cuts.',
       hook: 'One tee. Nine hours. Zero outfit changes.',
       confidence: 73,
@@ -198,6 +199,7 @@ const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
     },
     {
       name: 'Festival fit check',
+      thumbnail: '/festival-fit-check.png',
       whatChanged: 'Storyline reframed around a festival fit check moment.',
       hook: 'Festival checklist: tickets, sunscreen, this tee ({offer}).',
       confidence: 65,
