@@ -328,7 +328,7 @@ export const buildControlledVariations = (base: VariationSpec, plan: VariationPl
 /** 从 brief 派生三张 strategy 卡（还没生成变体，只是三条可展开的路）。 */
 export const buildStrategyNodes = (brief: CanvasNode, plan: VariationPlan): CanvasNode[] =>
   STRATEGY_PRESETS.map((preset, index) => ({
-    ...buildNode('strategy', brief.x + brief.width + 140, brief.y + (index - 1) * 396, preset.title),
+    ...buildNode('strategy', brief.x + brief.width + 140, brief.y + (index - 1) * 440, preset.title),
     // strategy id 藏在 note 里，展开时用它挑变体种子
     note: preset.id,
     rationale: preset.rationale,

@@ -29,6 +29,7 @@ import {
   PRODUCT_BRIEF_HEIGHT,
   STORYBOARD_READY_HEIGHT,
   STORYBOARD_READY_WIDTH,
+  STRATEGY_VARY_EXTRA,
   VARIATION_PLANNER_EXTRA,
   VARIATION_SET_EXPANDED_HEIGHT,
   VARIATION_SET_EXPANDED_WIDTH,
@@ -1238,6 +1239,16 @@ function CanvasPage() {
           if (height > 60 && Math.abs((node.height ?? 0) - height) > 2) {
             patchNode(nodeId, { height });
           }
+          break;
+        }
+
+        case 'toggle-vary': {
+          // strategy 卡的 Vary 设置折叠/展开，高度跟着内容走
+          const open = !node.varyOpen;
+          patchNode(nodeId, {
+            varyOpen: open,
+            height: (node.height ?? NODE_KIND_CONFIG.strategy.height) + (open ? STRATEGY_VARY_EXTRA : -STRATEGY_VARY_EXTRA)
+          });
           break;
         }
 

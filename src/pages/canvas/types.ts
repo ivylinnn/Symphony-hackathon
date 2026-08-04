@@ -294,6 +294,8 @@ export type VariationEvent =
   | { type: 'expand-strategy' }
   | { type: 'toggle-expanded' }
   | { type: 'toggle-dimension'; dimension: string }
+  /** strategy 卡的 Vary 设置折叠/展开。 */
+  | { type: 'toggle-vary' }
   | { type: 'select-variation'; variationId: string }
   | { type: 'more-like-this'; variationId: string }
   | { type: 'open-variation'; variationId: string }
@@ -338,6 +340,8 @@ export interface CanvasNode {
   variationPlannerOpen?: boolean;
   /** strategy 节点的创意方向说明（为什么走这条路）。 */
   rationale?: string;
+  /** strategy 节点的 Vary 设置区是否展开；默认折叠。 */
+  varyOpen?: boolean;
   /** variation-set 节点内的变体卡。 */
   variations?: VariationSpec[];
   /** variation-set 是否展开成完整卡片；默认收起，画布才不会变成视觉意大利面。 */

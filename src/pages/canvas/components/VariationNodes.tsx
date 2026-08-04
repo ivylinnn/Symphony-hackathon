@@ -106,9 +106,7 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
       >
         <KsIconAiGeneration size={13} className="shrink-0 text-primary-fill" />
         <span className="flex-1 text-[12px] font-semibold text-neutral-highOnSurface">Brainstorm concepts</span>
-        <span className="text-[10px] text-neutral-lowOnSurface">
-          {plan.count} × {plan.platform}
-        </span>
+        <span className="text-[10px] text-neutral-lowOnSurface">{plan.platform}</span>
         {isOpen ? <KsIconChevronDown size={12} /> : <KsIconChevronRight size={12} />}
       </button>
 
@@ -177,69 +175,35 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
             </div>
           </div>
 
-          <div className="mt-2 flex items-end gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Offer</div>
-              <input
-                value={plan.offer}
-                onChange={(event) => patch({ offer: event.target.value })}
-                onPointerDown={(event) => event.stopPropagation()}
-                className="w-full rounded-md border border-solid border-neutral-fillLow bg-neutral-surface px-2 py-1 text-[11px] text-neutral-highOnSurface outline-none focus:border-primary-fill"
-              />
-            </div>
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Variations</div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  title="Fewer variations"
-                  onClick={() => patch({ count: Math.max(1, plan.count - 1) })}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  className="flex size-6 items-center justify-center rounded-md border border-solid border-neutral-fillLow bg-neutral-surface text-[13px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
-                >
-                  −
-                </button>
-                <span className="w-5 text-center text-[12px] font-semibold tabular-nums text-neutral-highOnSurface">
-                  {plan.count}
-                </span>
-                <button
-                  type="button"
-                  title="More variations"
-                  onClick={() => patch({ count: Math.min(MAX_VARIATIONS, plan.count + 1) })}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  className="flex size-6 items-center justify-center rounded-md border border-solid border-neutral-fillLow bg-neutral-surface text-[13px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
-                >
-                  +
-                </button>
-              </div>
-            </div>
+          <div className="mt-2">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Offer</div>
+            <input
+              value={plan.offer}
+              onChange={(event) => patch({ offer: event.target.value })}
+              onPointerDown={(event) => event.stopPropagation()}
+              className="w-full rounded-md border border-solid border-neutral-fillLow bg-neutral-surface px-2 py-1 text-[11px] text-neutral-highOnSurface outline-none focus:border-primary-fill"
+            />
           </div>
 
-          <button
-            type="button"
-            data-variation-explore
-            disabled={isBusy}
-            onClick={() => onEvent({ type: 'explore' })}
-            onPointerDown={(event) => event.stopPropagation()}
-            className={clsx(
-              'mt-2.5 w-full rounded-lg py-1.5 text-[12px] font-semibold transition-opacity',
-              isBusy ? 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface' : 'bg-primary-fill text-neutral-onFill hover:opacity-90'
-            )}
-          >
-            {isBusy ? 'Proposing directions…' : `Explore ${plan.count} ${plan.platform} concepts`}
-          </button>
-          <button
-            type="button"
-            data-variation-quick-explore
-            disabled={isBusy}
-            onClick={() => onEvent({ type: 'quick-explore' })}
-            onPointerDown={(event) => event.stopPropagation()}
-            className="mt-1 w-full py-0.5 text-center text-[11px] font-medium text-neutral-mediumOnSurface underline-offset-2 hover:underline"
-          >
-            Quick explore — one set of {plan.count} distinct concepts
-          </button>
         </div>
       ) : null}
+
+      {/* CTA 常驻卡面：折叠时也能直接出发 */}
+      <div className="px-2 pb-2">
+        <button
+          type="button"
+          data-variation-explore
+          disabled={isBusy}
+          onClick={() => onEvent({ type: 'explore' })}
+          onPointerDown={(event) => event.stopPropagation()}
+          className={clsx(
+            'w-full rounded-lg py-1.5 text-[12px] font-semibold transition-opacity',
+            isBusy ? 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface' : 'bg-primary-fill text-neutral-onFill hover:opacity-90'
+          )}
+        >
+          {isBusy ? 'Proposing directions…' : `Explore ${plan.platform} concepts`}
+        </button>
+      </div>
     </div>
   );
 }
@@ -251,6 +215,7 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
 export function StrategyBody({ node, onEvent }: { node: CanvasNode; onEvent: OnEvent }) {
   const preset = STRATEGY_PRESETS.find((item) => item.id === node.note);
   const isBusy = node.status === 'generating';
+  const plan = node.variationPlan ?? DEFAULT_VARIATION_PLAN;
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1.5">
@@ -262,10 +227,23 @@ export function StrategyBody({ node, onEvent }: { node: CanvasNode; onEvent: OnE
         {node.rationale ?? 'A deliberate creative direction. Connect a brief and expand it into variations.'}
       </p>
 
-      {/* 每条方向自己决定要探索什么：可开关的 Vary 维度 */}
+      {/* 每条方向自己决定要探索什么：默认折叠成一行摘要，点开才是开关 */}
       <div className="mt-2" data-strategy-vary>
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Vary</div>
-        <div className="flex flex-wrap gap-1">
+        <button
+          type="button"
+          data-strategy-vary-toggle
+          onClick={() => onEvent({ type: 'toggle-vary' })}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="flex w-full items-center gap-1.5 rounded-lg bg-neutral-surface1 px-2 py-1.5 text-left transition-colors hover:bg-neutral-surface2"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Vary</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-neutral-mediumOnSurface">
+            {(node.varyDimensions ?? []).join(', ') || 'Nothing varies yet'}
+          </span>
+          {node.varyOpen ? <KsIconChevronDown size={12} /> : <KsIconChevronRight size={12} />}
+        </button>
+        {node.varyOpen ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {ALL_VARY_DIMENSIONS.map((dimension) => {
             const isOn = (node.varyDimensions ?? []).includes(dimension);
             return (
@@ -287,6 +265,45 @@ export function StrategyBody({ node, onEvent }: { node: CanvasNode; onEvent: OnE
               </button>
             );
           })}
+        </div>
+        ) : null}
+      </div>
+
+      {/* 每条方向自己决定要生成几条变体 */}
+      <div className="mt-2 flex items-center justify-between" data-strategy-count>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Variations</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            title="Fewer variations"
+            onClick={() =>
+              onEvent({
+                type: 'plan-change',
+                plan: { ...plan, count: Math.max(1, plan.count - 1) }
+              })
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+            className="flex size-6 items-center justify-center rounded-md border border-solid border-neutral-fillLow bg-neutral-surface text-[13px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
+          >
+            −
+          </button>
+          <span className="w-5 text-center text-[12px] font-semibold tabular-nums text-neutral-highOnSurface">
+            {plan.count}
+          </span>
+          <button
+            type="button"
+            title="More variations"
+            onClick={() =>
+              onEvent({
+                type: 'plan-change',
+                plan: { ...plan, count: Math.min(MAX_VARIATIONS, plan.count + 1) }
+              })
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+            className="flex size-6 items-center justify-center rounded-md border border-solid border-neutral-fillLow bg-neutral-surface text-[13px] text-neutral-mediumOnSurface hover:bg-neutral-surface2"
+          >
+            +
+          </button>
         </div>
       </div>
 
