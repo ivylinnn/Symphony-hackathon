@@ -94,6 +94,9 @@ const EDIT_FOCUS_PADDING = 48;
 /** Composer 提交 → 节点落画布之间的加载过场时长（毫秒）。 */
 const LANDING_LOADING_MS = 3000;
 
+/** 退出编辑模式的滑出动画时长（毫秒），与 dock-out 关键帧一致。 */
+const EDIT_EXIT_MS = 320;
+
 /** 画布上的一条评论（世界坐标）。 */
 interface CanvasComment {
   id: string;
@@ -211,6 +214,8 @@ function CanvasPage() {
   const [editHasEndCard, setEditHasEndCard] = useState(false);
   /** Creative agent 落的促销文案。 */
   const [editPromotion, setEditPromotion] = useState<string | null>(null);
+  /** 退出编辑模式的过场：坞和面板先滑出，动画结束再卸载。 */
+  const [isEditClosing, setIsEditClosing] = useState(false);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -267,17 +272,28 @@ function CanvasPage() {
     [animateViewportTo, nodes, viewport]
   );
 
-  /** 退出编辑模式：坞收起，镜头拉回进入前的视口。 */
+  /**
+   * 退出编辑模式：镜头先拉回进入前的视口，时间线和 agent 面板同步滑出，
+   * 动画结束后才卸载并把面板收成悬浮球。
+   */
   const exitEditMode = useCallback(() => {
-    setEditDock(null);
-    setEditSellingPoints([]);
-    setEditHasEndCard(false);
-    setEditPromotion(null);
+    if (isEditClosing) {
+      return;
+    }
+    setIsEditClosing(true);
     if (preEditViewportRef.current) {
       animateViewportTo(preEditViewportRef.current);
       preEditViewportRef.current = null;
     }
-  }, [animateViewportTo]);
+    window.setTimeout(() => {
+      setIsEditClosing(false);
+      setEditDock(null);
+      setEditSellingPoints([]);
+      setEditHasEndCard(false);
+      setEditPromotion(null);
+      setIsAgentOpen(false);
+    }, EDIT_EXIT_MS);
+  }, [animateViewportTo, isEditClosing]);
 
   /** 空画布直接展示 composer；有节点后自动让位。 */
   const isCanvasEmpty = nodes.length === 0;
@@ -1831,6 +1847,7 @@ function CanvasPage() {
           sellingPoints={editSellingPoints}
           hasEndCard={editHasEndCard}
           promotion={editPromotion}
+          isClosing={isEditClosing}
           onClose={exitEditMode}
         />
       ) : null}
@@ -1862,6 +1879,7 @@ function CanvasPage() {
               }
             : null
         }
+        isClosing={isEditClosing}
         onToggle={() => setIsAgentOpen((open) => !open)}
         onSend={sendMessage}
         onAction={handleAgentAction}

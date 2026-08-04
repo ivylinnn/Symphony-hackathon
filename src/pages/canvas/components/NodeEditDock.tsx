@@ -106,6 +106,8 @@ interface NodeEditDockProps {
   hasEndCard: boolean;
   /** Creative agent 落的促销文案；有值时在图形轨后半段铺一条 promo 贴片。 */
   promotion: string | null;
+  /** 退出编辑模式的过场：播放滑出动画，动画结束由画布卸载。 */
+  isClosing: boolean;
   onClose: () => void;
 }
 
@@ -113,7 +115,7 @@ interface NodeEditDockProps {
  * 内联编辑模式的底部时间线坞（agent 对话在右侧的 Creative agent 面板里）。
  * 画布把镜头推近节点后，本组件从底部滑入，绑定该节点的视频做播放同步。
  */
-function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, promotion, onClose }: NodeEditDockProps) {
+function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, promotion, isClosing, onClose }: NodeEditDockProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -301,7 +303,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
   return (
     <section
       data-edit-dock-timeline
-      className="absolute bottom-0 left-0 z-30 flex animate-dock-in-up flex-col border-t border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_-12px_32px_rgba(16,24,40,0.10)]"
+      className={`absolute bottom-0 left-0 z-30 flex flex-col border-t border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_-12px_32px_rgba(16,24,40,0.10)] ${isClosing ? 'animate-dock-out-down' : 'animate-dock-in-up'}`}
       style={{ height: EDIT_DOCK_BOTTOM_H, right: EDIT_DOCK_RIGHT_W }}
     >
       {/* 走带条：剪辑工具 / 播放控制 / 缩放 / 关闭 */}

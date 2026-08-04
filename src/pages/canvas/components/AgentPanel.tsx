@@ -35,6 +35,8 @@ interface AgentPanelProps {
   messages: AgentMessage[];
   /** 有值时面板处于剪辑步骤：显示该节点的剪辑对话与快捷动作。 */
   editing?: AgentEditingContext | null;
+  /** 退出编辑模式的过场：面板向右滑出，动画结束由画布收起。 */
+  isClosing?: boolean;
   onToggle: () => void;
   onSend: (content: string) => void;
   /** 点击气泡下方的后续动作。 */
@@ -123,7 +125,7 @@ function MessageBubble({ message, onAction }: { message: AgentMessage; onAction:
  * 展开时是右侧全高面板；收起时坍缩成右下角的悬浮球。
  * 平时承接画布搭建对话；进入剪辑步骤后切换成该节点的剪辑对话（含 motion graphics 问答）。
  */
-function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAction }: AgentPanelProps) {
+function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, onSend, onAction }: AgentPanelProps) {
   const [draft, setDraft] = useState('');
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -320,7 +322,10 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
   return (
     <aside
       data-creative-agent
-      className="absolute inset-y-0 right-0 z-30 flex animate-dock-in-right flex-col border-l border-solid border-neutral-fillLow bg-neutral-surface shadow-[-12px_0_32px_rgba(16,24,40,0.10)]"
+      className={clsx(
+        'absolute inset-y-0 right-0 z-30 flex flex-col border-l border-solid border-neutral-fillLow bg-neutral-surface shadow-[-12px_0_32px_rgba(16,24,40,0.10)]',
+        isClosing ? 'animate-dock-out-right' : 'animate-dock-in-right'
+      )}
       style={{ width: EDIT_DOCK_RIGHT_W }}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3">

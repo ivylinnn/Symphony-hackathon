@@ -109,6 +109,15 @@ module.exports = {
           '0%': { transform: 'translateY(100%)' },
           '100%': { transform: 'translateY(0)' },
         },
+        /* 内联编辑坞退场：与入场对称，右侧滑出、底部滑落。 */
+        'dock-out-right': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'dock-out-down': {
+          '0%': { transform: 'translateY(0)' },
+          '100%': { transform: 'translateY(100%)' },
+        },
       },
       animation: {
         'graphic-in': 'graphic-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
@@ -119,6 +128,8 @@ module.exports = {
         'editor-in': 'editor-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both',
         'dock-in-right': 'dock-in-right 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
         'dock-in-up': 'dock-in-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'dock-out-right': 'dock-out-right 320ms cubic-bezier(0.4, 0, 1, 1) both',
+        'dock-out-down': 'dock-out-down 320ms cubic-bezier(0.4, 0, 1, 1) both',
       },
     },
   },
