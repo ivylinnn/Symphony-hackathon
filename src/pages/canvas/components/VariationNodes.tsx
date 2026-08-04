@@ -83,7 +83,7 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
         className="flex w-full items-center gap-1.5 px-2 py-2 text-left"
       >
         <KsIconAiGeneration size={13} className="shrink-0 text-primary-fill" />
-        <span className="flex-1 text-[12px] font-semibold text-neutral-highOnSurface">Plan variations</span>
+        <span className="flex-1 text-[12px] font-semibold text-neutral-highOnSurface">Brainstorm concepts</span>
         <span className="text-[10px] text-neutral-lowOnSurface">
           {plan.count} × {plan.platform}
         </span>
