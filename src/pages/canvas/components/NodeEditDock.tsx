@@ -31,6 +31,8 @@ const buildVideoClips = (duration: number) => [
 
 /** 卖点动效应用后，预览切到的成片（带 selling-point 贴片的渲染版本）。 */
 export const SELLING_POINT_VIDEO_URL = '/video-with-selling-points.mp4';
+/** 片尾卡应用后，预览切到的 end card 成片（summer sale 5s）。 */
+export const END_CARD_VIDEO_URL = '/end-card-summer-sale.mp4';
 
 /**
  * 离屏抽帧：同源视频逐点 seek，canvas 抓帧转 dataURL。

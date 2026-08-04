@@ -189,7 +189,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
         return {
           id: nextEditMessageId(),
           role: 'agent',
-          content: 'Added the branded end card — logo, offer and CTA hold the last seconds of the cut. It sits at the tail of track 1.'
+          content: 'Added the branded end card — logo, offer and CTA hold the last seconds of the cut, and the preview now plays the end-card render.'
         };
       });
       return;

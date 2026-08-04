@@ -428,12 +428,15 @@ function FullCard({ variation, onEvent }: { variation: VariationSpec; onEvent: O
   );
 }
 
-/** Keep constant / Vary：这组变体会保住什么、探索什么——整个体验里最重要的控制。 */
-function VariationControls({ node, onEvent }: { node: CanvasNode; onEvent: OnEvent }) {
+/**
+ * Keep constant / Vary：这组变体保住了什么、探索了什么。
+ * 纯展示态——选择在 strategy 卡上做，这里只是这组概念的说明书。
+ */
+function VariationControls({ node }: { node: CanvasNode }) {
   const keep = node.keepConstant ?? [];
   const vary = node.varyDimensions ?? [];
   return (
-    <div className="mt-2 rounded-lg bg-neutral-surface1 p-2" data-variation-controls>
+    <div className="mb-2 rounded-lg bg-neutral-surface1 p-2" data-variation-controls>
       <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Keep constant</div>
       <div className="mt-1 flex flex-wrap gap-1">
         {keep.map((dimension) => (
@@ -448,26 +451,14 @@ function VariationControls({ node, onEvent }: { node: CanvasNode; onEvent: OnEve
       </div>
       <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Vary</div>
       <div className="mt-1 flex flex-wrap gap-1">
-        {ALL_VARY_DIMENSIONS.map((dimension) => {
-          const isOn = vary.includes(dimension);
-          return (
-            <button
-              key={dimension}
-              type="button"
-              title={isOn ? `Stop varying ${dimension}` : `Let ${dimension} vary`}
-              onClick={() => onEvent({ type: 'toggle-dimension', dimension })}
-              onPointerDown={(event) => event.stopPropagation()}
-              className={clsx(
-                'rounded-full border border-solid px-2 py-0.5 text-[10px] font-medium transition-colors',
-                isOn
-                  ? 'border-primary-fill bg-primary-surface2 text-primary-onSurface'
-                  : 'border-neutral-fillLow bg-neutral-surface text-neutral-lowOnSurface hover:bg-neutral-surface2'
-              )}
-            >
-              {dimension}
-            </button>
-          );
-        })}
+        {vary.map((dimension) => (
+          <span
+            key={dimension}
+            className="rounded-full border border-solid border-primary-fill bg-primary-surface2 px-2 py-0.5 text-[10px] font-medium text-primary-onSurface"
+          >
+            {dimension}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -611,12 +602,13 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
 
       {isExpanded ? (
         <div className="mt-2">
+          {/* 状态说明在前：这组概念保住了什么、探索了什么，然后才是卡片 */}
+          <VariationControls node={node} />
           <div className="grid grid-cols-2 gap-2">
             {variations.map((variation) => (
               <FullCard key={variation.id} variation={variation} onEvent={onEvent} />
             ))}
           </div>
-          <VariationControls node={node} onEvent={onEvent} />
           <RefineComposer node={node} onEvent={onEvent} />
         </div>
       ) : (
