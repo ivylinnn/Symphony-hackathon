@@ -59,12 +59,20 @@ const EDIT_QUICK_ACTIONS = [
 const PROMOTION_ACTION = 'Add promotion';
 /** 促销文案建议，第一条来自 brief 的默认 offer。 */
 const PROMO_SUGGESTIONS = ['20% off summer sale', 'Free shipping this week', 'Buy 2, get 1 free'];
-/** 片尾卡入口：把品牌 end card 贴到时间线结尾。 */
+/** 片尾卡入口：先选卡上要放的元素，再附视频替换 CTA 段。 */
 const END_CARD_ACTION = 'Add end card';
+/** 片尾卡可选元素；默认选中卖点和 CTA。 */
+const END_CARD_ELEMENTS = ['Selling points', 'Logo', 'CTA'];
+const DEFAULT_END_CARD_ELEMENTS = ['Selling points', 'CTA'];
 /** 卖点动效的追问入口：先问卖点，再按卖点落图形。 */
 const MOTION_GRAPHICS_ACTION = 'Add selling points';
-/** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
-const SELLING_POINT_SUGGESTIONS = ['Breathable fabric', 'Kangaroo pocket', '20% off summer sale'];
+/** 卖点建议，来自 hoodie 产品 brief 的核心卖点；默认全选。 */
+const SELLING_POINT_SUGGESTIONS = [
+  'Breathable fabric',
+  'Versatile layering',
+  'Functional kangaroo pocket',
+  'Relaxed comfortable fit'
+];
 /** agent 假装思考的时长（毫秒），演示用。 */
 const AGENT_REPLY_MS = 900;
 
@@ -133,8 +141,12 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
   /* —— 剪辑对话的本地状态 —— */
   const [editMessages, setEditMessages] = useState<EditMessage[]>([]);
   const [isEditBusy, setIsEditBusy] = useState(false);
-  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | 'promotion' | 'end-card' | null>(null);
+  const [pendingIntent, setPendingIntent] = useState<
+    'motion-graphics' | 'promotion' | 'end-card' | 'end-card-attach' | null
+  >(null);
   const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
+  /** 片尾卡要放的元素（多选）。 */
+  const [selectedParts, setSelectedParts] = useState<string[]>([]);
   const replyTimerRef = useRef<number | null>(null);
   /** 片尾卡附件的本地文件选择框。 */
   const endCardFileRef = useRef<HTMLInputElement>(null);
@@ -183,7 +195,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
         .split(/[,，;；\n]/)
         .map((point) => point.trim())
         .filter(Boolean)
-        .slice(0, 3);
+        .slice(0, 4);
       setIsEditBusy(true);
       replyTimerRef.current = window.setTimeout(() => {
         replyTimerRef.current = null;
@@ -228,22 +240,24 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
 
     if (prompt === END_CARD_ACTION) {
       setPendingIntent('end-card');
+      setSelectedParts(DEFAULT_END_CARD_ELEMENTS);
       editReply(() => ({
         id: nextEditMessageId(),
         role: 'agent',
-        content: 'Attach the end card video — it will replace the CTA section at the end of the cut. Upload your own, or use the brand default.',
-        upload: true
+        content: 'What should the end card include? Selling points and CTA are on by default — adjust below.',
+        options: END_CARD_ELEMENTS
       }));
       return;
     }
 
     if (prompt === MOTION_GRAPHICS_ACTION) {
       setPendingIntent('motion-graphics');
-      setSelectedPoints([]);
+      // 默认全选 brief 里的四个核心卖点，用户按需去掉
+      setSelectedPoints([...SELLING_POINT_SUGGESTIONS]);
       editReply(() => ({
         id: nextEditMessageId(),
         role: 'agent',
-        content: 'Which selling points should the graphics call out? Pick any below, or type up to three, comma-separated.',
+        content: 'Which selling points should the graphics call out? All four from the brief are pre-selected — tap to adjust, or type your own, comma-separated.',
         options: SELLING_POINT_SUGGESTIONS
       }));
       return;
@@ -253,6 +267,25 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
       id: nextEditMessageId(),
       role: 'agent',
       content: 'Done — applied to the timeline below. Scrub through the cut and tell me what to adjust: pacing, captions, or assets.'
+    }));
+  };
+
+  /** 片尾卡第一步：确认卡上要放的元素，然后进入附视频步骤。 */
+  const confirmEndCardElements = () => {
+    if (!editing || isEditBusy || selectedParts.length === 0) {
+      return;
+    }
+    setPendingIntent('end-card-attach');
+    setEditMessages((current) => [
+      ...current,
+      { id: nextEditMessageId(), role: 'user', content: `End card with ${selectedParts.join(', ')}` }
+    ]);
+    editReply(() => ({
+      id: nextEditMessageId(),
+      role: 'agent',
+      content:
+        'Got it. Now attach the end card video — it will replace the CTA section at the end of the cut. Upload your own, or use the brand default.',
+      upload: true
     }));
   };
 
@@ -277,8 +310,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
         {
           id: nextEditMessageId(),
           role: 'agent',
-          content:
-            'End card is in — it replaces the CTA section, so pressing play runs straight into it in the preview. Want a promotion over the cut too? Pick an offer below or type your own.',
+          content: `End card is in${selectedParts.length ? ` with ${selectedParts.join(' + ')}` : ''} — it replaces the CTA section, so pressing play runs straight into it in the preview. Want a promotion over the cut too? Pick an offer below or type your own.`,
           options: PROMO_SUGGESTIONS
         }
       ]);
@@ -292,6 +324,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
       editingKeyRef.current = null;
       setPendingIntent(null);
       setSelectedPoints([]);
+      setSelectedParts([]);
       return;
     }
     if (editingKeyRef.current === editing.nodeTitle) {
@@ -300,6 +333,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
     editingKeyRef.current = editing.nodeTitle;
     setPendingIntent(null);
     setSelectedPoints([]);
+    setSelectedParts([]);
     setEditMessages([
       {
         id: nextEditMessageId(),
@@ -390,7 +424,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
                   {message.content}
                 </div>
                 {/* 追问的多选选项：勾选后由确认按钮统一发送 */}
-                {message.options && message.id === lastOptionsMessageId && pendingIntent === 'promotion' ? (
+                {message.options && message.id === lastOptionsMessageId && !isEditBusy && pendingIntent === 'promotion' ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {message.options.map((option) => (
                       <button
@@ -404,7 +438,51 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
                       </button>
                     ))}
                   </div>
-                ) : message.options && message.id === lastOptionsMessageId && pendingIntent ? (
+                ) : message.options && message.id === lastOptionsMessageId && !isEditBusy && pendingIntent === 'end-card' ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {message.options.map((option) => {
+                      const isPicked = selectedParts.includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          data-end-card-element
+                          aria-pressed={isPicked}
+                          onClick={() =>
+                            setSelectedParts((current) =>
+                              current.includes(option)
+                                ? current.filter((item) => item !== option)
+                                : [...current, option]
+                            )
+                          }
+                          className={clsx(
+                            'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
+                            isPicked
+                              ? 'border-primary-fill bg-primary-fill text-neutral-onFill'
+                              : 'border-primary-fill bg-neutral-surface text-primary-onSurface hover:bg-primary-surface2'
+                          )}
+                        >
+                          {isPicked ? '✓ ' : ''}
+                          {option}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      data-end-card-elements-confirm
+                      disabled={selectedParts.length === 0}
+                      onClick={confirmEndCardElements}
+                      className={clsx(
+                        'rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity',
+                        selectedParts.length > 0
+                          ? 'bg-neutral-fillHigh text-neutral-onFill hover:opacity-90'
+                          : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+                      )}
+                    >
+                      Continue
+                    </button>
+                  </div>
+                ) : message.options && message.id === lastOptionsMessageId && !isEditBusy && pendingIntent ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {message.options.map((option) => {
                       const isPicked = selectedPoints.includes(option);
@@ -444,7 +522,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
                   </div>
                 ) : null}
                 {/* 片尾卡附件入口：本地上传或用品牌默认素材 */}
-                {message.upload && message.id === lastUploadMessageId && pendingIntent === 'end-card' ? (
+                {message.upload && message.id === lastUploadMessageId && !isEditBusy && pendingIntent === 'end-card-attach' ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
