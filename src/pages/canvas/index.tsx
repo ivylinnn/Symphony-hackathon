@@ -90,6 +90,9 @@ const MIDDLE_BUTTON = 1;
 /** 编辑模式聚焦节点时四周留的余量，比 fit-view 更贴近一些。 */
 const EDIT_FOCUS_PADDING = 48;
 
+/** Composer 提交 → 节点落画布之间的加载过场时长（毫秒）。 */
+const LANDING_LOADING_MS = 3000;
+
 /** 画布上的一条评论（世界坐标）。 */
 interface CanvasComment {
   id: string;
@@ -270,19 +273,25 @@ function CanvasPage() {
   /** 空画布上点一下才唤起 composer；有节点后两者都让位。 */
   const isCanvasEmpty = nodes.length === 0;
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  /** Composer 提交后的过场：3 秒加载动画，然后节点才落画布。 */
+  const [isLandingLoading, setIsLandingLoading] = useState(false);
 
   /**
-   * Composer 提交（带产品图 / product brief）：落一套产品源工作流
-   * （产品图 + 品牌资产 → Product brief），镜头框住它，正式进入画布。
+   * Composer 提交（带产品图 / product brief）：先播 3 秒加载过场，
+   * 再落产品源工作流（产品图 + 品牌资产 → Product brief），镜头框住它。
    */
   const landProductWorkflow = useCallback(() => {
-    const seed = buildSeedGraph();
-    addPrebuiltGraph(seed.nodes, seed.edges);
     setIsComposerOpen(false);
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      animateViewportTo(getFitViewport(seed.nodes, rect.width, rect.height));
-    }
+    setIsLandingLoading(true);
+    window.setTimeout(() => {
+      setIsLandingLoading(false);
+      const seed = buildSeedGraph();
+      addPrebuiltGraph(seed.nodes, seed.edges);
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        animateViewportTo(getFitViewport(seed.nodes, rect.width, rect.height));
+      }
+    }, LANDING_LOADING_MS);
   }, [addPrebuiltGraph, animateViewportTo]);
 
   const toWorld = useCallback(
@@ -314,8 +323,8 @@ function CanvasPage() {
     stopAnimation();
     setAddPanelAnchor(null);
 
-    // 空画布：点一下画布唤起 composer（提示词框）
-    if (isCanvasEmpty && !isComposerOpen && event.button === 0) {
+    // 空画布：点一下画布唤起 composer（提示词框）；加载过场中不响应
+    if (isCanvasEmpty && !isComposerOpen && !isLandingLoading && event.button === 0) {
       setIsComposerOpen(true);
       return;
     }
@@ -1717,8 +1726,18 @@ function CanvasPage() {
       />
 
       {/* 空画布的 agent 输入区：提示词 + 模板/加节点/教程三个入口 */}
+      {/* Composer 提交后的加载过场：3 秒后节点才落画布 */}
+      {isLandingLoading ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 pl-[88px]" data-landing-loading>
+          <span className="size-8 animate-spin rounded-full border-[3px] border-solid border-neutral-fillLow border-t-primary-fill" />
+          <span className="text-[14px] font-medium text-neutral-mediumOnSurface">
+            Reading your product — setting up the workspace…
+          </span>
+        </div>
+      ) : null}
+
       {/* 空画布：先给一句轻提示，点画布唤起 composer */}
-      {isCanvasEmpty && !isComposerOpen && !isStrategiesOpen ? (
+      {isCanvasEmpty && !isComposerOpen && !isLandingLoading && !isStrategiesOpen ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center pl-[88px]">
           <span className="text-[15px] font-medium text-neutral-lowOnSurface">
             Click anywhere on the canvas to start
