@@ -28,25 +28,41 @@ export const PORT_TYPE_ICON: Record<PortType, ReactNode> = {
   audio: <KsIconSound size={PORT_ICON_SIZE} />
 };
 
-/** 节点类型图标，供 "+" 面板和卡片头部复用。 */
-export const NODE_KIND_ICON: Record<CanvasNodeKind, ReactNode> = {
-  hook: <KsIconTips size={ICON_SIZE} />,
-  body: <KsIconCampaignList size={ICON_SIZE} />,
-  cta: <KsIconSend size={ICON_SIZE} />,
-  'product-images': <KsIconImageCollection size={ICON_SIZE} />,
-  'brand-kit': <KsIconToolbox size={ICON_SIZE} />,
-  'product-brief': <KsIconTextFile size={ICON_SIZE} />,
-  'tiktok-trend': <KsIconTips size={ICON_SIZE} />,
-  storyboard: <KsIconShowTimeline size={ICON_SIZE} />,
-  'audio-clips': <KsIconSound size={ICON_SIZE} />,
-  text: <KsIconTextFile size={ICON_SIZE} />,
-  image: <KsIconImageCollection size={ICON_SIZE} />,
-  video: <KsIconVideoClip size={ICON_SIZE} />,
-  audio: <KsIconSound size={ICON_SIZE} />,
-  avatar: <KsIconPeople size={ICON_SIZE} />,
-  import: <KsIconUpload size={ICON_SIZE} />,
-  'split-av': <KsIconSplit size={ICON_SIZE} />,
-  'split-tracks': <KsIconSeperateAudio size={ICON_SIZE} />,
-  timeline: <KsIconShowTimeline size={ICON_SIZE} />,
-  batch: <KsIconCampaignList size={ICON_SIZE} />
+type IconComponent = (props: { size?: number }) => ReactNode;
+
+/** 节点类型 → 图标组件；存组件而不是元素，才能按用处渲染成不同尺寸。 */
+const NODE_KIND_ICON_COMPONENT: Record<CanvasNodeKind, IconComponent> = {
+  hook: KsIconTips,
+  body: KsIconCampaignList,
+  cta: KsIconSend,
+  'product-images': KsIconImageCollection,
+  'brand-kit': KsIconToolbox,
+  'product-brief': KsIconTextFile,
+  'tiktok-trend': KsIconTips,
+  storyboard: KsIconShowTimeline,
+  'audio-clips': KsIconSound,
+  text: KsIconTextFile,
+  image: KsIconImageCollection,
+  video: KsIconVideoClip,
+  audio: KsIconSound,
+  avatar: KsIconPeople,
+  import: KsIconUpload,
+  'split-av': KsIconSplit,
+  'split-tracks': KsIconSeperateAudio,
+  timeline: KsIconShowTimeline,
+  batch: KsIconCampaignList
 };
+
+/** 卡片外的名字行、"+" 面板等按需取图标。 */
+export function NodeKindIcon({ kind, size = ICON_SIZE }: { kind: CanvasNodeKind; size?: number }) {
+  const Icon = NODE_KIND_ICON_COMPONENT[kind];
+  return <Icon size={size} />;
+}
+
+/** 节点类型图标，供 "+" 面板和素材库复用。 */
+export const NODE_KIND_ICON: Record<CanvasNodeKind, ReactNode> = Object.fromEntries(
+  (Object.keys(NODE_KIND_ICON_COMPONENT) as CanvasNodeKind[]).map((kind) => [
+    kind,
+    <NodeKindIcon key={kind} kind={kind} />
+  ])
+) as Record<CanvasNodeKind, ReactNode>;

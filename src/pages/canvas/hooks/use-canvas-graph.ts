@@ -77,6 +77,41 @@ export const useCanvasGraph = () => {
     []
   );
 
+  /**
+   * 多选后共用一个 ⊕：新建一个节点，把每个选中节点各自的输出都接过去。
+   * 每个来源用自己最后一个输出口，而不是统一某一个 outputId。
+   */
+  const addConnectedNodesAt = useCallback(
+    (sourceIds: string[], kind: CanvasNodeKind, centerX: number, centerY: number) => {
+      setNodes((currentNodes) => {
+        const node = buildNodeAtCenter(kind, centerX, centerY);
+        const matches = sourceIds
+          .map((sourceId) => {
+            const source = currentNodes.find((item) => item.id === sourceId);
+            if (!source) {
+              return null;
+            }
+            const outputs = NODE_KIND_CONFIG[source.kind].outputs;
+            const sourceOutput = outputs[outputs.length - 1]?.id ?? 'out';
+            const matched = findMatchingInput(source.kind, sourceOutput, kind);
+            return matched ? { sourceId, sourceOutput, targetInput: matched.id } : null;
+          })
+          .filter((item): item is { sourceId: string; sourceOutput: string; targetInput: string } => item !== null);
+
+        if (matches.length > 0) {
+          setEdges((currentEdges) =>
+            matches.reduce(
+              (acc, match) => appendEdge(acc, match.sourceId, match.sourceOutput, node.id, match.targetInput),
+              currentEdges
+            )
+          );
+        }
+        return [...currentNodes, node];
+      });
+    },
+    []
+  );
+
   /** Tools 菜单里的编辑动作：在下游挂一个 Edit 节点。 */
   const runTool = useCallback(
     (sourceId: string, kind: EditNodeKind) => {
@@ -150,6 +185,7 @@ export const useCanvasGraph = () => {
     addNodeAt,
     addConnectedNode,
     addConnectedNodeAt,
+    addConnectedNodesAt,
     addScriptSections,
     addAssetNode,
     runTool,

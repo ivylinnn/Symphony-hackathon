@@ -15,12 +15,16 @@ import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
 import TimelineEditor from './components/TimelineEditor';
 import {
+  AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
   MIN_NODE_HEIGHT,
   MIN_NODE_WIDTH,
+  NODE_DEFAULT_WIDTH,
   NODE_KIND_CONFIG,
   STORYBOARD_READY_HEIGHT,
-  STORYBOARD_READY_WIDTH
+  STORYBOARD_READY_WIDTH,
+  VIDEO_READY_HEIGHT,
+  VIDEO_READY_WIDTH
 } from './const';
 import { CONTENT_STRATEGIES, buildStrategyGraph, type ContentStrategy } from './content-strategies';
 import { buildNode } from './graph-ops';
@@ -61,6 +65,8 @@ interface AddPanelAnchor {
   /** 世界坐标；由拉线触发时新节点落在这里，⊕ 触发时为空表示挂到来源右侧。 */
   worldX?: number;
   worldY?: number;
+  /** 多选后共用一个 ⊕ 时，这里放全部选中节点的 id；新节点会把它们都连过去。 */
+  nodeIds?: string[];
 }
 
 /** 鼠标中键，用于强制平移。 */
@@ -83,7 +89,7 @@ const EXIT_PATH = '/create';
 const INITIAL_MESSAGES: AgentMessage[] = [];
 
 /** 生成 product brief 的等待时长。 */
-const BRIEF_GENERATING_MS = 5000;
+const BRIEF_GENERATING_MS = 3000;
 
 /** brief 气泡下方的三个后续动作，第一个是主按钮。 */
 const BRIEF_ACTIONS = [
@@ -127,6 +133,13 @@ const STORYBOARD_OFFER_ACTIONS = ['Yes, please.', 'No, thanks'];
 /** 组成一套「脚本四件套」的节点类型。 */
 const SCRIPT_KINDS = ['hook', 'body', 'cta', 'tiktok-trend'] as const;
 
+/** 汇聚型节点：画布上同一时间只应该有一个，多个来源都接到这一个上面。 */
+const HUB_KINDS = ['storyboard', 'audio-clips'] as const;
+
+/** 这几类「生成」节点都是 demo：本地模拟一段等待再落固定产物，不真打生成接口。 */
+const DEMO_GENERATING_MS = 3000;
+const CLIP_DEMO_VIDEO_URL = '/hoodie-ad.mp4';
+
 /** 提交产品图时写进会话的第一条用户消息。 */
 const OPENING_PROMPT =
   'Generate a 30-second TikTok ad for an olive green short-sleeve hoodie featuring a skater in a sun-drenched LA alleyway, using a gritty 90s fisheye aesthetic, high-energy action shots (kickflips, rail grinds, wall rides), and punchy VO highlighting versatile everyday street style.';
@@ -145,6 +158,7 @@ function CanvasPage() {
     addNodeAt,
     addConnectedNode,
     addConnectedNodeAt,
+    addConnectedNodesAt,
     addScriptSections,
     addAssetNode,
     runTool,
@@ -515,13 +529,50 @@ function CanvasPage() {
     [addAssetNode, getViewportCenter]
   );
 
-  /** 卡片 ⊕ 面板：在来源节点右侧新增并自动连线。 */
+  /** 某个来源节点自己的最后一个输出口 id，多选场景下每个来源各用各的。 */
+  const lastOutputIdFor = useCallback(
+    (node: CanvasNode) => {
+      const outputs = NODE_KIND_CONFIG[node.kind].outputs;
+      return outputs[outputs.length - 1]?.id ?? 'out';
+    },
+    []
+  );
+
+  /** 卡片 ⊕ 面板：在来源节点右侧新增并自动连线；多选时新节点会接上每一个选中节点。 */
   const addNodeFromCard = useCallback(
     (kind: CanvasNodeKind) => {
       if (!addPanelAnchor) {
         return;
       }
-      if (addPanelAnchor.worldX === undefined || addPanelAnchor.worldY === undefined) {
+      const sourceIds =
+        addPanelAnchor.nodeIds && addPanelAnchor.nodeIds.length > 0 ? addPanelAnchor.nodeIds : [addPanelAnchor.nodeId];
+
+      // Storyboard / Audio Clips 是汇聚型节点：画布上已有一个时，接线接到它上面，
+      // 而不是每次都新建一份——比如 Brief 和 Trend 应该喂给同一个 Storyboard。
+      const existingHub =
+        HUB_KINDS.includes(kind as (typeof HUB_KINDS)[number])
+          ? nodes.find((node) => node.kind === kind)
+          : undefined;
+
+      if (existingHub) {
+        sourceIds.forEach((sourceId) => {
+          const source = nodes.find((node) => node.id === sourceId);
+          const sourceOutput =
+            sourceId === addPanelAnchor.nodeId && sourceIds.length === 1
+              ? addPanelAnchor.outputId
+              : source
+                ? lastOutputIdFor(source)
+                : addPanelAnchor.outputId;
+          connectToBestInput(sourceId, sourceOutput, existingHub.id);
+        });
+      } else if (sourceIds.length > 1) {
+        addConnectedNodesAt(
+          sourceIds,
+          kind,
+          addPanelAnchor.worldX ?? 0,
+          addPanelAnchor.worldY ?? 0
+        );
+      } else if (addPanelAnchor.worldX === undefined || addPanelAnchor.worldY === undefined) {
         addConnectedNode(addPanelAnchor.nodeId, addPanelAnchor.outputId, kind);
       } else {
         addConnectedNodeAt(
@@ -534,7 +585,7 @@ function CanvasPage() {
       }
       setAddPanelAnchor(null);
     },
-    [addConnectedNode, addConnectedNodeAt, addPanelAnchor]
+    [addConnectedNode, addConnectedNodeAt, addConnectedNodesAt, addPanelAnchor, connectToBestInput, lastOutputIdFor, nodes]
   );
 
   const openAddPanel = useCallback(
@@ -554,6 +605,30 @@ function CanvasPage() {
     },
     [nodes, viewport]
   );
+
+  /** 多选后共用的 ⊕：挂在所有选中节点包围盒的右侧、垂直居中。 */
+  const openMultiAddPanel = useCallback(() => {
+    const picked = nodes.filter((node) => selectedIds.includes(node.id));
+    if (picked.length < 2) {
+      return;
+    }
+    const right = Math.max(...picked.map((node) => node.x + node.width));
+    const top = Math.min(...picked.map((node) => node.y));
+    const bottom = Math.max(...picked.map((node) => node.y + getNodeHeight(node)));
+    const centerY = (top + bottom) / 2;
+    // 新节点落点：包围盒右侧留一段间距，再加上新卡片自身半宽让它居中在这条线上
+    const worldX = right + 120 + NODE_DEFAULT_WIDTH / 2;
+
+    setAddPanelAnchor({
+      nodeId: picked[0].id,
+      nodeIds: picked.map((node) => node.id),
+      outputId: lastOutputIdFor(picked[0]),
+      screenX: right * viewport.zoom + viewport.x + 40,
+      screenY: centerY * viewport.zoom + viewport.y,
+      worldX,
+      worldY: centerY
+    });
+  }, [lastOutputIdFor, nodes, selectedIds, viewport]);
 
   const fitView = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -858,12 +933,96 @@ function CanvasPage() {
     [patchNode]
   );
 
-  /** 空态 Storyboard 生成完成：从小卡片放大到能装下 6 帧的完整尺寸。 */
-  const handleStoryboardReady = useCallback(
-    (nodeId: string) => {
-      patchNode(nodeId, { width: STORYBOARD_READY_WIDTH, height: STORYBOARD_READY_HEIGHT, storyboardReady: true });
+  /**
+   * Storyboard 触发生成：卡片内输入框回车/点生成图标，和卡片通用的运行按钮，都走这一条。
+   * 全程本地模拟（不打真实生成接口），保证 outcome 永远是落满 6 帧、不会撞上「没接后端」的报错。
+   */
+  const handleStoryboardGenerate = useCallback(
+    (nodeId: string, text?: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || node.kind !== 'storyboard' || node.storyboardReady || node.status === 'generating') {
+        return;
+      }
+      patchNode(nodeId, { status: 'generating', error: undefined, ...(text !== undefined ? { text } : {}) });
+      window.setTimeout(() => {
+        patchNode(nodeId, {
+          status: 'done',
+          storyboardReady: true,
+          width: STORYBOARD_READY_WIDTH,
+          height: STORYBOARD_READY_HEIGHT
+        });
+      }, DEMO_GENERATING_MS);
     },
-    [patchNode]
+    [nodes, patchNode]
+  );
+
+  /**
+   * operation 类节点敲回车/点运行。
+   * Split A/V 是一次性的：抽完音轨它就功成身退——Audio Clips Generation 顶替它的位置、
+   * 接手它的上游连线，然后把 Split A/V 从画布上撤掉。
+   */
+  const handleOperationGenerate = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (node?.kind !== 'split-av') {
+        executeNode(nodeId);
+        return;
+      }
+
+      const upstream = edges.filter((edge) => edge.target === nodeId);
+      const existingHub = nodes.find((item) => item.kind === 'audio-clips');
+      if (existingHub) {
+        upstream.forEach((edge) => connectToBestInput(edge.source, edge.sourceOutput, existingHub.id));
+      } else {
+        const audioNode = { ...buildNode('audio-clips', node.x, node.y), width: AUDIO_CLIPS_WIDTH };
+        addPrebuiltGraph(
+          [audioNode],
+          upstream.map((edge, index) => ({
+            id: `edge-audio-${Date.now()}-${index}`,
+            source: edge.source,
+            sourceOutput: edge.sourceOutput,
+            target: audioNode.id,
+            targetInput: 'prompt'
+          }))
+        );
+        setSelectedIds([audioNode.id]);
+      }
+      removeNode(nodeId);
+    },
+    [addPrebuiltGraph, connectToBestInput, edges, executeNode, nodes, removeNode]
+  );
+
+  /**
+   * Video 节点点运行：如果上游同时接了 Storyboard 和 Audio Clips（即「剪成片」这条路），
+   * 用本地固定成片模拟一次生成，而不是真的打生成接口——demo 用，别的 video 节点走原来的 executeNode。
+   */
+  const handleVideoRun = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (node?.kind === 'video') {
+        const upstreamKinds = edges
+          .filter((edge) => edge.target === nodeId)
+          .map((edge) => nodes.find((item) => item.id === edge.source)?.kind);
+        const isClipFromStoryboardAndAudio =
+          upstreamKinds.includes('storyboard') && upstreamKinds.includes('audio-clips');
+        if (isClipFromStoryboardAndAudio) {
+          patchNode(nodeId, { status: 'generating', error: undefined });
+          window.setTimeout(() => {
+            // 出片同时把卡片撑到完整尺寸，9:16 的画面才不会被默认高度裁掉
+            patchNode(nodeId, {
+              status: 'done',
+              videoUrl: CLIP_DEMO_VIDEO_URL,
+              note: 'Dreamina Seedance 2.5',
+              width: VIDEO_READY_WIDTH,
+              height: VIDEO_READY_HEIGHT
+            });
+          }, DEMO_GENERATING_MS);
+          return;
+        }
+      }
+      executeNode(nodeId);
+    },
+    [edges, executeNode, nodes, patchNode]
   );
 
   /**
@@ -918,6 +1077,21 @@ function CanvasPage() {
     );
   }, [nodes, pendingConnection]);
 
+  /** 多选时统一渲染在包围盒右侧、垂直居中的那一个 ⊕（世界坐标，父层已经带了缩放/平移）。 */
+  const multiSelectAddAnchor = useMemo(() => {
+    if (selectedIds.length <= 1) {
+      return null;
+    }
+    const picked = nodes.filter((node) => selectedIds.includes(node.id));
+    if (picked.length < 2) {
+      return null;
+    }
+    const right = Math.max(...picked.map((node) => node.x + node.width));
+    const top = Math.min(...picked.map((node) => node.y));
+    const bottom = Math.max(...picked.map((node) => node.y + getNodeHeight(node)));
+    return { x: right + 10, y: (top + bottom) / 2 };
+  }, [nodes, selectedIds]);
+
   /** 打开时间线编辑器的节点；Timeline 节点和 Video 节点（Edit CTA）都能进全屏编辑态。 */
   const editorNode = useMemo(
     () => nodes.find((node) => node.id === editorNodeId && (node.kind === 'timeline' || node.kind === 'video')) ?? null,
@@ -940,7 +1114,9 @@ function CanvasPage() {
       <div
         ref={containerRef}
         className={clsx(
-          'absolute inset-0 touch-none',
+          // select-none：拖节点时鼠标划过别的卡片不会把它们的文字刷成一片选中态；
+          // 输入框/文本域再单独放开，卡片内的文案照样能选能改
+          'absolute inset-0 touch-none select-none [&_input]:select-text [&_textarea]:select-text',
           // 光标跟随工具：选择=箭头，手型=抓手，评论=十字
           pendingConnection
             ? 'cursor-crosshair'
@@ -989,6 +1165,7 @@ function CanvasPage() {
               onOutputPointerDown={handleOutputPointerDown}
               onInputPointerUp={handleInputPointerUp}
               onOpenAddPanel={openAddPanel}
+              showAddButton={selectedIds.length <= 1}
               onResizePointerDown={handleResizePointerDown}
               onDropOnCard={handleDropOnCard}
               onOpenEditor={(nodeId, launch) => {
@@ -996,13 +1173,28 @@ function CanvasPage() {
                 setEditorNodeId(nodeId);
               }}
               onRunTool={runTool}
-              onRun={executeNode}
+              onRun={handleVideoRun}
               onTextChange={handleTextChange}
-              onStoryboardReady={handleStoryboardReady}
+              onStoryboardGenerate={handleStoryboardGenerate}
+              onOperationGenerate={handleOperationGenerate}
               onDuplicate={duplicateNode}
               onDelete={removeNode}
             />
           ))}
+
+          {/* 多选时的共用 ⊕：包围盒右侧、垂直居中，选中的每张卡都会连去同一个新节点 */}
+          {multiSelectAddAnchor ? (
+            <button
+              type="button"
+              title="Add connected node"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={openMultiAddPanel}
+              className="absolute z-20 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-solid border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:border-primary-fill hover:text-primary-fill"
+              style={{ left: multiSelectAddAnchor.x, top: multiSelectAddAnchor.y }}
+            >
+              <KsIconPlus size={14} />
+            </button>
+          ) : null}
         </div>
       </div>
 

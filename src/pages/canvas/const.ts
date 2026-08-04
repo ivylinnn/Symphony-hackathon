@@ -65,6 +65,15 @@ export const STORYBOARD_READY_WIDTH = 1000;
 export const STORYBOARD_READY_HEIGHT = 1250;
 /** 手动新增的空分镜：小卡片 + 底部输入框，等用户输入后再长大。 */
 export const STORYBOARD_EMPTY_WIDTH = 320;
+/** Audio Clips：6 段配音要横着排开，跟分镜同宽才装得下。 */
+export const AUDIO_CLIPS_WIDTH = STORYBOARD_READY_WIDTH;
+/**
+ * 视频生成成功后的完整卡片尺寸。
+ * 名字已经移到卡片外，所以卡内只剩：上留白 12 + 9:16 画面 (width - 左右 padding 24) × 16/9
+ * + 间距 8 + 参数行 24 + 底部留白 36。
+ */
+export const VIDEO_READY_WIDTH = 460;
+export const VIDEO_READY_HEIGHT = Math.round(12 + ((VIDEO_READY_WIDTH - 24) * 16) / 9 + 8 + 24 + 36);
 const STORYBOARD_EMPTY_HEIGHT = 300;
 const BATCH_NODE_HEIGHT = 220;
 

@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { LIBRARY_ASSETS } from '../const';
+import type { CanvasNode } from '../types';
 
 /* ------------------------------------------------------------------ */
 /* 共用件                                                              */
@@ -1064,8 +1065,6 @@ function FrameField({
 let frameSeq = INITIAL_FRAMES.length;
 
 /** Storyboard 节点：分镜 + 旁白 + 描述，支持拖拽排序、追加分镜和逐帧录音。 */
-/** 生成态的等待时长，走完自动落满 6 帧。 */
-const STORYBOARD_GENERATING_MS = 5000;
 
 /** 生成中的旋转光晕：conic-gradient 背景在遮罩下只露出一圈边框，靠 transform 旋转，不依赖 @property 插值。 */
 function GeneratingGlow() {
@@ -1082,44 +1081,23 @@ function GeneratingGlow() {
   );
 }
 
+/**
+ * 空态 → 生成中 → 落满 6 帧，三段状态全部由 node.storyboardReady / node.status 驱动，
+ * 不在组件内部另存一份 phase —— 这样不管是这里的输入框触发，还是卡片通用的运行按钮触发，
+ * 结局都保证是同一条路径、同一个「落满 6 帧」的 outcome，不会半路撞上「没接后端」的报错。
+ */
 export function StoryboardBody({
-  nodeId,
-  seeded,
-  onReady
+  node,
+  onGenerate
 }: {
-  nodeId: string;
-  /** true 表示落地时就是落满 6 帧的完整态（模板/自动生成流程用）。 */
-  seeded?: boolean;
-  /** 生成完成时回调，通常用来把节点尺寸从空态的小卡片放大到完整尺寸。 */
-  onReady?: (nodeId: string) => void;
+  node: CanvasNode;
+  /** 触发生成；text 有值时先把它存成节点文案。 */
+  onGenerate: (nodeId: string, text?: string) => void;
 }) {
-  /** 空态 → 生成中 → 落满 6 帧；seeded 的节点直接从 ready 开始。 */
-  const [phase, setPhase] = useState<'empty' | 'generating' | 'ready'>(seeded ? 'ready' : 'empty');
-  const [draft, setDraft] = useState('');
-  const generatingTimerRef = useRef<number | null>(null);
+  const [draft, setDraft] = useState(node.text ?? '');
+  const isGenerating = node.status === 'generating' && !node.storyboardReady;
 
-  useEffect(
-    () => () => {
-      if (generatingTimerRef.current !== null) {
-        window.clearTimeout(generatingTimerRef.current);
-      }
-    },
-    []
-  );
-
-  const startGenerating = () => {
-    if (phase !== 'empty' || !draft.trim()) {
-      return;
-    }
-    setPhase('generating');
-    generatingTimerRef.current = window.setTimeout(() => {
-      onReady?.(nodeId);
-      setPhase('ready');
-    }, STORYBOARD_GENERATING_MS);
-  };
-
-  if (phase !== 'ready') {
-    const isGenerating = phase === 'generating';
+  if (!node.storyboardReady) {
     return (
       <div onPointerDown={(event) => event.stopPropagation()}>
         <div className="relative overflow-hidden rounded-xl p-[2px]">
@@ -1131,14 +1109,20 @@ export function StoryboardBody({
                 <span className="text-[11px] font-medium text-neutral-onFill">Generating storyboard…</span>
               </>
             ) : (
-              <>
-                <span className="text-neutral-onFill/70">
+              <button
+                type="button"
+                title="Generate storyboard"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => onGenerate(node.id, draft.trim() || undefined)}
+                className="flex flex-col items-center gap-1.5"
+              >
+                <span className="text-neutral-onFill/70 transition-colors hover:text-neutral-onFill">
                   <KsIconAiGeneration size={20} />
                 </span>
                 <span className="text-[11px] font-medium leading-[15px] text-neutral-onFill/85">
                   Describe the ad below to generate a storyboard
                 </span>
-              </>
+              </button>
             )}
           </div>
         </div>
@@ -1152,7 +1136,9 @@ export function StoryboardBody({
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                startGenerating();
+                if (draft.trim()) {
+                  onGenerate(node.id, draft.trim());
+                }
               }
             }}
             className="w-full bg-transparent text-[12px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface disabled:cursor-not-allowed"
@@ -1260,8 +1246,11 @@ function StoryboardReadyBody() {
             return (
               <div
                 key={frame.id}
-                // 原生拖拽排序：整格可拖，松手落到悬停位置
+                // 原生拖拽排序：整格可拖，松手落到悬停位置。
+                // pointerdown 必须拦在这里，否则会冒泡到卡片触发「拖动节点」并抢走指针捕获，
+                // 原生 dragstart 就永远不会发生。
                 draggable
+                onPointerDown={(event) => event.stopPropagation()}
                 onDragStart={(event) => {
                   setDragIndex(index);
                   event.dataTransfer.effectAllowed = 'move';
@@ -1612,7 +1601,8 @@ export function AudioClipsBody() {
                   title={`${clip.sourceName ?? clip.caption} — click to replace, drag to reorder`}
                   onClick={() => setPicker((current) => (current === clip.id ? null : clip.id))}
                   className={clsx(
-                    'flex size-full cursor-grab items-center gap-[2px] overflow-hidden rounded border border-solid px-1 text-left transition-colors active:cursor-grabbing',
+                    // pr-5 给右侧的删除按钮让位，波形不会钻到它底下
+                    'flex size-full cursor-grab items-center gap-[2px] overflow-hidden rounded border border-solid pl-1 pr-5 text-left transition-colors active:cursor-grabbing',
                     clip.url || clip.sourceName
                       ? 'border-success-fill/40 bg-success-fill/10'
                       : 'border-primary-fill/30 bg-primary-surface2 hover:bg-primary-surface3',
@@ -1629,6 +1619,19 @@ export function AudioClipsBody() {
                       style={{ height: Math.max(6, height / 2.4) }}
                     />
                   ))}
+                </button>
+                {/* 每段配音右端的删除按钮，和 BGM 那条保持一致 */}
+                <button
+                  type="button"
+                  title={`Remove ${clip.label}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setVoClips((current) => current.filter((item) => item.id !== clip.id));
+                  }}
+                  className="absolute right-0.5 top-1/2 z-10 -translate-y-1/2 rounded-full px-1 text-[13px] leading-none text-neutral-lowOnSurface transition-colors hover:text-error-fill"
+                >
+                  ×
                 </button>
                 {picker === clip.id ? renderPicker(clip.id) : null}
               </div>

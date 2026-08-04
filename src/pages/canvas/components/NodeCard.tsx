@@ -16,7 +16,7 @@ import {
   TikTokTrendBody
 } from './InspirationNodes';
 import NodeHoverToolbar, { VideoHoverToolbar } from './NodeHoverToolbar';
-import { PORT_TYPE_ICON } from './nodeIcons';
+import { NodeKindIcon, PORT_TYPE_ICON } from './nodeIcons';
 
 interface NodeCardProps {
   node: CanvasNode;
@@ -34,6 +34,10 @@ interface NodeCardProps {
   onOutputPointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, outputId: string) => void;
   onInputPointerUp: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, inputId: string) => void;
   onOpenAddPanel: (nodeId: string, outputId: string) => void;
+  /** 多选时（2 个以上节点同时选中）画布顶层统一渲染一个居中的 ⊕，卡片自己的就不再显示了。 */
+  showAddButton: boolean;
+  /** operation 类节点（如 Split A/V）敲回车或点运行：真正执行本节点，顺带按需接一个下游产物节点。 */
+  onOperationGenerate: (nodeId: string) => void;
   /** 拖右下角把手改节点尺寸。 */
   onResizePointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => void;
   /** 在卡片任意位置松手：自动挑一个类型匹配的输入完成连线。 */
@@ -45,37 +49,14 @@ interface NodeCardProps {
   onRun: (nodeId: string) => void;
   /** 编辑卡片内容（prompt / 文案）。 */
   onTextChange: (nodeId: string, text: string) => void;
-  /** Storyboard 生成完成：通常用来把节点从空态小卡片放大到完整尺寸。 */
-  onStoryboardReady: (nodeId: string) => void;
+  /** Storyboard 触发生成：卡片内的输入框和卡片通用的运行按钮都走这一个，结局都保证落满 6 帧。 */
+  onStoryboardGenerate: (nodeId: string, text?: string) => void;
   onDuplicate: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
 }
 
 /** 固定的一组波形高度，避免每帧随机导致重渲染时跳动。 */
 const WAVEFORM_BARS = [8, 16, 24, 14, 30, 20, 11, 26, 18, 9, 22, 28, 13, 19, 25, 10, 17, 23, 12, 27];
-
-function StatusChip({ status }: { status: CanvasNode['status'] }) {
-  if (status === 'generating') {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-primary-surface2 px-2 py-0.5 text-[10px] font-medium text-primary-onSurface">
-        <span className="size-1.5 animate-pulse rounded-full bg-primary-fill" />
-        Generating
-      </span>
-    );
-  }
-  if (status === 'done') {
-    return (
-      <span className="rounded-full bg-neutral-surface2 px-2 py-0.5 text-[10px] font-medium text-success-onSurface">
-        Ready
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-neutral-surface2 px-2 py-0.5 text-[10px] font-medium text-neutral-lowOnSurface">
-      Idle
-    </span>
-  );
-}
 
 /**
  * 端口小圆点，连线的实际吸附目标。
@@ -222,7 +203,8 @@ function NodeBody({
   isEnhanced = false,
   onTextChange,
   onOpenEditor,
-  onStoryboardReady
+  onStoryboardGenerate,
+  onOperationGenerate
 }: {
   node: CanvasNode;
   isHovered: boolean;
@@ -232,7 +214,8 @@ function NodeBody({
   isEnhanced?: boolean;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
-  onStoryboardReady: (nodeId: string) => void;
+  onStoryboardGenerate: (nodeId: string, text?: string) => void;
+  onOperationGenerate: (nodeId: string) => void;
 }) {
   const config = NODE_KIND_CONFIG[node.kind];
 
@@ -249,7 +232,7 @@ function NodeBody({
     return <TikTokTrendBody initialTrendId={node.trendId} />;
   }
   if (config.body === 'storyboard') {
-    return <StoryboardBody nodeId={node.id} seeded={node.storyboardReady} onReady={onStoryboardReady} />;
+    return <StoryboardBody node={node} onGenerate={onStoryboardGenerate} />;
   }
   if (config.body === 'audio-clips') {
     return <AudioClipsBody />;
@@ -404,9 +387,20 @@ function NodeBody({
 
   if (config.body === 'operation') {
     return (
-      <div className="rounded-xl bg-neutral-surface1 p-2">
+      <div className="rounded-xl bg-neutral-surface1 p-2" onPointerDown={(event) => event.stopPropagation()}>
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Inputs</div>
-        <p className="line-clamp-3 text-[12px] leading-[17px] text-neutral-mediumOnSurface">{config.description}</p>
+        <input
+          value={node.text ?? ''}
+          placeholder={config.description}
+          onChange={(event) => onTextChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onOperationGenerate(node.id);
+            }
+          }}
+          className="w-full bg-transparent text-[12px] leading-[17px] text-neutral-highOnSurface outline-none placeholder:text-neutral-mediumOnSurface"
+        />
       </div>
     );
   }
@@ -492,19 +486,19 @@ function NodeCard({
   onOutputPointerDown,
   onInputPointerUp,
   onOpenAddPanel,
+  showAddButton,
   onResizePointerDown,
   onDropOnCard,
   onOpenEditor,
   onRunTool,
   onRun,
   onTextChange,
-  onStoryboardReady,
+  onStoryboardGenerate,
+  onOperationGenerate,
   onDuplicate,
   onDelete
 }: NodeCardProps) {
   const config = NODE_KIND_CONFIG[node.kind];
-  const isAdsNative = config.category === 'ads-native';
-  const isEdit = config.category === 'edit';
   /** 端口与操作条只在 hover / 选中 / 正在连线时露出，画布才不会显得杂乱。 */
   const isActive = isHovered || isSelected || isConnecting;
   const lastOutputIndex = config.outputs.length - 1;
@@ -565,6 +559,20 @@ function NodeCard({
       onDoubleClick={() => onOpenEditor(node.id)}
       data-node-kind={node.kind}
     >
+      {/* 卡片外的名字行（Flora 风格）：图标 + 名字挂在卡片左上角外侧。
+          hover/选中时这块位置让给操作条，避免两者叠在一起。 */}
+      {isHovered || isSoleSelection ? null : (
+        <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 flex max-w-full items-center gap-1.5 text-neutral-mediumOnSurface">
+          <span className="shrink-0">
+            <NodeKindIcon kind={node.kind} size={13} />
+          </span>
+          <span className="truncate text-[12px] font-medium">{node.title}</span>
+          {node.status === 'generating' ? (
+            <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-solid border-neutral-fillMedHigh border-t-primary-fill" />
+          ) : null}
+        </div>
+      )}
+
       {isHovered || isSoleSelection ? (
         node.kind === 'video' && node.videoUrl ? (
           <VideoHoverToolbar
@@ -597,31 +605,29 @@ function NodeCard({
         )}
         onPointerDown={(event) => onPointerDown(event, node.id)}
       >
-        <div className="flex h-9 items-center justify-between gap-2 px-3">
-          <span
-            className={clsx(
-              'truncate text-[11px] font-semibold uppercase tracking-wide',
-              isAdsNative || isEdit ? 'text-primary-onSurface' : 'text-neutral-lowOnSurface'
-            )}
-          >
-            {config.label}
-          </span>
-          <StatusChip status={node.status} />
-        </div>
-
-        <div className="min-h-0 flex-1 px-3 pb-9">
+        <div className="min-h-0 flex-1 px-3 pb-9 pt-3">
           <NodeBody
             node={node}
             isHovered={isHovered}
             videoRotation={videoRotation}
             isEnhanced={isEnhanced}
             onTextChange={(text) => onTextChange(node.id, text)}
-            onStoryboardReady={onStoryboardReady}
+            onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}
+            onOperationGenerate={onOperationGenerate}
           />
         </div>
 
-        <RunFooter node={node} onRun={onRun} />
+        <RunFooter
+          node={node}
+          onRun={
+            config.body === 'operation'
+              ? onOperationGenerate
+              : config.body === 'storyboard'
+                ? (nodeId) => onStoryboardGenerate(nodeId)
+                : onRun
+          }
+        />
       </div>
 
       {/* 端口常驻可见，标签只在 hover/选中/拉线时浮现 */}
@@ -647,8 +653,8 @@ function NodeCard({
         />
       ))}
 
-      {/* ⊕：从最后一个输出往下挂，点开可直接添加下游节点 */}
-      {isActive ? (
+      {/* ⊕：从最后一个输出往下挂，点开可直接添加下游节点；多选时顶层统一渲染一个，这里就不重复了 */}
+      {isActive && showAddButton ? (
         <button
           type="button"
           title="Add connected node"

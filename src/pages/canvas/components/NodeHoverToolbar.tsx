@@ -4,7 +4,6 @@ import {
   KsIconCamera,
   KsIconChevronDown,
   KsIconCopyContent,
-  KsIconCrop,
   KsIconCut,
   KsIconDelete,
   KsIconDownload,
@@ -12,15 +11,18 @@ import {
   KsIconFilledLock,
   KsIconFullScreen,
   KsIconHd,
+  KsIconImageCollection,
+  KsIconPen,
   KsIconPeople,
-  KsIconRedo,
   KsIconRotate,
-  KsIconSection,
   KsIconSeperateAudio,
+  KsIconSound,
   KsIconSpeed,
   KsIconTextFile,
+  KsIconTips,
   KsIconToolbox,
-  KsIconUndo
+  KsIconUndo,
+  KsIconVideoClip
 } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useState } from 'react';
@@ -207,21 +209,24 @@ export function VideoHoverToolbar({
     active?: boolean;
     onClick: () => void;
   }> = [
-    { label: 'Extract frame', hint: 'Save the current frame as an image', icon: <KsIconCamera size={ICON_SIZE} />, onClick: onExtractFrame },
-    { label: 'Enhance', hint: 'Boost clarity and color (HD)', icon: <KsIconHd size={ICON_SIZE} />, active: isEnhanced, onClick: onToggleEnhance },
-    { label: 'Trim', hint: 'Tighten the cut in the editor', icon: <KsIconSection size={ICON_SIZE} />, onClick: () => onEditorPrompt('Trim the cut tighter') },
-    { label: 'Separate audio', hint: 'Split the audio track from the video', icon: <KsIconSeperateAudio size={ICON_SIZE} />, onClick: onSeparateAudio },
-    { label: 'Crop', hint: 'Reframe for another placement', icon: <KsIconCrop size={ICON_SIZE} />, onClick: () => onEditorPrompt('Reformat this video for another social platform') },
-    { label: 'Analyze', hint: 'Open the transcript and scene breakdown', icon: <KsIconTextFile size={ICON_SIZE} />, onClick: onOpenEditor },
-    { label: 'Smart cutout', hint: 'Circle an object and replace or remove it', icon: <KsIconPeople size={ICON_SIZE} />, onClick: onEditorDraw },
-    { label: 'Reshoot clip', hint: 'Regenerate the opening with AI', icon: <KsIconRedo size={ICON_SIZE} />, onClick: () => onEditorPrompt('Swap the hook for a fresh opening') },
-    { label: 'Rotate', hint: 'Rotate the video 90°', icon: <KsIconRotate size={ICON_SIZE} />, onClick: onRotate }
+    { label: 'AI fix', hint: 'Let the agent clean up the cut', icon: <KsIconAiGeneration size={ICON_SIZE} />, onClick: () => onEditorPrompt('Fix the issues in this cut') },
+    { label: 'Modify', hint: 'Circle an area and describe the change', icon: <KsIconPen size={ICON_SIZE} />, onClick: onEditorDraw },
+    { label: 'Swap product', hint: 'Replace the product shown in the shot', icon: <KsIconImageCollection size={ICON_SIZE} />, onClick: () => onEditorPrompt('Swap the product in this shot') },
+    { label: 'Character', hint: 'Change who appears in the cut', icon: <KsIconPeople size={ICON_SIZE} />, onClick: () => onEditorPrompt('Change the character in this cut') },
+    { label: 'Extend', hint: 'Make the cut run longer', icon: <KsIconArrowRight size={ICON_SIZE} />, onClick: () => onEditorPrompt('Extend the cut to 20 seconds') },
+    { label: 'Caption', hint: 'Add or rewrite the on-screen captions', icon: <KsIconTextFile size={ICON_SIZE} />, onClick: () => onEditorPrompt('Add captions to this cut') },
+    { label: 'Camera control', hint: 'Change the camera move', icon: <KsIconVideoClip size={ICON_SIZE} />, onClick: () => onEditorPrompt('Add a slow push-in camera move') },
+    { label: 'Lighting', hint: 'Relight the scene', icon: <KsIconTips size={ICON_SIZE} />, onClick: () => onEditorPrompt('Relight the scene with warm golden-hour light') },
+    { label: 'Audio', hint: 'Adjust the audio mix', icon: <KsIconSound size={ICON_SIZE} />, onClick: () => onEditorPrompt('Adjust the audio mix') }
   ];
 
+  /* 画布上能就地完成的那几个（抽帧/高清/旋转/音频分离）收进 ⋯，主条留给 AI 编辑动作。 */
   const moreActions: Array<{ label: string; icon: React.ReactNode; onClick: () => void }> = [
     { label: 'Open in editor', icon: <KsIconCut size={13} />, onClick: onOpenEditor },
-    { label: 'Remove subtitles', icon: <KsIconTextFile size={13} />, onClick: () => onEditorPrompt('Remove the captions') },
-    { label: 'Extend clip', icon: <KsIconArrowRight size={13} />, onClick: () => onEditorPrompt('Extend the cut to 20 seconds') },
+    { label: 'Extract frame', icon: <KsIconCamera size={13} />, onClick: onExtractFrame },
+    { label: isEnhanced ? 'Enhance · on' : 'Enhance', icon: <KsIconHd size={13} />, onClick: onToggleEnhance },
+    { label: 'Rotate', icon: <KsIconRotate size={13} />, onClick: onRotate },
+    { label: 'Separate audio', icon: <KsIconSeperateAudio size={13} />, onClick: onSeparateAudio },
     { label: 'Reverse', icon: <KsIconUndo size={13} />, onClick: () => onEditorPrompt('Play the cut in reverse') },
     { label: 'Speed', icon: <KsIconSpeed size={13} />, onClick: () => onEditorPrompt('Speed up the whole cut') }
   ];
