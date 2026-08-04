@@ -31,8 +31,10 @@ const buildVideoClips = (duration: number) => [
 
 /** 卖点动效应用后，预览切到的成片（带 selling-point 贴片的渲染版本）。 */
 export const SELLING_POINT_VIDEO_URL = '/video-with-selling-points.mp4';
-/** 片尾卡应用后，预览切到的 end card 成片（summer sale 5s）。 */
+/** 片尾卡素材（summer sale 5s）：应用后接在时间线所有元素之后。 */
 export const END_CARD_VIDEO_URL = '/end-card-summer-sale.mp4';
+/** 片尾卡时长（秒）。 */
+const END_CARD_SECONDS = 5;
 
 /**
  * 离屏抽帧：同源视频逐点 seek，canvas 抓帧转 dataURL。
@@ -95,6 +97,8 @@ interface NodeEditDockProps {
   sellingPoints: string[];
   /** Creative agent 贴的品牌片尾卡：贴在时间线结尾。 */
   hasEndCard: boolean;
+  /** Creative agent 落的促销文案；有值时在图形轨后半段铺一条 promo 贴片。 */
+  promotion: string | null;
   onClose: () => void;
 }
 
@@ -102,7 +106,7 @@ interface NodeEditDockProps {
  * 内联编辑模式的底部时间线坞（agent 对话在右侧的 Creative agent 面板里）。
  * 画布把镜头推近节点后，本组件从底部滑入，绑定该节点的视频做播放同步。
  */
-function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, onClose }: NodeEditDockProps) {
+function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, promotion, onClose }: NodeEditDockProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -115,8 +119,13 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
   /** 视频解不了码（缺编解码器等）：解绑，播放头退回本地推进。 */
   const [videoBroken, setVideoBroken] = useState(false);
 
+  /** 片尾卡的胶片帧，接在主片之后单独抽。 */
+  const [endCardStrip, setEndCardStrip] = useState<string[]>([]);
+
   const pxPerSecond = BASE_PX_PER_SECOND * timelineZoom;
-  const timelineWidth = duration * pxPerSecond;
+  /** 主片 + 片尾卡的总时长；标尺、播放头、走带都以它为准。 */
+  const totalDuration = duration + (hasEndCard ? END_CARD_SECONDS : 0);
+  const timelineWidth = totalDuration * pxPerSecond;
 
   /* Esc 直接退出编辑模式，回到画布。 */
   useEffect(() => {
@@ -191,6 +200,25 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     };
   }, [videoUrl]);
 
+  /* 片尾卡上时间线时，从 end card 视频里抽几帧铺它自己的清单块。 */
+  useEffect(() => {
+    if (!hasEndCard) {
+      setEndCardStrip([]);
+      return;
+    }
+    let cancelled = false;
+    extractFilmstrip(END_CARD_VIDEO_URL, 3)
+      .then((frames) => {
+        if (!cancelled) {
+          setEndCardStrip(frames);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hasEndCard]);
+
   /* 兜底播放：没有真实视频可绑时，本地推进播放头，到尾停住。 */
   useEffect(() => {
     if (!isPlaying || boundVideoRef.current) {
@@ -199,18 +227,18 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     const timer = window.setInterval(() => {
       setCurrentTime((time) => {
         const next = time + PLAYBACK_TICK_MS / 1000;
-        if (next >= duration) {
+        if (next >= totalDuration) {
           setIsPlaying(false);
-          return duration;
+          return totalDuration;
         }
         return next;
       });
     }, PLAYBACK_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [duration, isPlaying]);
+  }, [isPlaying, totalDuration]);
 
   const seekTo = (time: number) => {
-    const clamped = Math.min(duration, Math.max(0, time));
+    const clamped = Math.min(totalDuration, Math.max(0, time));
     const video = boundVideoRef.current;
     if (video) {
       video.currentTime = clamped;
@@ -247,7 +275,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
   };
 
   const rulerMarks = [];
-  for (let second = 0; second <= Math.ceil(duration / 5) * 5; second += 5) {
+  for (let second = 0; second <= Math.ceil(totalDuration / 5) * 5; second += 5) {
     rulerMarks.push(second);
   }
 
@@ -297,7 +325,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
 
         <span className="text-[13px] font-medium tabular-nums text-neutral-highOnSurface">
           {formatTime(currentTime)}
-          <span className="text-neutral-lowOnSurface"> / {formatTime(duration)}</span>
+          <span className="text-neutral-lowOnSurface"> / {formatTime(totalDuration)}</span>
         </span>
         <button
           type="button"
@@ -318,7 +346,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
         <button
           type="button"
           title="Jump to end"
-          onClick={() => seekTo(duration)}
+          onClick={() => seekTo(totalDuration)}
           className="flex size-7 items-center justify-center rounded-lg text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
         >
           ⏭
@@ -419,24 +447,46 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
                   </span>
                 </div>
               ))}
+              {/* 片尾卡：接在所有元素之后的独立片段，原视频不动 */}
+              {hasEndCard ? (
+                <div
+                  title="Summer sale end card (5s)"
+                  data-end-card-clip
+                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/60 bg-primary-surface2"
+                  style={{ left: duration * pxPerSecond + 2, width: END_CARD_SECONDS * pxPerSecond - 2 }}
+                >
+                  {endCardStrip.length > 0 ? (
+                    <div className="absolute inset-y-0 flex w-full">
+                      {endCardStrip.map((frame, index) => (
+                        // 胶片帧顺序固定，用下标当 key 没问题
+                        // eslint-disable-next-line react/no-array-index-key
+                        <img key={index} src={frame} alt="" draggable={false} className="h-full flex-1 object-cover" />
+                      ))}
+                    </div>
+                  ) : null}
+                  <span className="absolute left-1.5 top-1 rounded bg-neutral-fillHigh/70 px-1 text-[10px] font-semibold text-neutral-onFill">
+                    End card
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             {/* 轨道 1：卖点动效轨。空着等 agent 问答落 callout，一个卖点一条 */}
             <div className="relative h-14 py-1.5">
-              {sellingGraphics.length === 0 && !hasEndCard ? (
+              {sellingGraphics.length === 0 && !promotion ? (
                 <span className="absolute inset-y-1.5 flex items-center px-2 text-[10px] text-neutral-lowOnSurface">
                   Motion graphics land here — ask the Creative agent to call out selling points.
                 </span>
               ) : null}
-              {hasEndCard ? (
+              {promotion ? (
                 <div
-                  title="Branded end card — logo, offer and CTA"
-                  data-end-card-clip
-                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/50 bg-primary-surface2"
-                  style={{ left: duration * 0.86 * pxPerSecond, width: duration * 0.14 * pxPerSecond - 2 }}
+                  title={`Promotion — ${promotion}`}
+                  data-promotion-clip
+                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-rose-300 bg-rose-100"
+                  style={{ left: duration * 0.55 * pxPerSecond, width: duration * 0.43 * pxPerSecond - 2 }}
                 >
-                  <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-primary-onSurface">
-                    ⛳ End card
+                  <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-rose-700">
+                    % {promotion}
                   </span>
                 </div>
               ) : null}

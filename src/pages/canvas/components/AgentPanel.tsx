@@ -24,6 +24,8 @@ export interface AgentEditingContext {
   onApplySellingPoints: (points: string[]) => void;
   /** 片尾卡：在时间线结尾贴一张品牌 end card。 */
   onApplyEndCard: () => void;
+  /** 促销贴片：把优惠文案落到时间线上。 */
+  onApplyPromotion: (text: string) => void;
 }
 
 interface AgentPanelProps {
@@ -44,7 +46,18 @@ interface AgentPanelProps {
 /* ------------------------------------------------------------------ */
 
 /** 剪辑步骤的快捷诉求。 */
-const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Add selling points', 'Add end card', 'Swap product'];
+const EDIT_QUICK_ACTIONS = [
+  'Trim silences',
+  'Add captions',
+  'Add selling points',
+  'Add promotion',
+  'Add end card',
+  'Swap product'
+];
+/** 促销入口：先问打什么优惠，再落 promo 贴片。 */
+const PROMOTION_ACTION = 'Add promotion';
+/** 促销文案建议，第一条来自 brief 的默认 offer。 */
+const PROMO_SUGGESTIONS = ['20% off summer sale', 'Free shipping this week', 'Buy 2, get 1 free'];
 /** 片尾卡入口：把品牌 end card 贴到时间线结尾。 */
 const END_CARD_ACTION = 'Add end card';
 /** 卖点动效的追问入口：先问卖点，再按卖点落图形。 */
@@ -117,7 +130,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
   /* —— 剪辑对话的本地状态 —— */
   const [editMessages, setEditMessages] = useState<EditMessage[]>([]);
   const [isEditBusy, setIsEditBusy] = useState(false);
-  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | null>(null);
+  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | 'promotion' | null>(null);
   const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
   const replyTimerRef = useRef<number | null>(null);
 
@@ -183,13 +196,38 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
       return;
     }
 
+    // 促销：拿到优惠文案就落贴片
+    if (pendingIntent === 'promotion') {
+      setPendingIntent(null);
+      editReply(() => {
+        editing.onApplyPromotion(prompt);
+        return {
+          id: nextEditMessageId(),
+          role: 'agent',
+          content: `Added the promotion — “${prompt}” runs as a banner over the back half of the cut, clear of the hook.`
+        };
+      });
+      return;
+    }
+
+    if (prompt === PROMOTION_ACTION) {
+      setPendingIntent('promotion');
+      editReply(() => ({
+        id: nextEditMessageId(),
+        role: 'agent',
+        content: 'What offer should the promotion show? Pick one below or type your own.',
+        options: PROMO_SUGGESTIONS
+      }));
+      return;
+    }
+
     if (prompt === END_CARD_ACTION) {
       editReply(() => {
         editing.onApplyEndCard();
         return {
           id: nextEditMessageId(),
           role: 'agent',
-          content: 'Added the branded end card — logo, offer and CTA hold the last seconds of the cut, and the preview now plays the end-card render.'
+          content: 'Added the branded end card — it plays after the CTA, at the end of everything on the timeline. The original cut is untouched.'
         };
       });
       return;
@@ -243,6 +281,9 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
     // sendEdit 依赖易变状态；这段只在换编辑对象时跑一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+
+  /** 只有最新的带选项消息才渲染可点选项，旧问题不再响应。 */
+  const lastOptionsMessageId = [...editMessages].reverse().find((message) => message.options)?.id ?? null;
 
   const togglePoint = (point: string) =>
     setSelectedPoints((current) =>
@@ -311,7 +352,21 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
                   {message.content}
                 </div>
                 {/* 追问的多选选项：勾选后由确认按钮统一发送 */}
-                {message.options && pendingIntent ? (
+                {message.options && message.id === lastOptionsMessageId && pendingIntent === 'promotion' ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {message.options.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        data-promo-option
+                        onClick={() => sendEdit(option)}
+                        className="rounded-full border border-solid border-primary-fill bg-neutral-surface px-2.5 py-1 text-[11px] font-medium text-primary-onSurface transition-colors hover:bg-primary-surface2"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                ) : message.options && message.id === lastOptionsMessageId && pendingIntent ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {message.options.map((option) => {
                       const isPicked = selectedPoints.includes(option);

@@ -13,12 +13,7 @@ import Minimap from './components/Minimap';
 import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
-import NodeEditDock, {
-  EDIT_DOCK_BOTTOM_H,
-  EDIT_DOCK_RIGHT_W,
-  END_CARD_VIDEO_URL,
-  SELLING_POINT_VIDEO_URL
-} from './components/NodeEditDock';
+import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
 import {
   AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
@@ -214,6 +209,8 @@ function CanvasPage() {
   const [editSellingPoints, setEditSellingPoints] = useState<string[]>([]);
   /** Creative agent 贴的品牌片尾卡。 */
   const [editHasEndCard, setEditHasEndCard] = useState(false);
+  /** Creative agent 落的促销文案。 */
+  const [editPromotion, setEditPromotion] = useState<string | null>(null);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -263,6 +260,7 @@ function CanvasPage() {
       setEditDock({ nodeId, prompt });
       setEditSellingPoints([]);
       setEditHasEndCard(false);
+      setEditPromotion(null);
       // 剪辑步骤强制展开 Creative agent，剪辑对话就在这一个面板里
       setIsAgentOpen(true);
     },
@@ -274,6 +272,7 @@ function CanvasPage() {
     setEditDock(null);
     setEditSellingPoints([]);
     setEditHasEndCard(false);
+    setEditPromotion(null);
     if (preEditViewportRef.current) {
       animateViewportTo(preEditViewportRef.current);
       preEditViewportRef.current = null;
@@ -1792,6 +1791,7 @@ function CanvasPage() {
           posterUrl={editDockNode.assetUrl}
           sellingPoints={editSellingPoints}
           hasEndCard={editHasEndCard}
+          promotion={editPromotion}
           onClose={exitEditMode}
         />
       ) : null}
@@ -1817,17 +1817,9 @@ function CanvasPage() {
                     height: VIDEO_READY_HEIGHT
                   });
                 },
-                onApplyEndCard: () => {
-                  setEditHasEndCard(true);
-                  // 预览切到带片尾卡的 summer sale 渲染版本
-                  patchNode(editDockNode.id, {
-                    videoUrl: END_CARD_VIDEO_URL,
-                    status: 'done',
-                    note: 'End-card render',
-                    width: VIDEO_READY_WIDTH,
-                    height: VIDEO_READY_HEIGHT
-                  });
-                }
+                // 原视频不动：片尾卡只作为时间线末尾的元素出现
+                onApplyEndCard: () => setEditHasEndCard(true),
+                onApplyPromotion: (text) => setEditPromotion(text)
               }
             : null
         }
