@@ -18,7 +18,7 @@ export const PLAN_AUDIENCES = ['Gen Z', 'Parents', 'Fitness enthusiasts'];
 export const PLAN_PLATFORMS = ['TikTok', 'Reels', 'Shorts'];
 export const PLAN_DIRECTIONS = ['Lifestyle', 'Product demo', 'Testimonial'];
 
-export const MAX_VARIATIONS = 6;
+export const MAX_VARIATIONS = 3;
 
 export const DEFAULT_VARIATION_PLAN: VariationPlan = {
   objective: 'Conversion',
@@ -26,7 +26,7 @@ export const DEFAULT_VARIATION_PLAN: VariationPlan = {
   offer: '20% off summer sale',
   platform: 'TikTok',
   direction: 'Lifestyle',
-  count: 6
+  count: 3
 };
 
 /* ------------------------------------------------------------------ */

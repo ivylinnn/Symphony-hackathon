@@ -83,12 +83,12 @@ export const PRODUCT_BRIEF_HEIGHT = 440;
 export const VARIATION_PLANNER_EXTRA = 372;
 /** Strategy 卡：方向 + 理由 + 受众 + 生成入口。 */
 const STRATEGY_NODE_HEIGHT = 264;
-/** Variation set 收起态：标题 + 2×3 迷你预览 + 底部操作。 */
+/** Variation set 收起态：标题 + 一行 3 张迷你预览 + 底部操作。 */
 export const VARIATION_SET_WIDTH = 336;
-export const VARIATION_SET_HEIGHT = 396;
+export const VARIATION_SET_HEIGHT = 300;
 /** Variation set 展开态：完整变体卡 + Keep/Vary 控制区。 */
 export const VARIATION_SET_EXPANDED_WIDTH = 720;
-export const VARIATION_SET_EXPANDED_HEIGHT = 860;
+export const VARIATION_SET_EXPANDED_HEIGHT = 640;
 
 /** 生成类节点通用的输入组合，和 Flora 的 Prompt/Image/Video/Audio 一致。 */
 const GENERATIVE_INPUTS: NodePortSpec[] = [
