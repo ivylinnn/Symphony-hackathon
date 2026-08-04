@@ -206,6 +206,8 @@ function CanvasPage() {
   const [editDock, setEditDock] = useState<{ nodeId: string; prompt?: string } | null>(null);
   /** Creative agent 确认的卖点，交给时间线坞落成图形轨 callout。 */
   const [editSellingPoints, setEditSellingPoints] = useState<string[]>([]);
+  /** Creative agent 贴的品牌片尾卡。 */
+  const [editHasEndCard, setEditHasEndCard] = useState(false);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -254,6 +256,7 @@ function CanvasPage() {
       const prompt = launch?.prompt ?? (launch?.draw ? 'Select an area of the frame to modify' : undefined);
       setEditDock({ nodeId, prompt });
       setEditSellingPoints([]);
+      setEditHasEndCard(false);
       // 剪辑步骤强制展开 Creative agent，剪辑对话就在这一个面板里
       setIsAgentOpen(true);
     },
@@ -264,6 +267,7 @@ function CanvasPage() {
   const exitEditMode = useCallback(() => {
     setEditDock(null);
     setEditSellingPoints([]);
+    setEditHasEndCard(false);
     if (preEditViewportRef.current) {
       animateViewportTo(preEditViewportRef.current);
       preEditViewportRef.current = null;
@@ -1771,6 +1775,7 @@ function CanvasPage() {
           videoUrl={editDockNode.videoUrl}
           posterUrl={editDockNode.assetUrl}
           sellingPoints={editSellingPoints}
+          hasEndCard={editHasEndCard}
           onClose={exitEditMode}
         />
       ) : null}
@@ -1795,7 +1800,8 @@ function CanvasPage() {
                     width: VIDEO_READY_WIDTH,
                     height: VIDEO_READY_HEIGHT
                   });
-                }
+                },
+                onApplyEndCard: () => setEditHasEndCard(true)
               }
             : null
         }

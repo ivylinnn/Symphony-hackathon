@@ -91,6 +91,8 @@ interface NodeEditDockProps {
   posterUrl?: string;
   /** Creative agent 确认的卖点，按顺序落成图形轨上的 callout。 */
   sellingPoints: string[];
+  /** Creative agent 贴的品牌片尾卡：贴在时间线结尾。 */
+  hasEndCard: boolean;
   onClose: () => void;
 }
 
@@ -98,7 +100,7 @@ interface NodeEditDockProps {
  * 内联编辑模式的底部时间线坞（agent 对话在右侧的 Creative agent 面板里）。
  * 画布把镜头推近节点后，本组件从底部滑入，绑定该节点的视频做播放同步。
  */
-function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, onClose }: NodeEditDockProps) {
+function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, onClose }: NodeEditDockProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -419,10 +421,22 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, onClose }: N
 
             {/* 轨道 1：卖点动效轨。空着等 agent 问答落 callout，一个卖点一条 */}
             <div className="relative h-14 py-1.5">
-              {sellingGraphics.length === 0 ? (
+              {sellingGraphics.length === 0 && !hasEndCard ? (
                 <span className="absolute inset-y-1.5 flex items-center px-2 text-[10px] text-neutral-lowOnSurface">
                   Motion graphics land here — ask the Creative agent to call out selling points.
                 </span>
+              ) : null}
+              {hasEndCard ? (
+                <div
+                  title="Branded end card — logo, offer and CTA"
+                  data-end-card-clip
+                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/50 bg-primary-surface2"
+                  style={{ left: duration * 0.86 * pxPerSecond, width: duration * 0.14 * pxPerSecond - 2 }}
+                >
+                  <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-primary-onSurface">
+                    ⛳ End card
+                  </span>
+                </div>
               ) : null}
               {sellingGraphics.map((graphic) => (
                 <div

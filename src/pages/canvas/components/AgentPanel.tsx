@@ -22,6 +22,8 @@ export interface AgentEditingContext {
   initialPrompt?: string;
   /** 卖点动效确认后回调：由画布落时间线贴片并换成渲染版视频。 */
   onApplySellingPoints: (points: string[]) => void;
+  /** 片尾卡：在时间线结尾贴一张品牌 end card。 */
+  onApplyEndCard: () => void;
 }
 
 interface AgentPanelProps {
@@ -42,7 +44,9 @@ interface AgentPanelProps {
 /* ------------------------------------------------------------------ */
 
 /** 剪辑步骤的快捷诉求。 */
-const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Add selling points', 'Swap product'];
+const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Add selling points', 'Add end card', 'Swap product'];
+/** 片尾卡入口：把品牌 end card 贴到时间线结尾。 */
+const END_CARD_ACTION = 'Add end card';
 /** 卖点动效的追问入口：先问卖点，再按卖点落图形。 */
 const MOTION_GRAPHICS_ACTION = 'Add selling points';
 /** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
@@ -176,6 +180,18 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
           }
         ]);
       }, AGENT_REPLY_MS);
+      return;
+    }
+
+    if (prompt === END_CARD_ACTION) {
+      editReply(() => {
+        editing.onApplyEndCard();
+        return {
+          id: nextEditMessageId(),
+          role: 'agent',
+          content: 'Added the branded end card — logo, offer and CTA hold the last seconds of the cut. It sits at the tail of track 1.'
+        };
+      });
       return;
     }
 
