@@ -1,4 +1,4 @@
-import { KsIconFolder, KsIconPlus, KsIconSound, KsIconUpload } from '@fe-infra/keystone-icons-react';
+import { KsIconAiGeneration, KsIconFolder, KsIconPlus, KsIconSound, KsIconUpload } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -14,7 +14,7 @@ import { LIBRARY_ASSETS } from '../const';
  * wheel 必须在原生捕获阶段拦下来，否则画布容器的 passive:false 监听会把
  * 滚动劫持成平移；pointerdown 也要拦住，避免拖滚动条变成拖卡片。
  */
-function ScrollArea({ className, children }: { className?: string; children: ReactNode }) {
+export function ScrollArea({ className, children }: { className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -348,9 +348,9 @@ function ImageMention({ image, index }: { image: ProductImage; index: number }) 
   );
 }
 
-export function ProductBriefBody() {
+export function ProductBriefBody({ heightClass = 'h-full' }: { heightClass?: string } = {}) {
   return (
-    <ScrollArea className="h-[352px] pr-1">
+    <ScrollArea className={clsx(heightClass, 'pr-1')}>
       <FieldLabel>Product name</FieldLabel>
       <div className="rounded-lg bg-neutral-surface1 p-2">
         <div className="mb-1.5 flex gap-1.5">
@@ -586,6 +586,15 @@ const makeLibraryTrend = (
 
 /** Top ads 库：真实趋势 + 陈列位。 */
 const TREND_LIBRARY: TrendSpec[] = [
+  makeLibraryTrend(
+    'lib-mukbang-bowl',
+    "One more bite before it's gone",
+    'Mukbang creator',
+    '44.6M',
+    '01:29',
+    'Food & Beverage',
+    'linear-gradient(160deg,#6b4a2a,#2c1c10)'
+  ),
   ...TIKTOK_TRENDS,
   makeLibraryTrend('lib-milk', 'Slow pour ASMR', 'Oat&Co', '40.5M', '00:09', 'Food & Beverage', 'linear-gradient(160deg,#5b7d8a,#1d3038)'),
   makeLibraryTrend('lib-coffee', 'Handoff iced latte', 'Daily Drip', '27.1M', '00:11', 'Food & Beverage', 'linear-gradient(160deg,#7a6a4a,#2c2416)'),
@@ -675,7 +684,7 @@ function HelpDot() {
  * Select a trend 弹窗：Top ads / Templates 两个库 + 筛选行。
  * portal 到 body，避免被画布 transform 锚定。
  */
-function TrendModal({
+export function TrendModal({
   activeId,
   onPick,
   onClose
@@ -790,9 +799,38 @@ function TrendModal({
 }
 
 /** TikTok trend 节点：展示被复刻的真实趋势，可打开弹窗换一条。 */
-export function TikTokTrendBody() {
-  const [trend, setTrend] = useState<TrendSpec>(TIKTOK_TRENDS[0]);
+export function TikTokTrendBody({ initialTrendId }: { initialTrendId?: string } = {}) {
+  // 没有预设趋势时从空态开始，等用户主动挑选
+  const [trend, setTrend] = useState<TrendSpec | null>(
+    () => TREND_LIBRARY.find((item) => item.id === initialTrendId) ?? null
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  if (!trend) {
+    return (
+      <div onPointerDown={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="flex aspect-[9/16] w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-neutral-fillLow bg-neutral-surface1 text-neutral-lowOnSurface transition-colors hover:border-primary-fill hover:text-primary-fill"
+        >
+          <KsIconAiGeneration size={20} />
+          <span className="text-[12px] font-medium">Select a trend</span>
+          <span className="max-w-[80%] text-center text-[10px] leading-[13px] text-neutral-lowOnSurface">
+            Pick a Top Ad or template to replicate
+          </span>
+        </button>
+
+        {isModalOpen ? (
+          <TrendModal
+            activeId=""
+            onPick={(picked) => setTrend(picked)}
+            onClose={() => setIsModalOpen(false)}
+          />
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div onPointerDown={(event) => event.stopPropagation()}>
@@ -871,7 +909,13 @@ interface StoryboardFrame {
   id: string;
   title: string;
   description: string;
+  /** 镜头调度说明。 */
+  action: string;
   voiceover: string;
+  /** 生成该帧用的图像提示词。 */
+  prompt: string;
+  /** 分镜草图。 */
+  image?: string;
   /** 本地录制的旁白音频（objectURL）。 */
   recordingUrl?: string;
 }
@@ -882,49 +926,247 @@ const INITIAL_FRAMES: StoryboardFrame[] = [
     title: 'Backstreet Push-Off',
     description:
       'A young male skater in a dark short-sleeve hoodie pushes fast through a sun-drenched LA alley. Fisheye angle captures the cracked ground and fence. Hoodie fabric snaps in the wind, showing the hood and kangaroo pocket clearly.',
-    voiceover: '“Upgrade your daily”'
+    action:
+      'Skater pushes hard down alley. Dramatic lighting. Wide fisheye view captures cracked pavement and chain-link fence. Hoodie and kangaroo pocket visible.',
+    voiceover: '“Upgrade your daily”',
+    prompt:
+      'Monochrome storyboard sketch, low-fidelity pencil sketch style, wide fisheye lens view of a young male skateboarder pushing fast down an alley, cracked concrete, chain-link fence, short-sleeve hoodie, dramatic sunlight, clean storyboarding lines, white background with text box at the bottom --ar 16:9',
+    image: '/sb-frame-1.png'
   },
   {
     id: 'frame-2',
     title: 'Kickflip Sparks',
     description:
       'Skater launches a kickflip over a curb. Sparks erupt from the board, and a neon trail follows the movement. The hoodie construction, hem, and cuffs remain fully visible during the jump.',
-    voiceover: '“style with this”'
+    action: 'Kickflip over curb.',
+    voiceover: '“style with this”',
+    prompt:
+      'Storyboarding sketch panel, black and white pencil drawing, skater mid-air performing a kickflip over a street curb, stylized speed lines and sparks beneath the board, detailed short-sleeve hoodie folds, low-fidelity sketch aesthetics --ar 16:9',
+    image: '/sb-frame-2.png'
   },
   {
     id: 'frame-3',
     title: 'Fence Grind',
     description:
       'Skater grinds a low metal rail by a chain-link fence. Metal sparks fly; neon streaks skim the rail. The hoodie sleeve and collar flutter, highlighting the relaxed construction against the urban backdrop.',
-    voiceover: '“versatile hoodie layer,”'
+    action:
+      'Skater grinds metal rail. Hoodie fabric flutters. Sparks fly. Urban background. Fence in backdrop.',
+    voiceover: '“versatile hoodie layer”',
+    prompt:
+      'Hand-drawn storyboard frame, low-fidelity charcoal sketch, close action shot of a skateboard grinding a metal handrail along a fence, sparks flying, relaxed fit short-sleeve hoodie fluttering, urban backdrop --ar 16:9',
+    image: '/sb-frame-3.png'
   },
   {
     id: 'frame-4',
     title: 'Detail Motion',
     description:
       'Close tracking shot passes a mural. Camera focuses on the kangaroo pocket and hood stitching. Skater ollies off a sidewalk edge; a neon streak outlines the shoulders and sleeves briefly.',
-    voiceover: '“built for comfort”'
+    action:
+      'Close-up tracking shot. Focus is sharp on the hoodie details and muscular torso as the skater maneuvers through the alley. Background graffiti and fences are an absolute blur. Emphasis on textile texture and action.',
+    voiceover: '“built for comfort”',
+    prompt:
+      'Hand-drawn storyboard frame, low-fidelity charcoal sketch, close action shot of a skateboard grinding a metal handrail along a fence, sparks flying, relaxed fit short-sleeve hoodie fluttering, urban backdrop --ar 16:9',
+    image: '/sb-frame-4.png'
   },
   {
     id: 'frame-5',
     title: 'Wall Ride Flare',
     description:
       'Skater performs a wall ride on a stucco wall. Golden sunlight flares through palm shadows. Sparks scatter, and a bright neon trail follows the board path beneath the relaxed-fit hoodie.',
-    voiceover: '“and everyday action.”'
+    action: 'Skater high on concrete wall. Gritty action. Palm shadows. Motion lines.',
+    voiceover: '“and everyday action.”',
+    prompt:
+      'Low-fi storyboard panel illustration, pencil and ink sketch, skater doing a wall ride on a concrete wall, palm leaf shadows, motion streaks, loose relaxed fit short-sleeve hoodie --ar 16:9',
+    image: '/sb-frame-5.png'
   },
   {
     id: 'frame-6',
     title: 'Final Lookbook',
     description:
       'Skater rolls toward camera and glances back. A neon trail fades over the pavement. The shot holds like a premium 90s editorial cover, showing the full hoodie construction clearly.',
-    voiceover: '“Grab your hoodie today.”'
+    action:
+      'Low-angle, tracking shot. Focus is soft but clear. Sunset colors saturate the frame. Skater is still. Holds look to camera. Fades to logo.',
+    voiceover: '“Grab your hoodie today.”',
+    prompt:
+      '90s editorial style storyboard frame, sketch drawing of a cool male skater holding a skateboard looking back at the camera, wearing a stylish short-sleeve hoodie, sun set lighting, clean outline illustration --ar 16:9',
+    image: '/sb-frame-6.png'
   }
 ];
+
+/** 分镜格里的可编辑文本域；随内容自适应高度，不吃画布拖拽。 */
+function FrameTextarea({
+  value,
+  italic,
+  mono,
+  bold,
+  onChange
+}: {
+  value: string;
+  italic?: boolean;
+  mono?: boolean;
+  bold?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  /* 高度跟着内容走，分镜格里不出现内部滚动条。 */
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  }, [value, mono, bold]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      spellCheck={false}
+      onPointerDown={(event) => event.stopPropagation()}
+      onChange={(event) => onChange(event.target.value)}
+      className={clsx(
+        'w-full resize-none overflow-hidden rounded bg-transparent text-[10px] leading-[14px] text-neutral-mediumOnSurface outline-none transition-colors placeholder:text-neutral-lowOnSurface hover:bg-neutral-surface2/60 focus:bg-neutral-surface2',
+        italic && 'italic',
+        mono && 'font-mono text-[9px] leading-[13px]',
+        bold && 'text-[11px] font-semibold text-neutral-highOnSurface'
+      )}
+    />
+  );
+}
+
+/** 带标签的分镜字段。 */
+function FrameField({
+  label,
+  value,
+  italic,
+  mono,
+  bold,
+  onChange
+}: {
+  label: string;
+  value: string;
+  italic?: boolean;
+  mono?: boolean;
+  bold?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <div className="mt-1.5 text-[8px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">{label}</div>
+      <FrameTextarea value={value} italic={italic} mono={mono} bold={bold} onChange={onChange} />
+    </>
+  );
+}
 
 let frameSeq = INITIAL_FRAMES.length;
 
 /** Storyboard 节点：分镜 + 旁白 + 描述，支持拖拽排序、追加分镜和逐帧录音。 */
-export function StoryboardBody() {
+/** 生成态的等待时长，走完自动落满 6 帧。 */
+const STORYBOARD_GENERATING_MS = 5000;
+
+/** 生成中的旋转光晕：conic-gradient 背景在遮罩下只露出一圈边框，靠 transform 旋转，不依赖 @property 插值。 */
+function GeneratingGlow() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute animate-[spin_2.2s_linear_infinite]"
+      style={{
+        inset: '-50%',
+        background:
+          'conic-gradient(from 0deg, transparent 0deg, transparent 260deg, rgba(255,255,255,0.95) 300deg, transparent 340deg)'
+      }}
+    />
+  );
+}
+
+export function StoryboardBody({
+  nodeId,
+  seeded,
+  onReady
+}: {
+  nodeId: string;
+  /** true 表示落地时就是落满 6 帧的完整态（模板/自动生成流程用）。 */
+  seeded?: boolean;
+  /** 生成完成时回调，通常用来把节点尺寸从空态的小卡片放大到完整尺寸。 */
+  onReady?: (nodeId: string) => void;
+}) {
+  /** 空态 → 生成中 → 落满 6 帧；seeded 的节点直接从 ready 开始。 */
+  const [phase, setPhase] = useState<'empty' | 'generating' | 'ready'>(seeded ? 'ready' : 'empty');
+  const [draft, setDraft] = useState('');
+  const generatingTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (generatingTimerRef.current !== null) {
+        window.clearTimeout(generatingTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const startGenerating = () => {
+    if (phase !== 'empty' || !draft.trim()) {
+      return;
+    }
+    setPhase('generating');
+    generatingTimerRef.current = window.setTimeout(() => {
+      onReady?.(nodeId);
+      setPhase('ready');
+    }, STORYBOARD_GENERATING_MS);
+  };
+
+  if (phase !== 'ready') {
+    const isGenerating = phase === 'generating';
+    return (
+      <div onPointerDown={(event) => event.stopPropagation()}>
+        <div className="relative overflow-hidden rounded-xl p-[2px]">
+          {isGenerating ? <GeneratingGlow /> : null}
+          <div className="relative flex aspect-video w-full flex-col items-center justify-center gap-1.5 rounded-[10px] bg-neutral-fillHigh px-4 text-center">
+            {isGenerating ? (
+              <>
+                <span className="size-5 animate-spin rounded-full border-2 border-solid border-neutral-onFill/25 border-t-neutral-onFill" />
+                <span className="text-[11px] font-medium text-neutral-onFill">Generating storyboard…</span>
+              </>
+            ) : (
+              <>
+                <span className="text-neutral-onFill/70">
+                  <KsIconAiGeneration size={20} />
+                </span>
+                <span className="text-[11px] font-medium leading-[15px] text-neutral-onFill/85">
+                  Describe the ad below to generate a storyboard
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-2 rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface1 px-2 py-1.5">
+          <input
+            value={draft}
+            disabled={isGenerating}
+            placeholder={isGenerating ? 'Generating…' : 'Describe the ad, then press Enter…'}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                startGenerating();
+              }
+            }}
+            className="w-full bg-transparent text-[12px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface disabled:cursor-not-allowed"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return <StoryboardReadyBody />;
+}
+
+/** 落满 6 帧后的完整分镜：拖拽排序、逐帧录音、可编辑字段。 */
+function StoryboardReadyBody() {
   const [frames, setFrames] = useState<StoryboardFrame[]>(INITIAL_FRAMES);
   /** 正在录音的分镜 id；同一时间只允许录一条。 */
   const [recordingId, setRecordingId] = useState<string | null>(null);
@@ -992,107 +1234,149 @@ export function StoryboardBody() {
         id: `frame-${frameSeq}`,
         title: 'New frame',
         description: 'Describe the shot — framing, subject, motion…',
-        voiceover: '“…”'
+        action: 'Describe the camera move and staging…',
+        voiceover: '“…”',
+        prompt: 'Storyboard sketch, low-fidelity pencil style… --ar 16:9'
       }
     ]);
   };
 
+  const patchFrame = (id: string, patch: Partial<StoryboardFrame>) => {
+    setFrames((current) => current.map((frame) => (frame.id === id ? { ...frame, ...patch } : frame)));
+  };
+
   return (
     <div>
-      <div className="mb-1.5 text-[10px] text-neutral-lowOnSurface">Scene-by-scene plan</div>
-      <ScrollArea className="h-[300px] pr-1">
-        {frames.map((frame, index) => {
-          const isRecording = recordingId === frame.id;
-          return (
-            <div
-              key={frame.id}
-              // 原生拖拽排序：整卡可拖，松手落到悬停位置
-              draggable
-              onDragStart={(event) => {
-                setDragIndex(index);
-                event.dataTransfer.effectAllowed = 'move';
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setOverIndex(index);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (dragIndex !== null) {
-                  reorderFrames(dragIndex, index);
-                }
-                setDragIndex(null);
-                setOverIndex(null);
-              }}
-              onDragEnd={() => {
-                setDragIndex(null);
-                setOverIndex(null);
-              }}
-              className={clsx(
-                'mb-1.5 cursor-grab rounded-xl bg-neutral-surface1 p-2 transition-shadow last:mb-0 active:cursor-grabbing',
-                dragIndex === index && 'opacity-50',
-                overIndex === index && dragIndex !== null && dragIndex !== index && 'ring-2 ring-primary-fill'
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                {/* 拖拽把手 */}
-                <span className="flex shrink-0 flex-col gap-[2px] text-neutral-lowOnSurface" title="Drag to reorder">
-                  <span className="flex gap-[2px]">
-                    <span className="size-[3px] rounded-full bg-current" />
-                    <span className="size-[3px] rounded-full bg-current" />
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[10px] text-neutral-lowOnSurface">Scene-by-scene plan · {frames.length} frames</span>
+        <span className="text-[9px] text-neutral-lowOnSurface">Click any field to edit</span>
+      </div>
+
+      {/* 2 行 × 3 格 */}
+      <div>
+        <div className="grid grid-cols-3 gap-2">
+          {frames.map((frame, index) => {
+            const isRecording = recordingId === frame.id;
+            return (
+              <div
+                key={frame.id}
+                // 原生拖拽排序：整格可拖，松手落到悬停位置
+                draggable
+                onDragStart={(event) => {
+                  setDragIndex(index);
+                  event.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setOverIndex(index);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (dragIndex !== null) {
+                    reorderFrames(dragIndex, index);
+                  }
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={clsx(
+                  'flex flex-col rounded-xl bg-neutral-surface1 p-2 transition-shadow',
+                  dragIndex === index && 'opacity-50',
+                  overIndex === index && dragIndex !== null && dragIndex !== index && 'ring-2 ring-primary-fill'
+                )}
+              >
+                {/* 分镜草图 */}
+                <div className="aspect-video w-full overflow-hidden rounded-lg bg-neutral-surface2">
+                  {frame.image ? (
+                    <img src={frame.image} alt={frame.title} className="size-full object-cover" draggable={false} />
+                  ) : (
+                    <div className="flex size-full items-center justify-center text-[10px] text-neutral-lowOnSurface">
+                      No sketch yet
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-1.5 flex items-center gap-1">
+                  <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-[9px] font-semibold text-primary-onSurface">
+                    {index + 1}
                   </span>
-                  <span className="flex gap-[2px]">
-                    <span className="size-[3px] rounded-full bg-current" />
-                    <span className="size-[3px] rounded-full bg-current" />
+                  <span className="text-[8px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+                    Frame {index + 1}
                   </span>
-                </span>
-                <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary-surface2 text-[9px] font-semibold text-primary-onSurface">
-                  {index + 1}
-                </span>
-                <span className="text-[8px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
-                  Frame {index + 1}
-                </span>
-                <span className="truncate text-[11px] font-semibold text-neutral-highOnSurface">{frame.title}</span>
-              </div>
-              <p className="mt-1 text-[11px] leading-[15px] text-neutral-mediumOnSurface">{frame.description}</p>
-              <div className="mt-1.5 flex items-center gap-1 border-t border-solid border-neutral-fillLow pt-1.5">
-                <span className="text-neutral-lowOnSurface">
-                  <KsIconSound size={10} />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[10px] italic text-neutral-mediumOnSurface">
-                  {frame.voiceover}
-                </span>
+                </div>
+
+                <FrameField label="Title" value={frame.title} bold onChange={(v) => patchFrame(frame.id, { title: v })} />
+                <FrameField
+                  label="Description"
+                  value={frame.description}
+                  onChange={(v) => patchFrame(frame.id, { description: v })}
+                />
+                <FrameField label="Action" value={frame.action} onChange={(v) => patchFrame(frame.id, { action: v })} />
+
+                <div className="mt-1.5 flex items-center gap-1">
+                  <span className="text-[8px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+                    Voiceover
+                  </span>
+                  <button
+                    type="button"
+                    title={isRecording ? 'Stop recording' : 'Record this voiceover'}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => (isRecording ? stopRecording() : startRecording(frame.id))}
+                    className={clsx(
+                      'ml-auto flex h-4 shrink-0 items-center gap-1 rounded-full px-1.5 text-[8px] font-semibold transition-colors',
+                      isRecording
+                        ? 'bg-error-fill text-neutral-onFill'
+                        : 'bg-neutral-surface2 text-neutral-mediumOnSurface hover:bg-neutral-surface3'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'block size-1.5 rounded-full',
+                        isRecording ? 'animate-pulse bg-neutral-onFill' : 'bg-error-fill'
+                      )}
+                    />
+                    {isRecording ? 'Stop' : frame.recordingUrl ? 'Re-rec' : 'Rec'}
+                  </button>
+                </div>
+                <FrameTextarea
+                  value={frame.voiceover}
+                  italic
+                  onChange={(v) => patchFrame(frame.id, { voiceover: v })}
+                />
+                {frame.recordingUrl ? <audio src={frame.recordingUrl} controls className="mt-1 h-6 w-full" /> : null}
+
+                <FrameField
+                  label="Prompt"
+                  value={frame.prompt}
+                  mono
+                  onChange={(v) => patchFrame(frame.id, { prompt: v })}
+                />
+
+                {/* 每格独立的重新生成入口 */}
                 <button
                   type="button"
-                  title={isRecording ? 'Stop recording' : 'Record this voiceover'}
-                  onClick={() => (isRecording ? stopRecording() : startRecording(frame.id))}
-                  className={clsx(
-                    'flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[9px] font-semibold transition-colors',
-                    isRecording
-                      ? 'bg-error-fill text-neutral-onFill'
-                      : 'bg-neutral-surface2 text-neutral-mediumOnSurface hover:bg-neutral-surface3'
-                  )}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    // eslint-disable-next-line no-console
+                    console.info('[canvas] regenerate storyboard frame', { id: frame.id, prompt: frame.prompt });
+                  }}
+                  className="mt-2 flex h-7 w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-neutral-fillHigh text-[11px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
                 >
-                  <span
-                    className={clsx(
-                      'block size-1.5 rounded-full',
-                      isRecording ? 'animate-pulse bg-neutral-onFill' : 'bg-error-fill'
-                    )}
-                  />
-                  {isRecording ? 'Stop' : frame.recordingUrl ? 'Re-rec' : 'Rec'}
+                  <KsIconAiGeneration size={12} />
+                  Generate
                 </button>
               </div>
-              {frame.recordingUrl ? (
-                // 录好的旁白直接可回放
-                <audio src={frame.recordingUrl} controls className="mt-1.5 h-7 w-full" />
-              ) : null}
-            </div>
-          );
-        })}
-      </ScrollArea>
+            );
+          })}
+        </div>
+      </div>
+
       {recordError ? <div className="mt-1 text-[9px] text-error-fill">{recordError}</div> : null}
       <div
-        className="mt-1.5 flex items-center justify-between border-t border-solid border-neutral-fillLow pt-1.5"
+        className="mt-2 flex items-center justify-between border-t border-solid border-neutral-fillLow pt-1.5"
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button
@@ -1110,7 +1394,7 @@ export function StoryboardBody() {
           }}
           className="text-[11px] font-medium text-neutral-mediumOnSurface transition-colors hover:text-primary-onSurface"
         >
-          Redraft
+          Redraft all
         </button>
       </div>
     </div>
@@ -1130,9 +1414,47 @@ const AUDIO_WAVEFORM = [
 const AUDIO_CLIP_DURATION = 20;
 
 /** Audio Clips Generation 节点：按分镜旁白生成 6 段配音，可试听。 */
+interface AudioTrackClip {
+  id: string;
+  /** 轨道上的短标（F1…F6 / BGM）。 */
+  label: string;
+  /** 旁白台词或曲目名，作为 tooltip 与替换后的显示名。 */
+  caption: string;
+  /** 用户上传或从素材库换入的音频。 */
+  url?: string;
+  sourceName?: string;
+}
+
+const buildVoiceClips = (): AudioTrackClip[] =>
+  INITIAL_FRAMES.map((frame, index) => ({
+    id: `vo-${frame.id}`,
+    label: `F${index + 1}`,
+    caption: frame.voiceover
+  }));
+
+let audioUploadSeq = 0;
+
+/**
+ * Audio Clips Generation 节点。
+ * 上轨是逐帧旁白（可拖拽换位、可替换音源），下轨是背景音乐；
+ * 两条轨都支持本机上传或从素材库换入。
+ */
 export function AudioClipsBody() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [voClips, setVoClips] = useState<AudioTrackClip[]>(buildVoiceClips);
+  const [bgm, setBgm] = useState<AudioTrackClip | null>({
+    id: 'bgm-1',
+    label: 'BGM',
+    caption: 'Brand BGM — upbeat'
+  });
+  /** 当前打开换音菜单的 clip；'bgm' 表示背景音乐轨。 */
+  const [picker, setPicker] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  /** 等待接收上传的目标 clip。 */
+  const pendingTargetRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* 试听为演示态：走一个 0:20 的假进度，播完自动归位。 */
   useEffect(() => {
@@ -1154,6 +1476,84 @@ export function AudioClipsBody() {
   const formatTime = (seconds: number) => `0:${String(Math.floor(seconds)).padStart(2, '0')}`;
   const progress = Math.min(1, elapsed / AUDIO_CLIP_DURATION);
 
+  /** 把音源写回目标 clip：'bgm' 走背景轨，其余按 id 匹配旁白轨。 */
+  const applySource = (targetId: string, source: { url?: string; sourceName: string }) => {
+    if (targetId === 'bgm') {
+      setBgm((current) => ({
+        id: current?.id ?? 'bgm-1',
+        label: 'BGM',
+        caption: source.sourceName,
+        url: source.url,
+        sourceName: source.sourceName
+      }));
+      return;
+    }
+    setVoClips((current) =>
+      current.map((clip) =>
+        clip.id === targetId ? { ...clip, url: source.url, sourceName: source.sourceName } : clip
+      )
+    );
+  };
+
+  const openUpload = (targetId: string) => {
+    pendingTargetRef.current = targetId;
+    fileInputRef.current?.click();
+    setPicker(null);
+  };
+
+  const handleFile = (files: FileList | null) => {
+    const target = pendingTargetRef.current;
+    const file = files?.[0];
+    if (!target || !file) {
+      return;
+    }
+    audioUploadSeq += 1;
+    applySource(target, { url: URL.createObjectURL(file), sourceName: file.name });
+    pendingTargetRef.current = null;
+  };
+
+  const reorderClips = (from: number, to: number) => {
+    if (from === to) {
+      return;
+    }
+    setVoClips((current) => {
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  /** 换音菜单：本机上传 / 素材库。 */
+  const renderPicker = (targetId: string) => (
+    <div className="absolute left-0 top-full z-30 mt-1 w-[190px] rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface p-1 shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+      <button
+        type="button"
+        onClick={() => openUpload(targetId)}
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+      >
+        <KsIconUpload size={12} />
+        Upload from computer
+      </button>
+      <div className="mt-1 border-t border-solid border-neutral-fillLow pt-1">
+        {LIBRARY_ASSETS.filter((asset) => asset.kind === 'audio').map((asset) => (
+          <button
+            key={asset.id}
+            type="button"
+            onClick={() => {
+              applySource(targetId, { sourceName: asset.name });
+              setPicker(null);
+            }}
+            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+          >
+            <KsIconFolder size={12} />
+            <span className="truncate">{asset.name}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div onPointerDown={(event) => event.stopPropagation()}>
       <div className="flex items-baseline justify-between text-[10px] text-neutral-lowOnSurface">
@@ -1163,30 +1563,137 @@ export function AudioClipsBody() {
 
       <p className="mt-1.5 text-[11px] font-medium text-neutral-highOnSurface">Generate 6 clips audios for me</p>
 
-      {/* 单条音轨：6 段 clip 首尾相接，段内只留 F1–F6 小标 */}
-      <div className="relative mt-1.5 rounded-xl bg-neutral-surface1 p-1.5">
-        <div className="flex h-10 gap-[3px] overflow-hidden rounded-md bg-neutral-surface2/60 p-[3px]">
-          {INITIAL_FRAMES.map((frame, index) => (
-            <div
-              key={frame.id}
-              title={frame.voiceover}
-              className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden rounded border border-solid border-primary-fill/30 bg-primary-surface2 px-1"
-            >
-              <span className="shrink-0 text-[7px] font-semibold text-primary-onSurface">F{index + 1}</span>
-              {AUDIO_WAVEFORM.slice(index * 5, index * 5 + 7).map((height, barIndex) => (
-                // 静态装饰，无业务 key
-                // eslint-disable-next-line react/no-array-index-key
-                <span
-                  key={barIndex}
-                  className="w-[2px] shrink-0 rounded-full bg-primary-fill/50"
-                  style={{ height: Math.max(6, height / 2.4) }}
-                />
-              ))}
-            </div>
-          ))}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(event) => {
+          handleFile(event.target.files);
+          event.target.value = '';
+        }}
+      />
+
+      <div className="relative mt-1.5 rounded-xl bg-neutral-surface1 p-2">
+        {/* 轨道 1：逐帧旁白，可拖拽换位、点击换音源 */}
+        <div className="flex items-center gap-2">
+          <span className="w-[76px] shrink-0 text-[9px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+            Voiceover
+          </span>
+          <div className="flex h-11 min-w-0 flex-1 gap-[3px] rounded-md bg-neutral-surface2/60 p-[3px]">
+            {voClips.map((clip, index) => (
+              <div
+                key={clip.id}
+                className={clsx('relative min-w-0 flex-1', dragIndex === index && 'opacity-50')}
+                draggable
+                onDragStart={(event) => {
+                  setDragIndex(index);
+                  event.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setOverIndex(index);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (dragIndex !== null) {
+                    reorderClips(dragIndex, index);
+                  }
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+              >
+                <button
+                  type="button"
+                  title={`${clip.sourceName ?? clip.caption} — click to replace, drag to reorder`}
+                  onClick={() => setPicker((current) => (current === clip.id ? null : clip.id))}
+                  className={clsx(
+                    'flex size-full cursor-grab items-center gap-[2px] overflow-hidden rounded border border-solid px-1 text-left transition-colors active:cursor-grabbing',
+                    clip.url || clip.sourceName
+                      ? 'border-success-fill/40 bg-success-fill/10'
+                      : 'border-primary-fill/30 bg-primary-surface2 hover:bg-primary-surface3',
+                    overIndex === index && dragIndex !== null && dragIndex !== index && 'ring-2 ring-primary-fill'
+                  )}
+                >
+                  <span className="shrink-0 text-[7px] font-semibold text-primary-onSurface">{clip.label}</span>
+                  {AUDIO_WAVEFORM.slice(index * 5, index * 5 + 7).map((height, barIndex) => (
+                    // 静态装饰，无业务 key
+                    // eslint-disable-next-line react/no-array-index-key
+                    <span
+                      key={barIndex}
+                      className="w-[2px] shrink-0 rounded-full bg-primary-fill/50"
+                      style={{ height: Math.max(6, height / 2.4) }}
+                    />
+                  ))}
+                </button>
+                {picker === clip.id ? renderPicker(clip.id) : null}
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* 轨道 2：背景音乐 */}
+        <div className="relative mt-1.5 flex items-center gap-2">
+          <span className="w-[76px] shrink-0 text-[9px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+            Background
+          </span>
+          <div className="flex h-11 min-w-0 flex-1 rounded-md bg-neutral-surface2/60 p-[3px]">
+            {bgm ? (
+              <button
+                type="button"
+                title={`${bgm.sourceName ?? bgm.caption} — click to replace`}
+                onClick={() => setPicker((current) => (current === 'bgm' ? null : 'bgm'))}
+                className="flex size-full items-center gap-[3px] overflow-hidden rounded border border-solid border-amber-400/50 bg-amber-100/60 px-2 text-left transition-colors hover:bg-amber-100"
+              >
+                <span className="shrink-0 text-[8px] font-semibold text-neutral-highOnSurface">BGM</span>
+                {AUDIO_WAVEFORM.map((height, barIndex) => (
+                  // 静态装饰，无业务 key
+                  // eslint-disable-next-line react/no-array-index-key
+                  <span
+                    key={barIndex}
+                    className="w-[2px] shrink-0 rounded-full bg-amber-500/50"
+                    style={{ height: Math.max(5, height / 3) }}
+                  />
+                ))}
+                <span className="ml-1 truncate text-[9px] text-neutral-mediumOnSurface">
+                  {bgm.sourceName ?? bgm.caption}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPicker((current) => (current === 'bgm' ? null : 'bgm'))}
+                className="flex size-full items-center justify-center gap-1 rounded border border-dashed border-neutral-fillLow text-[10px] text-neutral-lowOnSurface transition-colors hover:border-primary-fill hover:text-primary-fill"
+              >
+                <KsIconPlus size={12} />
+                Add background music
+              </button>
+            )}
+          </div>
+          {picker === 'bgm' ? (
+            <div className="absolute left-[76px] top-full z-30">{renderPicker('bgm')}</div>
+          ) : null}
+          {bgm ? (
+            <button
+              type="button"
+              title="Remove background music"
+              onClick={() => setBgm(null)}
+              className="shrink-0 rounded-full px-1.5 text-[14px] leading-none text-neutral-lowOnSurface transition-colors hover:text-error-fill"
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+
         {isPlaying ? (
-          <span className="absolute inset-y-1 w-px bg-neutral-fillMedHigh" style={{ left: `${3 + progress * 94}%` }} />
+          <span
+            className="pointer-events-none absolute inset-y-2 w-px bg-neutral-fillMedHigh"
+            style={{ left: `calc(84px + ${progress} * (100% - 96px))` }}
+          />
         ) : null}
       </div>
 
@@ -1218,6 +1725,7 @@ export function AudioClipsBody() {
         <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-surface2">
           <span className="absolute inset-y-0 left-0 bg-primary-fill" style={{ width: `${progress * 100}%` }} />
         </span>
+        <span className="shrink-0 text-[9px] text-neutral-lowOnSurface">Click a clip to upload or swap audio</span>
       </div>
     </div>
   );

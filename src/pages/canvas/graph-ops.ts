@@ -1,4 +1,4 @@
-import { NODE_DEFAULT_WIDTH, NODE_KIND_CONFIG } from './const';
+import { NODE_DEFAULT_WIDTH, NODE_KIND_CONFIG, STORYBOARD_EMPTY_WIDTH } from './const';
 import type { AdsNativeNodeKind, CanvasEdge, CanvasNode, CanvasNodeKind } from './types';
 import { findMatchingInput, getNodeHeight } from './utils';
 
@@ -10,19 +10,22 @@ export const createId = (prefix: string) => {
   return `${prefix}-${Date.now()}-${idSeq}`;
 };
 
+/** 分镜的空态卡更窄一点才装得下头图+输入框；其余节点用统一默认宽度。 */
+const defaultWidthFor = (kind: CanvasNodeKind) => (kind === 'storyboard' ? STORYBOARD_EMPTY_WIDTH : NODE_DEFAULT_WIDTH);
+
 export const buildNode = (kind: CanvasNodeKind, x: number, y: number, title?: string): CanvasNode => ({
   id: createId('node'),
   kind,
   x,
   y,
-  width: NODE_DEFAULT_WIDTH,
+  width: defaultWidthFor(kind),
   title: title ?? NODE_KIND_CONFIG[kind].label,
   status: 'idle'
 });
 
 /** 以卡片中心为基准放置节点。 */
 export const buildNodeAtCenter = (kind: CanvasNodeKind, centerX: number, centerY: number, title?: string) =>
-  buildNode(kind, centerX - NODE_DEFAULT_WIDTH / 2, centerY - getNodeHeight({ kind }) / 2, title);
+  buildNode(kind, centerX - defaultWidthFor(kind) / 2, centerY - getNodeHeight({ kind }) / 2, title);
 
 /** 追加一条连线；同源同目标同输入的重复连线会被忽略。 */
 export const appendEdge = (

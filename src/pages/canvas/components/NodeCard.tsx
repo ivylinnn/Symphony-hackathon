@@ -11,6 +11,7 @@ import {
   BrandKitBody,
   ProductBriefBody,
   ProductImagesBody,
+  ScrollArea,
   StoryboardBody,
   TikTokTrendBody
 } from './InspirationNodes';
@@ -33,6 +34,8 @@ interface NodeCardProps {
   onOutputPointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, outputId: string) => void;
   onInputPointerUp: (event: React.PointerEvent<HTMLDivElement>, nodeId: string, inputId: string) => void;
   onOpenAddPanel: (nodeId: string, outputId: string) => void;
+  /** 拖右下角把手改节点尺寸。 */
+  onResizePointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => void;
   /** 在卡片任意位置松手：自动挑一个类型匹配的输入完成连线。 */
   onDropOnCard: (nodeId: string) => void;
   /** 打开全屏编辑器；launch 可带一条指令（进门就交给 agent）或直接进入圈选模式。 */
@@ -42,6 +45,8 @@ interface NodeCardProps {
   onRun: (nodeId: string) => void;
   /** 编辑卡片内容（prompt / 文案）。 */
   onTextChange: (nodeId: string, text: string) => void;
+  /** Storyboard 生成完成：通常用来把节点从空态小卡片放大到完整尺寸。 */
+  onStoryboardReady: (nodeId: string) => void;
   onDuplicate: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
 }
@@ -216,7 +221,8 @@ function NodeBody({
   videoRotation = 0,
   isEnhanced = false,
   onTextChange,
-  onOpenEditor
+  onOpenEditor,
+  onStoryboardReady
 }: {
   node: CanvasNode;
   isHovered: boolean;
@@ -226,6 +232,7 @@ function NodeBody({
   isEnhanced?: boolean;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
+  onStoryboardReady: (nodeId: string) => void;
 }) {
   const config = NODE_KIND_CONFIG[node.kind];
 
@@ -239,13 +246,36 @@ function NodeBody({
     return <ProductBriefBody />;
   }
   if (config.body === 'tiktok-trend') {
-    return <TikTokTrendBody />;
+    return <TikTokTrendBody initialTrendId={node.trendId} />;
   }
   if (config.body === 'storyboard') {
-    return <StoryboardBody />;
+    return <StoryboardBody nodeId={node.id} seeded={node.storyboardReady} onReady={onStoryboardReady} />;
   }
   if (config.body === 'audio-clips') {
     return <AudioClipsBody />;
+  }
+
+  // 脚本卡：9:16 配图在上，描述文案在下（可编辑、可滚动）
+  if (config.body === 'script-card') {
+    return (
+      <>
+        <div className="flex aspect-[9/16] w-full items-center justify-center overflow-hidden rounded-xl bg-neutral-surface1">
+          {node.assetUrl ? (
+            <img src={node.assetUrl} alt={node.title} className="size-full object-cover" draggable={false} />
+          ) : (
+            <span className="text-[12px] font-medium text-neutral-lowOnSurface">{node.title}</span>
+          )}
+        </div>
+        <ScrollArea className="mt-2 h-[86px] rounded-lg bg-neutral-surface1 px-2 py-1.5">
+          <PromptField
+            value={node.text ?? ''}
+            rows={4}
+            placeholder={config.hint ?? 'Describe this beat…'}
+            onChange={onTextChange}
+          />
+        </ScrollArea>
+      </>
+    );
   }
 
   if (config.body === 'media') {
@@ -462,11 +492,13 @@ function NodeCard({
   onOutputPointerDown,
   onInputPointerUp,
   onOpenAddPanel,
+  onResizePointerDown,
   onDropOnCard,
   onOpenEditor,
   onRunTool,
   onRun,
   onTextChange,
+  onStoryboardReady,
   onDuplicate,
   onDelete
 }: NodeCardProps) {
@@ -560,15 +592,11 @@ function NodeCard({
 
       <div
         className={clsx(
-          'size-full overflow-hidden rounded-2xl border bg-neutral-surface transition-shadow',
+          'flex size-full flex-col overflow-hidden rounded-2xl border bg-neutral-surface transition-shadow',
           isSelected ? 'border-primary-fill shadow-[0_10px_30px_rgba(16,24,40,0.16)]' : 'border-neutral-fillLow shadow-[0_1px_3px_rgba(16,24,40,0.10)] hover:shadow-[0_4px_12px_rgba(16,24,40,0.12)]'
         )}
         onPointerDown={(event) => onPointerDown(event, node.id)}
       >
-        {/* Ads-native 顶部主色条，Edit 顶部虚线感的浅色条，画布上一眼可分 */}
-        {isAdsNative ? <span className="absolute inset-x-0 top-0 h-[3px] bg-primary-fill" /> : null}
-        {isEdit ? <span className="absolute inset-x-0 top-0 h-[3px] bg-primary-surface3" /> : null}
-
         <div className="flex h-9 items-center justify-between gap-2 px-3">
           <span
             className={clsx(
@@ -581,13 +609,14 @@ function NodeCard({
           <StatusChip status={node.status} />
         </div>
 
-        <div className="px-3 pb-9">
+        <div className="min-h-0 flex-1 px-3 pb-9">
           <NodeBody
             node={node}
             isHovered={isHovered}
             videoRotation={videoRotation}
             isEnhanced={isEnhanced}
             onTextChange={(text) => onTextChange(node.id, text)}
+            onStoryboardReady={onStoryboardReady}
             onOpenEditor={onOpenEditor}
           />
         </div>
@@ -633,6 +662,17 @@ function NodeCard({
         >
           <KsIconPlus size={14} />
         </button>
+      ) : null}
+
+      {/* 右下角缩放把手：hover / 选中时露出，拖动改宽高 */}
+      {isActive ? (
+        <div
+          title="Drag to resize"
+          onPointerDown={(event) => onResizePointerDown(event, node.id)}
+          className="absolute -bottom-1 -right-1 z-20 flex size-4 cursor-nwse-resize items-end justify-end rounded-br-lg p-[3px]"
+        >
+          <span className="block size-full rounded-[2px] border-b-2 border-r-2 border-solid border-neutral-fillMedHigh" />
+        </div>
       ) : null}
     </div>
   );

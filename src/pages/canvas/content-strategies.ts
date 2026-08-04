@@ -25,6 +25,10 @@ interface StrategyNodeSpec {
   assetUrl?: string;
   /** 可播放的视频地址（media 卡渲染 <video>）。 */
   videoUrl?: string;
+  /** TikTok trend 节点预设的趋势 id；缺省则落地时是空态。 */
+  trendId?: string;
+  /** Storyboard 节点是否直接以落满 6 帧的完整态出现（模板流程用）。 */
+  storyboardReady?: boolean;
 }
 
 interface StrategyEdgeSpec {
@@ -77,27 +81,68 @@ export const CONTENT_STRATEGIES: ContentStrategy[] = [
       ]
     },
     nodes: [
-      // 第一列：产品图 + 品牌资产；第二列：Brief + Trend —— 与策略缩略图同构
-      { kind: 'product-images', title: 'Product images', x: 0, y: 140 },
-      { kind: 'brand-kit', title: 'Brand kit', x: 0, y: 520 },
-      { kind: 'product-brief', title: 'Product brief', x: 460, y: 80, width: 300 },
-      { kind: 'tiktok-trend', title: 'TikTok trend', x: 460, y: 600, width: 300 },
-      { kind: 'storyboard', title: 'Storyboard', x: 980, y: 220, width: 300 },
+      // 第一列：产品图 + 品牌资产
+      { kind: 'product-images', title: 'Product images', x: 0, y: 620 },
+      { kind: 'brand-kit', title: 'Brand kit', x: 0, y: 1000 },
+      // 第二列：Brief
+      { kind: 'product-brief', title: 'Product brief', x: 460, y: 800, width: 300 },
+      // 第三列：Hook → Body → CTA → Trend，同一 x、同宽，纵向对齐
+      { kind: 'tiktok-trend', title: 'TikTok trend', x: 920, y: 2100, width: 264, trendId: 'matching-tracksuits' },
+      // 第四列：Storyboard + 配音
+      {
+        kind: 'storyboard',
+        title: 'Storyboard',
+        x: 1400,
+        y: 620,
+        width: 1000,
+        height: 1250,
+        storyboardReady: true
+      },
       {
         kind: 'video',
         title: 'Short Sleeve Hoodie Ad · final cut',
         text: 'Final 9:16 cut generated from the storyboard.',
-        x: 1500, y: 400,
+        x: 2600, y: 800,
         height: 540,
         videoUrl: '/hoodie-ad.mp4'
       },
-      { kind: 'audio-clips', title: 'Audio Clips Generation', x: 980, y: 760, width: 300 }
+      { kind: 'audio-clips', title: 'Audio Clips Generation', x: 1400, y: 1720, width: 1000 },
+      {
+        kind: 'hook',
+        title: 'Hook',
+        text: 'Upgrade your streetwear game with the ultimate modern layer. Too warm for a jacket, too cool for just a tee?',
+        x: 920, y: 0,
+        assetUrl: '/ad-hook.png'
+      },
+      {
+        kind: 'body',
+        title: 'Body',
+        text:
+          '• Active Comfort: Designed with breathable fabric and a relaxed fit, giving you total freedom of movement whether you’re hitting the streets or lounging.\n\n' +
+          '• Versatile Style: Seamlessly transitions into any seasonal outfit — featuring a stylish hood and a functional front kangaroo pocket for your everyday essentials.',
+        x: 920, y: 700,
+        assetUrl: '/ad-body.png'
+      },
+      {
+        kind: 'cta',
+        title: 'CTA',
+        text: 'Shop Now & Upgrade Your Style!',
+        x: 920, y: 1400,
+        assetUrl: '/ad-cta.png'
+      }
     ],
     edges: [
-      // 产品图和品牌资产先进 Brief，再由 Brief 汇入 Storyboard
+      // 产品图和品牌资产先进 Brief
       { from: 0, to: 2, input: 'image' },
       { from: 1, to: 2, input: 'image' },
-      { from: 2, to: 4, input: 'prompt' },
+      // Brief 分发到 Hook / Body / CTA
+      { from: 2, to: 7, input: 'prompt' },
+      { from: 2, to: 8, input: 'prompt' },
+      { from: 2, to: 9, input: 'prompt' },
+      // 三段脚本 + 趋势一起汇入 Storyboard
+      { from: 7, to: 4, input: 'prompt' },
+      { from: 8, to: 4, input: 'prompt' },
+      { from: 9, to: 4, input: 'prompt' },
       { from: 3, to: 4, input: 'video' },
       { from: 4, to: 5, input: 'prompt' },
       // 配音：Brief 进左侧 Prompt，产出的音频接 Video
@@ -265,6 +310,8 @@ export const buildStrategyGraph = (
     ...(spec.height ? { height: spec.height } : {}),
     ...(spec.assetUrl ? { assetUrl: spec.assetUrl } : {}),
     ...(spec.videoUrl ? { videoUrl: spec.videoUrl } : {}),
+    ...(spec.trendId ? { trendId: spec.trendId } : {}),
+    ...(spec.storyboardReady ? { storyboardReady: true } : {}),
     ...(spec.text || spec.assetUrl ? { text: spec.text, status: 'done' as const } : {})
   }));
 

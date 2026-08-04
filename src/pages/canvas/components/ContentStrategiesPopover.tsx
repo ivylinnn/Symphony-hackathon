@@ -88,7 +88,7 @@ function ContentStrategiesPopover({ onPick, onClose }: ContentStrategiesPopoverP
           <span className="text-primary-fill">
             <KsIconAiGeneration size={18} />
           </span>
-          <h2 className="text-[16px] font-semibold text-neutral-highOnSurface">TikTok Content Strategies</h2>
+          <h2 className="text-[16px] font-semibold text-neutral-highOnSurface">TikTok ads-native templates</h2>
         </div>
         <p className="mt-1 text-center text-[12px] text-neutral-mediumOnSurface">
           Start from a proven workflow — every node stays editable after it lands.
@@ -105,7 +105,7 @@ function ContentStrategiesPopover({ onPick, onClose }: ContentStrategiesPopoverP
                 : 'bg-neutral-surface1 text-neutral-mediumOnSurface hover:bg-neutral-surface2'
             )}
           >
-            TikTok Content Strategies
+            TikTok ads-native templates
           </button>
           <button
             type="button"
@@ -117,7 +117,7 @@ function ContentStrategiesPopover({ onPick, onClose }: ContentStrategiesPopoverP
                 : 'bg-neutral-surface1 text-neutral-mediumOnSurface hover:bg-neutral-surface2'
             )}
           >
-            My content strategies
+            My templates
           </button>
         </div>
 

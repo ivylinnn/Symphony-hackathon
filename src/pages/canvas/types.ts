@@ -35,6 +35,8 @@ export interface NodePortSpec {
 
 /** 卡片主体的展示形态，决定 NodeCard 渲染哪一种 body。 */
 export type NodeBodyShape =
+  /** 图在上、描述文案在下的脚本卡（Hook / Body / CTA）。 */
+  | 'script-card'
   | 'text'
   | 'media'
   | 'audio'
@@ -260,6 +262,10 @@ export interface CanvasNode {
   error?: string;
   /** 补充说明，例如用到的模型名。 */
   note?: string;
+  /** TikTok trend 节点已选定的趋势 id；缺省表示空态，等待用户挑选。 */
+  trendId?: string;
+  /** Storyboard 节点是否已经落满 6 帧；缺省表示空态，等待用户输入触发生成。 */
+  storyboardReady?: boolean;
 }
 
 export interface CanvasEdge {

@@ -8,8 +8,8 @@ import {
   KsIconAllApps,
   KsIconFolderF,
   KsIconHome,
-  KsIconLayout,
   KsIconLightbulb,
+  KsIconPalette,
   KsIconToolboxF,
   KsIconTransitions
 } from './keystone-nav-icons';
@@ -92,7 +92,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'home', label: 'Home', icon: <KsIconHome size={NAV_ICON_SIZE} /> },
   { id: 'inspire', label: 'Inspire', icon: <KsIconLightbulb size={NAV_ICON_SIZE} /> },
   // Canvas 挂在 Agent 上方，点击进入画布
-  { id: 'canvas', label: 'Canvas', icon: <KsIconLayout size={NAV_ICON_SIZE} />, onClick: goToCanvas },
+  { id: 'canvas', label: 'Canvas', icon: <KsIconPalette size={NAV_ICON_SIZE} />, onClick: goToCanvas },
   { id: 'agent', label: 'Agent', icon: <KsIconAiLined size={NAV_ICON_SIZE} /> },
   { id: 'create', label: 'Create', icon: <KsIconTransitions size={NAV_ICON_SIZE} /> },
   { id: 'tools', label: 'Tools', icon: <KsIconToolboxF size={NAV_ICON_SIZE} /> },
