@@ -54,7 +54,7 @@ function EdgeLayer({ nodes, edges, selectedIds, pendingConnection }: EdgeLayerPr
             fill="none"
             strokeWidth={isActive ? 2 : 1.5}
             stroke="currentColor"
-            className={isActive ? 'text-primary-fill' : 'text-neutral-fillMedHigh'}
+            className="text-neutral-highOnSurface"
           />
         );
       })}
@@ -66,7 +66,7 @@ function EdgeLayer({ nodes, edges, selectedIds, pendingConnection }: EdgeLayerPr
           strokeWidth={2}
           strokeDasharray="6 4"
           stroke="currentColor"
-          className="text-primary-fill"
+          className="text-neutral-highOnSurface"
         />
       ) : null}
     </svg>

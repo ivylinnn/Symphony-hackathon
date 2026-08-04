@@ -1,10 +1,11 @@
 /* eslint-disable max-lines-per-function */
 import { useNavigate } from '@edenx/runtime/router';
-import { KsIconAiGeneration, KsIconClose, KsIconFolderAdd, KsIconSend } from '@fe-infra/keystone-icons-react';
+import { KsIconAiGeneration, KsIconClose, KsIconFolderAdd, KsIconPlus, KsIconSend } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import AgentPanel, { type AgentMessage } from './components/AgentPanel';
+import CanvasComposer from './components/CanvasComposer';
 import CanvasSidebar, { type CanvasTool, type SidebarPanel } from './components/CanvasSidebar';
 import ContentStrategiesPopover from './components/ContentStrategiesPopover';
 import EdgeLayer from './components/EdgeLayer';
@@ -13,13 +14,33 @@ import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
 import TimelineEditor from './components/TimelineEditor';
-import { GRID_SIZE, NODE_KIND_CONFIG } from './const';
-import { buildStrategyGraph, type ContentStrategy } from './content-strategies';
+import {
+  AUDIO_CLIPS_WIDTH,
+  GRID_SIZE,
+  MIN_NODE_HEIGHT,
+  MIN_NODE_WIDTH,
+  NODE_DEFAULT_WIDTH,
+  NODE_KIND_CONFIG,
+  STORYBOARD_READY_HEIGHT,
+  STORYBOARD_READY_WIDTH,
+  VIDEO_READY_HEIGHT,
+  VIDEO_READY_WIDTH
+} from './const';
+import { CONTENT_STRATEGIES, buildStrategyGraph, type ContentStrategy } from './content-strategies';
+import { buildNode } from './graph-ops';
 import { useCanvasGraph } from './hooks/use-canvas-graph';
 import { useCanvasViewport } from './hooks/use-canvas-viewport';
 import { buildScriptGraph } from './services/agent';
-import type { CanvasNodeKind, LibraryAsset, PendingConnection } from './types';
-import { getFitViewport, isNodeInRect, type Rect, rectFromPoints, screenToWorld, worldToScreen } from './utils';
+import type { CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection } from './types';
+import {
+  getFitViewport,
+  getNodeHeight,
+  isNodeInRect,
+  type Rect,
+  rectFromPoints,
+  screenToWorld,
+  worldToScreen
+} from './utils';
 
 /** 指针拖拽的三种模式，用 ref 存避免每次 move 都触发重渲染。 */
 type DragState =
@@ -27,6 +48,8 @@ type DragState =
   | { kind: 'node'; nodeId: string; offsetX: number; offsetY: number }
   | { kind: 'connect'; source: string; sourceOutput: string }
   | { kind: 'marquee'; startX: number; startY: number; additive: boolean }
+  // 拖右下角改尺寸：记下起手时的世界坐标与原始宽高，move 时按位移量增减
+  | { kind: 'resize'; nodeId: string; startX: number; startY: number; startWidth: number; startHeight: number }
   | null;
 
 /**
@@ -42,6 +65,8 @@ interface AddPanelAnchor {
   /** 世界坐标；由拉线触发时新节点落在这里，⊕ 触发时为空表示挂到来源右侧。 */
   worldX?: number;
   worldY?: number;
+  /** 多选后共用一个 ⊕ 时，这里放全部选中节点的 id；新节点会把它们都连过去。 */
+  nodeIds?: string[];
 }
 
 /** 鼠标中键，用于强制平移。 */
@@ -60,20 +85,64 @@ let commentSeq = 0;
 /** 退出画布后回到的落地页。 */
 const EXIT_PATH = '/create';
 
-const INITIAL_MESSAGES: AgentMessage[] = [
-  { id: 'msg-1', role: 'user', content: 'Build a 15s ad for the hydration serum.' },
-  {
-    id: 'msg-2',
-    role: 'agent',
-    content: 'Laid out a Hook → Body → CTA script and wired product, presenter and voiceover nodes into a final cut.'
-  },
-  { id: 'msg-3', role: 'user', content: 'Split the audio so I can swap the BGM.' },
-  {
-    id: 'msg-4',
-    role: 'agent',
-    content: 'Added Split A/V and Split Tracks after the final cut — BGM and two voiceover tracks are separated.'
-  }
+/** 会话从空开始，第一条消息由用户提交产品图时产生。 */
+const INITIAL_MESSAGES: AgentMessage[] = [];
+
+/** 生成 product brief 的等待时长。 */
+const BRIEF_GENERATING_MS = 3000;
+
+/** brief 气泡下方的三个后续动作，第一个是主按钮。 */
+const BRIEF_ACTIONS = [
+  'Looks good, add a product node!',
+  'Revise the product description',
+  'Adjust the core selling points'
 ];
+
+/** 纯文本版 product brief，直接放进 agent 气泡。 */
+const PRODUCT_BRIEF_TEXT = [
+  'Product name',
+  'Short-Sleeve Hoodie',
+  '',
+  'Product description',
+  'This versatile, modern short-sleeve hoodie is perfect for warm-weather layering, gym wear, or casual lounging. Featuring a breathable construction, a comfortable hood, and a functional front kangaroo pocket, it offers a relaxed fit for active lifestyles. Simply pull it over your head for an easy, stylish transition into any seasonal outfit.',
+  '',
+  'Core selling point: Breathable fabric, Versatile layering, Functional kangaroo pocket, Relaxed comfortable fit, Ideal for active and everyday wear',
+  '',
+  'Brand name: N/A',
+  'Region: United States',
+  'Language: English',
+  'Brand tone: Tell us via chat (optional).',
+  '',
+  'Target audience',
+  'Active individuals and fashion-conscious consumers looking for comfortable, modern casual wear.',
+  '',
+  'Additional requests',
+  'Create an ad for the product using media assets @Image 1, @Image 2, @Image 3 inspired by template ID 7653898416390045703.'
+].join('\n');
+
+/** brief 落到画布后，agent 追问是否继续生成脚本三件套。 */
+const SCRIPT_OFFER_QUESTION =
+  'Would you like me to generate a TikTok-native Hook, Body, CTA, and pick a suggested trend?';
+const SCRIPT_OFFER_ACTIONS = ['Yes, please.', 'No, thanks'];
+
+/** 选中 Hook/Body/CTA/Trend 四件套后，agent 追问是否继续生成分镜。 */
+const STORYBOARD_OFFER_QUESTION =
+  'Would you prefer me to generate a storyboard based on those Hook, Body, CTA, and TikTok trend?';
+const STORYBOARD_OFFER_ACTIONS = ['Yes, please.', 'No, thanks'];
+
+/** 组成一套「脚本四件套」的节点类型。 */
+const SCRIPT_KINDS = ['hook', 'body', 'cta', 'tiktok-trend'] as const;
+
+/** 汇聚型节点：画布上同一时间只应该有一个，多个来源都接到这一个上面。 */
+const HUB_KINDS = ['storyboard', 'audio-clips'] as const;
+
+/** 这几类「生成」节点都是 demo：本地模拟一段等待再落固定产物，不真打生成接口。 */
+const DEMO_GENERATING_MS = 3000;
+const CLIP_DEMO_VIDEO_URL = '/hoodie-ad.mp4';
+
+/** 提交产品图时写进会话的第一条用户消息。 */
+const OPENING_PROMPT =
+  'Generate a 30-second TikTok ad for an olive green short-sleeve hoodie featuring a skater in a sun-drenched LA alleyway, using a gritty 90s fisheye aesthetic, high-energy action shots (kickflips, rail grinds, wall rides), and punchy VO highlighting versatile everyday street style.';
 
 let messageSeq = 0;
 
@@ -89,6 +158,7 @@ function CanvasPage() {
     addNodeAt,
     addConnectedNode,
     addConnectedNodeAt,
+    addConnectedNodesAt,
     addScriptSections,
     addAssetNode,
     runTool,
@@ -118,8 +188,16 @@ function CanvasPage() {
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
   const [messages, setMessages] = useState<AgentMessage[]>(INITIAL_MESSAGES);
-  // 画布从空态开始，首屏直接展示内容策略弹层
-  const [isStrategiesOpen, setIsStrategiesOpen] = useState(true);
+  // 模板弹层由空态 composer 的第一个入口或右上角按钮唤起
+  const [isStrategiesOpen, setIsStrategiesOpen] = useState(false);
+  /** 生成 brief 时落下的两个输入节点 id，确认后用来接 Product brief。 */
+  const briefInputIdsRef = useRef<string[]>([]);
+  /** 已落地的 Product brief 节点，用于继续挂 Hook / Body / CTA。 */
+  const briefNodeIdRef = useRef<string | null>(null);
+  /** 「选中四件套」是否已经问过一次；选区变化时复位，避免重复追问。 */
+  const scriptSelectionAskedRef = useRef(false);
+  /** 四件套选中时浮出的「+」，点开的节点面板锚点。 */
+  const [scriptAddAnchor, setScriptAddAnchor] = useState<{ x: number; y: number } | null>(null);
   /** 当前交互工具：V 选择 / H 手型 / 评论。 */
   const [tool, setTool] = useState<CanvasTool>('select');
   const [comments, setComments] = useState<CanvasComment[]>([]);
@@ -130,12 +208,8 @@ function CanvasPage() {
   const { viewport, setViewport, animateViewportTo, stopAnimation, zoomIn, zoomOut, resetZoom } =
     useCanvasViewport({ containerRef });
 
-  /** 画布被清空（含删光所有节点）时重新展示策略弹层。 */
-  useEffect(() => {
-    if (nodes.length === 0) {
-      setIsStrategiesOpen(true);
-    }
-  }, [nodes.length]);
+  /** 空画布展示 agent composer；有节点后自动让位。 */
+  const isCanvasEmpty = nodes.length === 0;
 
   const toWorld = useCallback(
     (clientX: number, clientY: number) => {
@@ -221,6 +295,27 @@ function CanvasPage() {
     containerRef.current?.setPointerCapture(event.pointerId);
   };
 
+  /** 右下角把手按下：进入缩放模式，记录起手世界坐标与当前宽高。 */
+  const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => {
+    event.stopPropagation();
+    stopAnimation();
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node) {
+      return;
+    }
+    const world = toWorld(event.clientX, event.clientY);
+    dragRef.current = {
+      kind: 'resize',
+      nodeId,
+      startX: world.x,
+      startY: world.y,
+      startWidth: node.width,
+      startHeight: getNodeHeight(node)
+    };
+    setSelectedIds([nodeId]);
+    containerRef.current?.setPointerCapture(event.pointerId);
+  };
+
   const handleOutputPointerDown = (
     event: React.PointerEvent<HTMLDivElement>,
     nodeId: string,
@@ -270,6 +365,15 @@ function CanvasPage() {
 
     if (drag.kind === 'node') {
       moveNode(drag.nodeId, world.x - drag.offsetX, world.y - drag.offsetY);
+      return;
+    }
+
+    if (drag.kind === 'resize') {
+      // 位移量按世界坐标算，缩放下拖拽手感一致
+      patchNode(drag.nodeId, {
+        width: Math.max(MIN_NODE_WIDTH, drag.startWidth + (world.x - drag.startX)),
+        height: Math.max(MIN_NODE_HEIGHT, drag.startHeight + (world.y - drag.startY))
+      });
       return;
     }
 
@@ -425,13 +529,50 @@ function CanvasPage() {
     [addAssetNode, getViewportCenter]
   );
 
-  /** 卡片 ⊕ 面板：在来源节点右侧新增并自动连线。 */
+  /** 某个来源节点自己的最后一个输出口 id，多选场景下每个来源各用各的。 */
+  const lastOutputIdFor = useCallback(
+    (node: CanvasNode) => {
+      const outputs = NODE_KIND_CONFIG[node.kind].outputs;
+      return outputs[outputs.length - 1]?.id ?? 'out';
+    },
+    []
+  );
+
+  /** 卡片 ⊕ 面板：在来源节点右侧新增并自动连线；多选时新节点会接上每一个选中节点。 */
   const addNodeFromCard = useCallback(
     (kind: CanvasNodeKind) => {
       if (!addPanelAnchor) {
         return;
       }
-      if (addPanelAnchor.worldX === undefined || addPanelAnchor.worldY === undefined) {
+      const sourceIds =
+        addPanelAnchor.nodeIds && addPanelAnchor.nodeIds.length > 0 ? addPanelAnchor.nodeIds : [addPanelAnchor.nodeId];
+
+      // Storyboard / Audio Clips 是汇聚型节点：画布上已有一个时，接线接到它上面，
+      // 而不是每次都新建一份——比如 Brief 和 Trend 应该喂给同一个 Storyboard。
+      const existingHub =
+        HUB_KINDS.includes(kind as (typeof HUB_KINDS)[number])
+          ? nodes.find((node) => node.kind === kind)
+          : undefined;
+
+      if (existingHub) {
+        sourceIds.forEach((sourceId) => {
+          const source = nodes.find((node) => node.id === sourceId);
+          const sourceOutput =
+            sourceId === addPanelAnchor.nodeId && sourceIds.length === 1
+              ? addPanelAnchor.outputId
+              : source
+                ? lastOutputIdFor(source)
+                : addPanelAnchor.outputId;
+          connectToBestInput(sourceId, sourceOutput, existingHub.id);
+        });
+      } else if (sourceIds.length > 1) {
+        addConnectedNodesAt(
+          sourceIds,
+          kind,
+          addPanelAnchor.worldX ?? 0,
+          addPanelAnchor.worldY ?? 0
+        );
+      } else if (addPanelAnchor.worldX === undefined || addPanelAnchor.worldY === undefined) {
         addConnectedNode(addPanelAnchor.nodeId, addPanelAnchor.outputId, kind);
       } else {
         addConnectedNodeAt(
@@ -444,7 +585,7 @@ function CanvasPage() {
       }
       setAddPanelAnchor(null);
     },
-    [addConnectedNode, addConnectedNodeAt, addPanelAnchor]
+    [addConnectedNode, addConnectedNodeAt, addConnectedNodesAt, addPanelAnchor, connectToBestInput, lastOutputIdFor, nodes]
   );
 
   const openAddPanel = useCallback(
@@ -464,6 +605,30 @@ function CanvasPage() {
     },
     [nodes, viewport]
   );
+
+  /** 多选后共用的 ⊕：挂在所有选中节点包围盒的右侧、垂直居中。 */
+  const openMultiAddPanel = useCallback(() => {
+    const picked = nodes.filter((node) => selectedIds.includes(node.id));
+    if (picked.length < 2) {
+      return;
+    }
+    const right = Math.max(...picked.map((node) => node.x + node.width));
+    const top = Math.min(...picked.map((node) => node.y));
+    const bottom = Math.max(...picked.map((node) => node.y + getNodeHeight(node)));
+    const centerY = (top + bottom) / 2;
+    // 新节点落点：包围盒右侧留一段间距，再加上新卡片自身半宽让它居中在这条线上
+    const worldX = right + 120 + NODE_DEFAULT_WIDTH / 2;
+
+    setAddPanelAnchor({
+      nodeId: picked[0].id,
+      nodeIds: picked.map((node) => node.id),
+      outputId: lastOutputIdFor(picked[0]),
+      screenX: right * viewport.zoom + viewport.x + 40,
+      screenY: centerY * viewport.zoom + viewport.y,
+      worldX,
+      worldY: centerY
+    });
+  }, [lastOutputIdFor, nodes, selectedIds, viewport]);
 
   const fitView = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -489,6 +654,261 @@ function CanvasPage() {
     [addPrebuiltGraph, animateViewportTo, getViewportCenter]
   );
 
+  /**
+   * 提交产品图：画布上只落 Product images 与 Brand kit，
+   * 右下角 agent 展开，生成 5 秒后以纯文本给出 product brief。
+   */
+  const generateBrief = useCallback(() => {
+    const center = getViewportCenter();
+    const productImages = buildNode('product-images', center.x - 520, center.y - 340, 'Product images');
+    const brandKit = buildNode('brand-kit', center.x - 520, center.y + 20, 'Brand kit');
+    briefInputIdsRef.current = [productImages.id, brandKit.id];
+    addPrebuiltGraph([productImages, brandKit], []);
+
+    setIsAgentOpen(true);
+    setIsAgentBusy(true);
+    messageSeq += 1;
+    const pendingId = `msg-brief-${messageSeq}`;
+    setMessages((current) => [
+      ...current,
+      { id: `msg-user-${messageSeq}`, role: 'user', content: OPENING_PROMPT },
+      { id: pendingId, role: 'agent', content: 'Reading your product images — drafting the product brief…' }
+    ]);
+
+    window.setTimeout(() => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === pendingId ? { ...message, content: PRODUCT_BRIEF_TEXT, actions: BRIEF_ACTIONS, variant: 'brief' as const } : message
+        )
+      );
+      setIsAgentBusy(false);
+    }, BRIEF_GENERATING_MS);
+  }, [addPrebuiltGraph, getViewportCenter]);
+
+  /** brief 确认：把 Product brief 节点接到 Product images / Brand kit 右侧。 */
+  /** 「Looks good, create the storyboard!」：brief 和 storyboard 一起落地，brief 的产出直接接到分镜的 Script 口。 */
+  /** 「Looks good, add a product node!」：只落 Product brief，接到 Product images / Brand kit 上。 */
+  const confirmBrief = useCallback(() => {
+    const [imagesId, brandKitId] = briefInputIdsRef.current;
+    const source = nodes.find((node) => node.id === imagesId);
+    const briefNode = {
+      ...buildNode('product-brief', (source?.x ?? 0) + 520, (source?.y ?? 0) + 120, 'Product brief'),
+      width: 340,
+      height: 560
+    };
+
+    addPrebuiltGraph(
+      [briefNode],
+      [imagesId, brandKitId].filter(Boolean).map((from, index) => ({
+        id: `edge-brief-${Date.now()}-${index}`,
+        source: from,
+        sourceOutput: 'out',
+        target: briefNode.id,
+        targetInput: 'image'
+      }))
+    );
+    briefNodeIdRef.current = briefNode.id;
+    setSelectedIds([briefNode.id]);
+
+    // 动作用过即收起，避免重复触发
+    setMessages((current) => current.map((message) => ({ ...message, actions: undefined })));
+  }, [addPrebuiltGraph, nodes]);
+
+  /** 接受追问：落 Hook / Body / CTA / Trend，并把 Brief 接到三段脚本上。 */
+  const generateScriptNodes = useCallback(() => {
+    const briefId = briefNodeIdRef.current;
+    const brief = nodes.find((node) => node.id === briefId);
+    const columnX = (brief?.x ?? 0) + 460;
+    const baseY = (brief?.y ?? 0) - 200;
+
+    const hook = {
+      ...buildNode('hook', columnX, baseY, 'Hook'),
+      text: 'Upgrade your streetwear game with the ultimate modern layer. Too warm for a jacket, too cool for just a tee?',
+      assetUrl: '/ad-hook.png',
+      status: 'done' as const
+    };
+    const body = {
+      ...buildNode('body', columnX, baseY + 700, 'Body'),
+      text:
+        '• Active Comfort: Designed with breathable fabric and a relaxed fit, giving you total freedom of movement whether you’re hitting the streets or lounging.\n\n' +
+        '• Versatile Style: Seamlessly transitions into any seasonal outfit — featuring a stylish hood and a functional front kangaroo pocket for your everyday essentials.',
+      assetUrl: '/ad-body.png',
+      status: 'done' as const
+    };
+    const cta = {
+      ...buildNode('cta', columnX, baseY + 1400, 'CTA'),
+      text: 'Shop Now & Upgrade Your Style!',
+      assetUrl: '/ad-cta.png',
+      status: 'done' as const
+    };
+    // agent 承诺过「and pick a suggested trend」，这里直接给出建议趋势，而不是空态
+    const trend = {
+      ...buildNode('tiktok-trend', columnX, baseY + 2100, 'TikTok trend'),
+      width: 264,
+      trendId: 'matching-tracksuits'
+    };
+
+    addPrebuiltGraph(
+      [hook, body, cta, trend],
+      briefId
+        ? [hook, body, cta].map((target, index) => ({
+            id: `edge-script-${Date.now()}-${index}`,
+            source: briefId,
+            sourceOutput: 'out',
+            target: target.id,
+            targetInput: 'prompt'
+          }))
+        : []
+    );
+    setMessages((current) => current.map((message) => ({ ...message, actions: undefined })));
+  }, [addPrebuiltGraph, nodes]);
+
+  /** 当前选区是否恰好是一套「Hook + Body + CTA + TikTok trend」，且分镜还没生成过。 */
+  const scriptSelectionNodes = useMemo(() => {
+    if (selectedIds.length !== SCRIPT_KINDS.length) {
+      return null;
+    }
+    const picked = selectedIds.map((id) => nodes.find((node) => node.id === id)).filter(Boolean) as CanvasNode[];
+    if (picked.length !== SCRIPT_KINDS.length) {
+      return null;
+    }
+    const kinds = picked.map((node) => node.kind).sort();
+    const wanted = [...SCRIPT_KINDS].sort();
+    if (kinds.join(',') !== wanted.join(',')) {
+      return null;
+    }
+    if (nodes.some((node) => node.kind === 'storyboard')) {
+      return null;
+    }
+    return picked;
+  }, [nodes, selectedIds]);
+
+  /** 选区一旦命中四件套就追问一次；选区变化后复位，允许下次重新触发。 */
+  useEffect(() => {
+    if (!scriptSelectionNodes) {
+      scriptSelectionAskedRef.current = false;
+      return;
+    }
+    if (scriptSelectionAskedRef.current) {
+      return;
+    }
+    scriptSelectionAskedRef.current = true;
+    setIsAgentOpen(true);
+    messageSeq += 1;
+    setMessages((current) => [
+      ...current,
+      {
+        id: `msg-storyboard-offer-${messageSeq}`,
+        role: 'agent',
+        content: STORYBOARD_OFFER_QUESTION,
+        actions: STORYBOARD_OFFER_ACTIONS
+      }
+    ]);
+  }, [scriptSelectionNodes]);
+
+  /** 落 Storyboard + Audio Clips，接上 Hook/Body/CTA 的文案、Trend 的视频，以及 Brief 的配音输入。 */
+  const generateStoryboardAndAudio = useCallback(() => {
+    const hook = nodes.find((node) => node.kind === 'hook');
+    const body = nodes.find((node) => node.kind === 'body');
+    const cta = nodes.find((node) => node.kind === 'cta');
+    const trend = nodes.find((node) => node.kind === 'tiktok-trend');
+    const anchor = hook ?? body ?? cta ?? trend;
+    if (!anchor) {
+      return;
+    }
+
+    const columnX = anchor.x + 460;
+    const storyboard = {
+      ...buildNode('storyboard', columnX, anchor.y, 'Storyboard'),
+      width: 1000,
+      height: 1250,
+      storyboardReady: true
+    };
+    const audio = {
+      ...buildNode('audio-clips', columnX, storyboard.y + 1350, 'Audio Clips Generation'),
+      width: 1000
+    };
+
+    const edges = [
+      ...[hook, body, cta]
+        .filter((node): node is CanvasNode => Boolean(node))
+        .map((node, index) => ({
+          id: `edge-storyboard-${Date.now()}-${index}`,
+          source: node.id,
+          sourceOutput: 'out',
+          target: storyboard.id,
+          targetInput: 'prompt'
+        })),
+      ...(trend
+        ? [
+            {
+              id: `edge-storyboard-trend-${Date.now()}`,
+              source: trend.id,
+              sourceOutput: 'out',
+              target: storyboard.id,
+              targetInput: 'video'
+            }
+          ]
+        : []),
+      ...(briefNodeIdRef.current
+        ? [
+            {
+              id: `edge-storyboard-audio-${Date.now()}`,
+              source: briefNodeIdRef.current,
+              sourceOutput: 'out',
+              target: audio.id,
+              targetInput: 'prompt'
+            }
+          ]
+        : [])
+    ];
+
+    addPrebuiltGraph([storyboard, audio], edges);
+    setSelectedIds([storyboard.id]);
+    setScriptAddAnchor(null);
+    setMessages((current) => current.map((message) => ({ ...message, actions: undefined })));
+  }, [addPrebuiltGraph, nodes]);
+
+  /** 四件套选中时，「+」浮标要贴的世界/屏幕坐标（右边缘垂直居中）。 */
+  const scriptSelectionPlusPos = useMemo(() => {
+    if (!scriptSelectionNodes) {
+      return null;
+    }
+    const right = Math.max(...scriptSelectionNodes.map((node) => node.x + node.width));
+    const top = Math.min(...scriptSelectionNodes.map((node) => node.y));
+    const bottom = Math.max(...scriptSelectionNodes.map((node) => node.y + getNodeHeight(node)));
+    return worldToScreen(right, (top + bottom) / 2, viewport);
+  }, [scriptSelectionNodes, viewport]);
+
+  /** agent 气泡下方的后续动作。 */
+  const handleAgentAction = useCallback(
+    (label: string) => {
+      if (label === BRIEF_ACTIONS[0]) {
+        confirmBrief();
+        return;
+      }
+      if (label === SCRIPT_OFFER_ACTIONS[0]) {
+        generateScriptNodes();
+        return;
+      }
+      if (label === SCRIPT_OFFER_ACTIONS[1]) {
+        setMessages((current) => current.map((message) => ({ ...message, actions: undefined })));
+        return;
+      }
+      if (label === STORYBOARD_OFFER_ACTIONS[0]) {
+        generateStoryboardAndAudio();
+        return;
+      }
+      if (label === STORYBOARD_OFFER_ACTIONS[1]) {
+        setMessages((current) => current.map((message) => ({ ...message, actions: undefined })));
+        return;
+      }
+      // eslint-disable-next-line no-console
+      console.info('[canvas] brief follow-up', label);
+    },
+    [confirmBrief, generateScriptNodes, generateStoryboardAndAudio]
+  );
+
   /** 小地图导航：把点中的世界坐标平移到视口中心，缩放保持不变。 */
   const navigateFromMinimap = useCallback(
     (worldX: number, worldY: number) => {
@@ -511,6 +931,98 @@ function CanvasPage() {
       patchNode(nodeId, { text });
     },
     [patchNode]
+  );
+
+  /**
+   * Storyboard 触发生成：卡片内输入框回车/点生成图标，和卡片通用的运行按钮，都走这一条。
+   * 全程本地模拟（不打真实生成接口），保证 outcome 永远是落满 6 帧、不会撞上「没接后端」的报错。
+   */
+  const handleStoryboardGenerate = useCallback(
+    (nodeId: string, text?: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || node.kind !== 'storyboard' || node.storyboardReady || node.status === 'generating') {
+        return;
+      }
+      patchNode(nodeId, { status: 'generating', error: undefined, ...(text !== undefined ? { text } : {}) });
+      window.setTimeout(() => {
+        patchNode(nodeId, {
+          status: 'done',
+          storyboardReady: true,
+          width: STORYBOARD_READY_WIDTH,
+          height: STORYBOARD_READY_HEIGHT
+        });
+      }, DEMO_GENERATING_MS);
+    },
+    [nodes, patchNode]
+  );
+
+  /**
+   * operation 类节点敲回车/点运行。
+   * Split A/V 是一次性的：抽完音轨它就功成身退——Audio Clips Generation 顶替它的位置、
+   * 接手它的上游连线，然后把 Split A/V 从画布上撤掉。
+   */
+  const handleOperationGenerate = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (node?.kind !== 'split-av') {
+        executeNode(nodeId);
+        return;
+      }
+
+      const upstream = edges.filter((edge) => edge.target === nodeId);
+      const existingHub = nodes.find((item) => item.kind === 'audio-clips');
+      if (existingHub) {
+        upstream.forEach((edge) => connectToBestInput(edge.source, edge.sourceOutput, existingHub.id));
+      } else {
+        const audioNode = { ...buildNode('audio-clips', node.x, node.y), width: AUDIO_CLIPS_WIDTH };
+        addPrebuiltGraph(
+          [audioNode],
+          upstream.map((edge, index) => ({
+            id: `edge-audio-${Date.now()}-${index}`,
+            source: edge.source,
+            sourceOutput: edge.sourceOutput,
+            target: audioNode.id,
+            targetInput: 'prompt'
+          }))
+        );
+        setSelectedIds([audioNode.id]);
+      }
+      removeNode(nodeId);
+    },
+    [addPrebuiltGraph, connectToBestInput, edges, executeNode, nodes, removeNode]
+  );
+
+  /**
+   * Video 节点点运行：如果上游同时接了 Storyboard 和 Audio Clips（即「剪成片」这条路），
+   * 用本地固定成片模拟一次生成，而不是真的打生成接口——demo 用，别的 video 节点走原来的 executeNode。
+   */
+  const handleVideoRun = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (node?.kind === 'video') {
+        const upstreamKinds = edges
+          .filter((edge) => edge.target === nodeId)
+          .map((edge) => nodes.find((item) => item.id === edge.source)?.kind);
+        const isClipFromStoryboardAndAudio =
+          upstreamKinds.includes('storyboard') && upstreamKinds.includes('audio-clips');
+        if (isClipFromStoryboardAndAudio) {
+          patchNode(nodeId, { status: 'generating', error: undefined });
+          window.setTimeout(() => {
+            // 出片同时把卡片撑到完整尺寸，9:16 的画面才不会被默认高度裁掉
+            patchNode(nodeId, {
+              status: 'done',
+              videoUrl: CLIP_DEMO_VIDEO_URL,
+              note: 'Dreamina Seedance 2.5',
+              width: VIDEO_READY_WIDTH,
+              height: VIDEO_READY_HEIGHT
+            });
+          }, DEMO_GENERATING_MS);
+          return;
+        }
+      }
+      executeNode(nodeId);
+    },
+    [edges, executeNode, nodes, patchNode]
   );
 
   /**
@@ -565,6 +1077,21 @@ function CanvasPage() {
     );
   }, [nodes, pendingConnection]);
 
+  /** 多选时统一渲染在包围盒右侧、垂直居中的那一个 ⊕（世界坐标，父层已经带了缩放/平移）。 */
+  const multiSelectAddAnchor = useMemo(() => {
+    if (selectedIds.length <= 1) {
+      return null;
+    }
+    const picked = nodes.filter((node) => selectedIds.includes(node.id));
+    if (picked.length < 2) {
+      return null;
+    }
+    const right = Math.max(...picked.map((node) => node.x + node.width));
+    const top = Math.min(...picked.map((node) => node.y));
+    const bottom = Math.max(...picked.map((node) => node.y + getNodeHeight(node)));
+    return { x: right + 10, y: (top + bottom) / 2 };
+  }, [nodes, selectedIds]);
+
   /** 打开时间线编辑器的节点；Timeline 节点和 Video 节点（Edit CTA）都能进全屏编辑态。 */
   const editorNode = useMemo(
     () => nodes.find((node) => node.id === editorNodeId && (node.kind === 'timeline' || node.kind === 'video')) ?? null,
@@ -587,7 +1114,9 @@ function CanvasPage() {
       <div
         ref={containerRef}
         className={clsx(
-          'absolute inset-0 touch-none',
+          // select-none：拖节点时鼠标划过别的卡片不会把它们的文字刷成一片选中态；
+          // 输入框/文本域再单独放开，卡片内的文案照样能选能改
+          'absolute inset-0 touch-none select-none [&_input]:select-text [&_textarea]:select-text',
           // 光标跟随工具：选择=箭头，手型=抓手，评论=十字
           pendingConnection
             ? 'cursor-crosshair'
@@ -636,18 +1165,36 @@ function CanvasPage() {
               onOutputPointerDown={handleOutputPointerDown}
               onInputPointerUp={handleInputPointerUp}
               onOpenAddPanel={openAddPanel}
+              showAddButton={selectedIds.length <= 1}
+              onResizePointerDown={handleResizePointerDown}
               onDropOnCard={handleDropOnCard}
               onOpenEditor={(nodeId, launch) => {
                 setEditorLaunch(launch ?? null);
                 setEditorNodeId(nodeId);
               }}
               onRunTool={runTool}
-              onRun={executeNode}
+              onRun={handleVideoRun}
               onTextChange={handleTextChange}
+              onStoryboardGenerate={handleStoryboardGenerate}
+              onOperationGenerate={handleOperationGenerate}
               onDuplicate={duplicateNode}
               onDelete={removeNode}
             />
           ))}
+
+          {/* 多选时的共用 ⊕：包围盒右侧、垂直居中，选中的每张卡都会连去同一个新节点 */}
+          {multiSelectAddAnchor ? (
+            <button
+              type="button"
+              title="Add connected node"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={openMultiAddPanel}
+              className="absolute z-20 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-solid border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:border-primary-fill hover:text-primary-fill"
+              style={{ left: multiSelectAddAnchor.x, top: multiSelectAddAnchor.y }}
+            >
+              <KsIconPlus size={14} />
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -733,6 +1280,37 @@ function CanvasPage() {
         </div>
       ) : null}
 
+      {/* 选中 Hook/Body/CTA/Trend 四件套：右侧浮出「+」，打开节点面板可一键生成 Storyboard */}
+      {scriptSelectionPlusPos ? (
+        <button
+          type="button"
+          title="Add a connected node"
+          onClick={() =>
+            setScriptAddAnchor((current) => (current ? null : { x: scriptSelectionPlusPos.x, y: scriptSelectionPlusPos.y }))
+          }
+          className="absolute z-30 flex size-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-solid border-primary-fill bg-neutral-surface text-primary-fill shadow-[0_4px_12px_rgba(16,24,40,0.16)] transition-transform hover:scale-105"
+          style={{ left: scriptSelectionPlusPos.x + 28, top: scriptSelectionPlusPos.y }}
+        >
+          <KsIconPlus size={16} />
+        </button>
+      ) : null}
+
+      {scriptAddAnchor ? (
+        <div className="absolute z-30" style={{ left: scriptAddAnchor.x + 28, top: scriptAddAnchor.y }}>
+          <NodePalette
+            onSelect={(kind) => {
+              if (kind === 'storyboard') {
+                generateStoryboardAndAudio();
+                return;
+              }
+              const center = getViewportCenter();
+              setSelectedIds([addNodeAt(kind, center.x, center.y)]);
+              setScriptAddAnchor(null);
+            }}
+          />
+        </div>
+      ) : null}
+
       {/* 卡片 ⊕ 面板：跟随卡片位置浮在画布之上 */}
       {addPanelAnchor ? (
         <div className="absolute z-30" style={{ left: addPanelAnchor.screenX, top: addPanelAnchor.screenY }}>
@@ -765,24 +1343,24 @@ function CanvasPage() {
         <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
           <button
             type="button"
-            title="TikTok Content Strategies"
+            title="TikTok ads-native templates"
             onClick={() => setIsStrategiesOpen(true)}
             className="flex h-9 items-center gap-1.5 rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3.5 text-[12px] font-medium text-neutral-highOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:bg-neutral-surface2"
           >
             <KsIconAiGeneration size={14} />
-            TikTok Content Strategies
+            TikTok ads-native templates
           </button>
           <button
             type="button"
-            title="Save this workflow as a content strategy"
+            title="Save this workflow as a template"
             onClick={() => {
               // eslint-disable-next-line no-console
-              console.info('[canvas] save strategy', { nodes: nodes.length });
+              console.info('[canvas] save as template', { nodes: nodes.length });
             }}
             className="flex h-9 items-center gap-1.5 rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-3.5 text-[12px] font-medium text-neutral-highOnSurface shadow-[0_1px_3px_rgba(16,24,40,0.10)] transition-colors hover:bg-neutral-surface2"
           >
             <KsIconFolderAdd size={14} />
-            Save strategy
+            Save as template
           </button>
           <button
             type="button"
@@ -824,6 +1402,23 @@ function CanvasPage() {
         onNavigate={navigateFromMinimap}
       />
 
+      {/* 空画布的 agent 输入区：提示词 + 模板/加节点/教程三个入口 */}
+      {isCanvasEmpty && !isStrategiesOpen ? (
+        <CanvasComposer
+          onGenerateBrief={generateBrief}
+          onOpenTemplates={() => setIsStrategiesOpen(true)}
+          onAddNode={() => setSidebarPanel('nodes')}
+          onOpenTutorials={() => {
+            // eslint-disable-next-line no-console
+            console.info('[canvas] open tutorials');
+          }}
+          onSubmit={(prompt) => {
+            setIsAgentOpen(true);
+            void sendMessage(prompt);
+          }}
+        />
+      ) : null}
+
       {isStrategiesOpen ? (
         <ContentStrategiesPopover onPick={applyStrategy} onClose={() => setIsStrategiesOpen(false)} />
       ) : null}
@@ -848,6 +1443,7 @@ function CanvasPage() {
         messages={messages}
         onToggle={() => setIsAgentOpen((open) => !open)}
         onSend={sendMessage}
+        onAction={handleAgentAction}
       />
     </div>
   );

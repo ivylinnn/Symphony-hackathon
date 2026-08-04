@@ -19,6 +19,10 @@ export const GRID_SIZE = 24;
 
 export const NODE_DEFAULT_WIDTH = 264;
 
+/** 手动缩放节点时的下限，避免拖成看不见的一条。 */
+export const MIN_NODE_WIDTH = 200;
+export const MIN_NODE_HEIGHT = 120;
+
 /** 端口行高，输入/输出行以卡片竖直中线为基准均分排布。 */
 export const PORT_ROW_HEIGHT = 26;
 
@@ -49,10 +53,28 @@ interface NodeKindConfig {
 }
 
 const TEXT_NODE_HEIGHT = 168;
+/** 脚本卡：9:16 配图 + 描述文案，三张卡等高便于纵向对齐。 */
+const SCRIPT_CARD_HEIGHT = 640;
 const MEDIA_NODE_HEIGHT = 296;
 const AUDIO_NODE_HEIGHT = 192;
 const OPERATION_NODE_HEIGHT = 172;
 const TIMELINE_NODE_HEIGHT = 192;
+/** Storyboard：2 行 × 3 格，需要更大的画布空间。 */
+/** 分镜落满 6 帧后的完整尺寸；模板/自动生成流程会显式覆盖到这个值。 */
+export const STORYBOARD_READY_WIDTH = 1000;
+export const STORYBOARD_READY_HEIGHT = 1250;
+/** 手动新增的空分镜：小卡片 + 底部输入框，等用户输入后再长大。 */
+export const STORYBOARD_EMPTY_WIDTH = 320;
+/** Audio Clips：6 段配音要横着排开，跟分镜同宽才装得下。 */
+export const AUDIO_CLIPS_WIDTH = STORYBOARD_READY_WIDTH;
+/**
+ * 视频生成成功后的完整卡片尺寸。
+ * 名字已经移到卡片外，所以卡内只剩：上留白 12 + 9:16 画面 (width - 左右 padding 24) × 16/9
+ * + 间距 8 + 参数行 24 + 底部留白 36。
+ */
+export const VIDEO_READY_WIDTH = 460;
+export const VIDEO_READY_HEIGHT = Math.round(12 + ((VIDEO_READY_WIDTH - 24) * 16) / 9 + 8 + 24 + 36);
+const STORYBOARD_EMPTY_HEIGHT = 300;
 const BATCH_NODE_HEIGHT = 220;
 
 /** 生成类节点通用的输入组合，和 Flora 的 Prompt/Image/Video/Audio 一致。 */
@@ -70,8 +92,8 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
   hook: {
     category: 'ads-native',
     label: 'Hook',
-    body: 'text',
-    height: TEXT_NODE_HEIGHT,
+    body: 'script-card',
+    height: SCRIPT_CARD_HEIGHT,
     hint: 'Opening line that stops the scroll…',
     inputs: TEXT_ONLY_INPUT,
     outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
@@ -79,8 +101,8 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
   body: {
     category: 'ads-native',
     label: 'Body',
-    body: 'text',
-    height: TEXT_NODE_HEIGHT,
+    body: 'script-card',
+    height: SCRIPT_CARD_HEIGHT,
     hint: 'Main message, product value, proof…',
     inputs: TEXT_ONLY_INPUT,
     outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
@@ -88,8 +110,8 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
   cta: {
     category: 'ads-native',
     label: 'CTA',
-    body: 'text',
-    height: TEXT_NODE_HEIGHT,
+    body: 'script-card',
+    height: SCRIPT_CARD_HEIGHT,
     hint: 'Closing call to action…',
     inputs: TEXT_ONLY_INPUT,
     outputs: [{ id: 'out', label: 'Text', type: 'prompt' }]
@@ -136,7 +158,7 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
     category: 'inspiration',
     label: 'Audio Clips Generation',
     body: 'audio-clips',
-    height: 250,
+    height: 310,
     description: 'ElevenLabs voiceover clips generated from the connected brief, one clip per storyboard frame.',
     inputs: [{ id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 }],
     outputs: [{ id: 'out', label: 'Audio', type: 'audio' }]
@@ -145,10 +167,11 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
     category: 'inspiration',
     label: 'Storyboard',
     body: 'storyboard',
-    height: 460,
+    height: STORYBOARD_EMPTY_HEIGHT,
     description: 'Scene-by-scene plan with voiceover, drafted from every connected input.',
     inputs: [
-      { id: 'prompt', label: 'Brief', type: 'prompt', max: 1 },
+      // Hook / Body / CTA 三段脚本都接这里，上限放到 4
+      { id: 'prompt', label: 'Script', type: 'prompt', max: 4 },
       { id: 'image', label: 'Image', type: 'image', max: 9 },
       { id: 'video', label: 'Video', type: 'video', max: 3 }
     ],
