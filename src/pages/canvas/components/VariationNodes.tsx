@@ -262,20 +262,32 @@ export function StrategyBody({ node, onEvent }: { node: CanvasNode; onEvent: OnE
         {node.rationale ?? 'A deliberate creative direction. Connect a brief and expand it into variations.'}
       </p>
 
-      <div className="mt-2 flex flex-wrap gap-1">
-        {node.text ? (
-          <span className="rounded-full bg-primary-surface2 px-2 py-0.5 text-[10px] font-medium text-primary-onSurface">
-            {node.text}
-          </span>
-        ) : null}
-        {(node.varyDimensions ?? []).map((dimension) => (
-          <span
-            key={dimension}
-            className="rounded-full bg-neutral-surface1 px-2 py-0.5 text-[10px] font-medium text-neutral-mediumOnSurface"
-          >
-            varies {dimension.toLowerCase()}
-          </span>
-        ))}
+      {/* 每条方向自己决定要探索什么：可开关的 Vary 维度 */}
+      <div className="mt-2" data-strategy-vary>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">Vary</div>
+        <div className="flex flex-wrap gap-1">
+          {ALL_VARY_DIMENSIONS.map((dimension) => {
+            const isOn = (node.varyDimensions ?? []).includes(dimension);
+            return (
+              <button
+                key={dimension}
+                type="button"
+                aria-pressed={isOn}
+                title={isOn ? `Stop varying ${dimension}` : `Let ${dimension} vary`}
+                onClick={() => onEvent({ type: 'toggle-dimension', dimension })}
+                onPointerDown={(event) => event.stopPropagation()}
+                className={clsx(
+                  'rounded-full border border-solid px-2 py-0.5 text-[10px] font-medium transition-colors',
+                  isOn
+                    ? 'border-primary-fill bg-primary-surface2 text-primary-onSurface'
+                    : 'border-neutral-fillLow bg-neutral-surface text-neutral-lowOnSurface hover:bg-neutral-surface2'
+                )}
+              >
+                {dimension}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <button

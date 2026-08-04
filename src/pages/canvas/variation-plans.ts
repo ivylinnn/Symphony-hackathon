@@ -37,7 +37,17 @@ export const DEFAULT_VARIATION_PLAN: VariationPlan = {
 /** 默认保持不变的维度：产品、品牌、促销、片尾卡是这组变体的「常量」。 */
 export const DEFAULT_KEEP_CONSTANT = ['Product', 'Brand identity', 'Promotion', 'End card'];
 /** 可以拿来探索的维度全集；不在 vary 里的都视为保持不变。 */
-export const ALL_VARY_DIMENSIONS = ['Hook', 'Background', 'Talent', 'Copy', 'Storyline', 'Music', 'Duration'];
+export const ALL_VARY_DIMENSIONS = [
+  'Hook',
+  'Background',
+  'CTA',
+  'Selling points',
+  'Talent',
+  'Copy',
+  'Storyline',
+  'Music',
+  'Duration'
+];
 
 /* ------------------------------------------------------------------ */
 /* 三条创意方向（Tom 的六个 TikTok 概念先分成三条路）                       */
@@ -318,7 +328,7 @@ export const buildControlledVariations = (base: VariationSpec, plan: VariationPl
 /** 从 brief 派生三张 strategy 卡（还没生成变体，只是三条可展开的路）。 */
 export const buildStrategyNodes = (brief: CanvasNode, plan: VariationPlan): CanvasNode[] =>
   STRATEGY_PRESETS.map((preset, index) => ({
-    ...buildNode('strategy', brief.x + brief.width + 140, brief.y + (index - 1) * 320, preset.title),
+    ...buildNode('strategy', brief.x + brief.width + 140, brief.y + (index - 1) * 396, preset.title),
     // strategy id 藏在 note 里，展开时用它挑变体种子
     note: preset.id,
     rationale: preset.rationale,
