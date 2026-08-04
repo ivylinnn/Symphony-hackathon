@@ -102,16 +102,8 @@ afterEach(() => {
 });
 
 describe('CanvasPage', () => {
-  it('opens the prompt box when clicking the empty canvas', () => {
+  it('shows the prompt box directly on the empty canvas', () => {
     renderCanvas();
-
-    // 首屏空画布只有一句提示；点画布后 composer 出现
-    expect(container.textContent).toContain('Click anywhere on the canvas to start');
-    expect(container.textContent).not.toContain('What do you want to create?');
-
-    act(() => {
-      query('[data-canvas-surface]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    });
 
     expect(container.textContent).toContain('What do you want to create?');
   });

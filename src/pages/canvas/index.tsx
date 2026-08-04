@@ -270,9 +270,8 @@ function CanvasPage() {
     }
   }, [animateViewportTo]);
 
-  /** 空画布上点一下才唤起 composer；有节点后两者都让位。 */
+  /** 空画布直接展示 composer；有节点后自动让位。 */
   const isCanvasEmpty = nodes.length === 0;
-  const [isComposerOpen, setIsComposerOpen] = useState(false);
   /** Composer 提交后的过场：3 秒加载动画，然后节点才落画布。 */
   const [isLandingLoading, setIsLandingLoading] = useState(false);
 
@@ -281,7 +280,6 @@ function CanvasPage() {
    * 再落产品源工作流（产品图 + 品牌资产 → Product brief），镜头框住它。
    */
   const landProductWorkflow = useCallback(() => {
-    setIsComposerOpen(false);
     setIsLandingLoading(true);
     window.setTimeout(() => {
       setIsLandingLoading(false);
@@ -322,12 +320,6 @@ function CanvasPage() {
     // 视口还在缓动时立刻定格，否则框选/拉线的世界坐标会随动画漂移
     stopAnimation();
     setAddPanelAnchor(null);
-
-    // 空画布：点一下画布唤起 composer（提示词框）；加载过场中不响应
-    if (isCanvasEmpty && !isComposerOpen && !isLandingLoading && event.button === 0) {
-      setIsComposerOpen(true);
-      return;
-    }
 
     // 评论工具：点空白处落一条评论草稿
     if (tool === 'comment' && event.button === 0 && !isSpaceHeld) {
@@ -1081,6 +1073,21 @@ function CanvasPage() {
     [addPrebuiltGraph, connectToBestInput, edges, executeNode, nodes, removeNode]
   );
 
+  /** Audio Clips 空态点「Generate audio」：跑一段生成态，再展开完整配音面板。 */
+  const handleAudioGenerate = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || node.kind !== 'audio-clips' || node.audioReady || node.status === 'generating') {
+        return;
+      }
+      patchNode(nodeId, { status: 'generating', error: undefined });
+      window.setTimeout(() => {
+        patchNode(nodeId, { status: 'done', audioReady: true });
+      }, DEMO_GENERATING_MS);
+    },
+    [nodes, patchNode]
+  );
+
   /** 变体集落地：生成中的容器先上画布，延时后把变体卡 patch 进去。 */
   const spawnVariationSet = useCallback(
     (source: CanvasNode, title: string, specs: VariationSpec[], vary: string[], offsetY = 0) => {
@@ -1494,6 +1501,7 @@ function CanvasPage() {
               onTextChange={handleTextChange}
               onStoryboardGenerate={handleStoryboardGenerate}
               onOperationGenerate={handleOperationGenerate}
+              onAudioGenerate={handleAudioGenerate}
               onVariationEvent={handleVariationEvent}
               isEditing={editDock?.nodeId === node.id}
               onExitEditor={exitEditMode}
@@ -1736,16 +1744,7 @@ function CanvasPage() {
         </div>
       ) : null}
 
-      {/* 空画布：先给一句轻提示，点画布唤起 composer */}
-      {isCanvasEmpty && !isComposerOpen && !isLandingLoading && !isStrategiesOpen ? (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center pl-[88px]">
-          <span className="text-[15px] font-medium text-neutral-lowOnSurface">
-            Click anywhere on the canvas to start
-          </span>
-        </div>
-      ) : null}
-
-      {isCanvasEmpty && isComposerOpen && !isStrategiesOpen ? (
+      {isCanvasEmpty && !isLandingLoading && !isStrategiesOpen ? (
         <CanvasComposer
           onGenerateBrief={landProductWorkflow}
           onOpenTemplates={() => setIsStrategiesOpen(true)}
