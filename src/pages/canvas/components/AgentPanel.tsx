@@ -52,7 +52,6 @@ const EDIT_QUICK_ACTIONS = [
   'Trim silences',
   'Add captions',
   'Add selling points',
-  'Add promotion',
   'Add end card',
   'Swap product'
 ];
