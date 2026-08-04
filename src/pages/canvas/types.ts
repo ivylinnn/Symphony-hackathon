@@ -255,7 +255,8 @@ export interface VariationPlan {
   audience: string;
   offer: string;
   platform: string;
-  direction: string;
+  /** 选中的创意方向（多选）；自定义方向也存这里。 */
+  directions: string[];
   /** 生成几条变体，1-6。 */
   count: number;
 }

@@ -79,8 +79,8 @@ const BATCH_NODE_HEIGHT = 220;
 
 /** Product brief 的基础高度（planner 收起时）。 */
 export const PRODUCT_BRIEF_HEIGHT = 440;
-/** Variation planner 展开后 brief 卡追加的高度。 */
-export const VARIATION_PLANNER_EXTRA = 372;
+/** Variation planner 展开后 brief 卡追加的高度（含 6 方向 + Add new 的多行 chips）。 */
+export const VARIATION_PLANNER_EXTRA = 448;
 /** Strategy 卡：方向 + 理由 + 受众 + 生成入口。 */
 const STRATEGY_NODE_HEIGHT = 264;
 /** Variation set 收起态：标题 + 一行 3 张迷你预览 + 底部操作。 */

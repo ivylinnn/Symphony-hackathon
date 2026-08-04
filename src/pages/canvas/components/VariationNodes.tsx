@@ -73,6 +73,28 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
 
   const patch = (partial: Partial<VariationPlan>) => onEvent({ type: 'plan-change', plan: { ...plan, ...partial } });
 
+  /* 「Add new」创意方向：点开一个小输入框，回车落成已选中的自定义 chip。 */
+  const [isAddingDirection, setIsAddingDirection] = useState(false);
+  const [directionDraft, setDirectionDraft] = useState('');
+  /** 候选 = 预置方向 ∪ 自定义方向（自定义的都在选中集里）。 */
+  const directionOptions = [...PLAN_DIRECTIONS, ...plan.directions.filter((item) => !PLAN_DIRECTIONS.includes(item))];
+
+  const toggleDirection = (direction: string) =>
+    patch({
+      directions: plan.directions.includes(direction)
+        ? plan.directions.filter((item) => item !== direction)
+        : [...plan.directions, direction]
+    });
+
+  const commitNewDirection = () => {
+    const label = directionDraft.trim();
+    setIsAddingDirection(false);
+    setDirectionDraft('');
+    if (label && !plan.directions.includes(label)) {
+      patch({ directions: [...plan.directions, label] });
+    }
+  };
+
   return (
     <div className="mt-2 shrink-0 rounded-lg border border-solid border-neutral-fillLow bg-neutral-surface1">
       <button
@@ -95,12 +117,65 @@ export function BriefVariationPlanner({ node, onEvent }: { node: CanvasNode; onE
           <ChipRow label="Objective" options={PLAN_OBJECTIVES} value={plan.objective} onPick={(objective) => patch({ objective })} />
           <ChipRow label="Audience" options={PLAN_AUDIENCES} value={plan.audience} onPick={(audience) => patch({ audience })} />
           <ChipRow label="Platform" options={PLAN_PLATFORMS} value={plan.platform} onPick={(platform) => patch({ platform })} />
-          <ChipRow
-            label="Creative direction"
-            options={PLAN_DIRECTIONS}
-            value={plan.direction}
-            onPick={(direction) => patch({ direction })}
-          />
+          <div className="mt-2" data-direction-row>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-lowOnSurface">
+              Creative direction
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {directionOptions.map((direction) => {
+                const isPicked = plan.directions.includes(direction);
+                return (
+                  <button
+                    key={direction}
+                    type="button"
+                    aria-pressed={isPicked}
+                    onClick={() => toggleDirection(direction)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    className={clsx(
+                      'rounded-full border border-solid px-2 py-0.5 text-[11px] font-medium transition-colors',
+                      isPicked
+                        ? 'border-primary-fill bg-primary-surface2 text-primary-onSurface'
+                        : 'border-neutral-fillLow bg-neutral-surface text-neutral-mediumOnSurface hover:bg-neutral-surface2'
+                    )}
+                  >
+                    {direction}
+                  </button>
+                );
+              })}
+              {isAddingDirection ? (
+                <input
+                  autoFocus
+                  value={directionDraft}
+                  placeholder="New direction…"
+                  data-direction-input
+                  onChange={(event) => setDirectionDraft(event.target.value)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      commitNewDirection();
+                    }
+                    if (event.key === 'Escape') {
+                      setIsAddingDirection(false);
+                      setDirectionDraft('');
+                    }
+                  }}
+                  onBlur={commitNewDirection}
+                  className="w-28 rounded-full border border-solid border-primary-fill bg-neutral-surface px-2 py-0.5 text-[11px] text-neutral-highOnSurface outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  data-direction-add
+                  onClick={() => setIsAddingDirection(true)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="rounded-full border border-dashed border-neutral-fillMedHigh px-2 py-0.5 text-[11px] font-medium text-neutral-mediumOnSurface transition-colors hover:border-primary-fill hover:text-primary-fill"
+                >
+                  ＋ Add new
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="mt-2 flex items-end gap-2">
             <div className="min-w-0 flex-1">

@@ -16,7 +16,8 @@ import type { CanvasNode, VariationPlan, VariationSpec } from './types';
 export const PLAN_OBJECTIVES = ['Conversion', 'Awareness', 'Engagement'];
 export const PLAN_AUDIENCES = ['Gen Z', 'Parents', 'Fitness enthusiasts'];
 export const PLAN_PLATFORMS = ['TikTok', 'Reels', 'Shorts'];
-export const PLAN_DIRECTIONS = ['Lifestyle', 'Product demo', 'Testimonial'];
+/** 创意方向候选（多选）；「Add new」输入的自定义方向会追加进选中集。 */
+export const PLAN_DIRECTIONS = ['Lifestyle', 'Product demo', 'Testimonial', 'Trend-led', 'UGC review', 'Unboxing'];
 
 export const MAX_VARIATIONS = 3;
 
@@ -25,7 +26,7 @@ export const DEFAULT_VARIATION_PLAN: VariationPlan = {
   audience: 'Gen Z',
   offer: '20% off summer sale',
   platform: 'TikTok',
-  direction: 'Lifestyle',
+  directions: ['Lifestyle', 'Product demo', 'Testimonial'],
   count: 3
 };
 
