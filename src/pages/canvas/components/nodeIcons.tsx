@@ -1,5 +1,7 @@
 import {
+  KsIconAiGeneration,
   KsIconCampaignList,
+  KsIconFullSelect,
   KsIconImageCollection,
   KsIconPeople,
   KsIconSend,
@@ -47,6 +49,8 @@ const NODE_KIND_ICON_COMPONENT: Record<CanvasNodeKind, IconComponent> = {
   audio: KsIconSound,
   avatar: KsIconPeople,
   import: KsIconUpload,
+  strategy: KsIconAiGeneration,
+  'variation-set': KsIconFullSelect,
   'split-av': KsIconSplit,
   'split-tracks': KsIconSeperateAudio,
   timeline: KsIconShowTimeline,

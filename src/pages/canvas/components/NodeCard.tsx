@@ -4,7 +4,7 @@ import type React from 'react';
 import { useRef, useState } from 'react';
 
 import { BATCH_PREVIEW_ITEMS, NODE_KIND_CONFIG, PORT_ROW_HEIGHT } from '../const';
-import type { CanvasEdge, CanvasNode, EditNodeKind, NodePortSpec, PortType } from '../types';
+import type { CanvasEdge, CanvasNode, EditNodeKind, NodePortSpec, PortType, VariationEvent } from '../types';
 import { countInputConnections, getNodeHeight, getPortOffsetY } from '../utils';
 import {
   AudioClipsBody,
@@ -17,6 +17,7 @@ import {
 } from './InspirationNodes';
 import NodeHoverToolbar, { VideoHoverToolbar } from './NodeHoverToolbar';
 import { NodeKindIcon, PORT_TYPE_ICON } from './nodeIcons';
+import { BriefVariationPlanner, StrategyBody, VariationSetBody } from './VariationNodes';
 
 interface NodeCardProps {
   node: CanvasNode;
@@ -51,6 +52,8 @@ interface NodeCardProps {
   onTextChange: (nodeId: string, text: string) => void;
   /** Storyboard 触发生成：卡片内的输入框和卡片通用的运行按钮都走这一个，结局都保证落满 6 帧。 */
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
+  /** 变体探索的所有交互（planner / strategy / variation set）统一走这一个分发器。 */
+  onVariationEvent: (nodeId: string, event: VariationEvent) => void;
   onDuplicate: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
 }
@@ -204,7 +207,8 @@ function NodeBody({
   onTextChange,
   onOpenEditor,
   onStoryboardGenerate,
-  onOperationGenerate
+  onOperationGenerate,
+  onVariationEvent
 }: {
   node: CanvasNode;
   isHovered: boolean;
@@ -216,6 +220,7 @@ function NodeBody({
   onOpenEditor: (nodeId: string) => void;
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
   onOperationGenerate: (nodeId: string) => void;
+  onVariationEvent: (nodeId: string, event: VariationEvent) => void;
 }) {
   const config = NODE_KIND_CONFIG[node.kind];
 
@@ -226,7 +231,21 @@ function NodeBody({
     return <BrandKitBody />;
   }
   if (config.body === 'product-brief') {
-    return <ProductBriefBody />;
+    // Brief 内容在上滚动，variation planner 钉在卡底：先说清什么该变，再谈生成
+    return (
+      <div className="flex h-full flex-col">
+        <div className="min-h-0 flex-1">
+          <ProductBriefBody />
+        </div>
+        <BriefVariationPlanner node={node} onEvent={(event) => onVariationEvent(node.id, event)} />
+      </div>
+    );
+  }
+  if (config.body === 'strategy') {
+    return <StrategyBody node={node} onEvent={(event) => onVariationEvent(node.id, event)} />;
+  }
+  if (config.body === 'variation-set') {
+    return <VariationSetBody node={node} onEvent={(event) => onVariationEvent(node.id, event)} />;
   }
   if (config.body === 'tiktok-trend') {
     return <TikTokTrendBody initialTrendId={node.trendId} />;
@@ -495,6 +514,7 @@ function NodeCard({
   onTextChange,
   onStoryboardGenerate,
   onOperationGenerate,
+  onVariationEvent,
   onDuplicate,
   onDelete
 }: NodeCardProps) {
@@ -615,6 +635,7 @@ function NodeCard({
             onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}
             onOperationGenerate={onOperationGenerate}
+            onVariationEvent={onVariationEvent}
           />
         </div>
 
@@ -625,7 +646,11 @@ function NodeCard({
               ? onOperationGenerate
               : config.body === 'storyboard'
                 ? (nodeId) => onStoryboardGenerate(nodeId)
-                : onRun
+                : config.body === 'strategy'
+                  ? (nodeId) => onVariationEvent(nodeId, { type: 'expand-strategy' })
+                  : config.body === 'variation-set'
+                    ? (nodeId) => onVariationEvent(nodeId, { type: 'toggle-expanded' })
+                    : onRun
           }
         />
       </div>

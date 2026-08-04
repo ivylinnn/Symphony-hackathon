@@ -119,14 +119,80 @@ describe('CanvasPage', () => {
 
     clickByTitle('Add node');
 
-    [...KINDS_BY_CATEGORY['ads-native'], ...KINDS_BY_CATEGORY.creative, ...KINDS_BY_CATEGORY.edit].forEach((kind) => {
+    [
+      ...KINDS_BY_CATEGORY['ads-native'],
+      ...KINDS_BY_CATEGORY.creative,
+      ...KINDS_BY_CATEGORY.variations,
+      ...KINDS_BY_CATEGORY.edit
+    ].forEach((kind) => {
       expect(query(`[title="Add ${NODE_KIND_CONFIG[kind].label} node"]`)).not.toBeNull();
     });
 
     const text = container.textContent ?? '';
     expect(text).toContain(CATEGORY_LABEL['ads-native']);
     expect(text).toContain(CATEGORY_LABEL.creative);
+    expect(text).toContain(CATEGORY_LABEL.variations);
     expect(text).toContain(CATEGORY_LABEL.edit);
+  });
+
+  it('plans variations on the brief and proposes three creative directions', () => {
+    renderCanvas();
+    clickByTitle('Add node');
+    clickByTitle('Add Product brief node');
+
+    // planner 钉在 brief 底部，展开后是显式的「什么该变」控制
+    act(() => {
+      query('[data-variation-planner-toggle]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(query('[data-variation-planner]')).not.toBeNull();
+
+    // Explore：先提三条创意方向，而不是直接砸六个随机产物
+    jest.useFakeTimers();
+    act(() => {
+      query('[data-variation-explore]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+    jest.useRealTimers();
+
+    expect(countNodes('strategy')).toBe(3);
+  });
+
+  it('expands a strategy into a collapsed variation set with controls', () => {
+    renderCanvas();
+    clickByTitle('Add node');
+    clickByTitle('Add Product brief node');
+    act(() => {
+      query('[data-variation-planner-toggle]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    jest.useFakeTimers();
+    act(() => {
+      query('[data-variation-explore]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+
+    // 展开第一条方向 → 生成中的变体集容器 → 落满变体卡
+    act(() => {
+      query('[data-strategy-expand]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(countNodes('variation-set')).toBe(1);
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+    jest.useRealTimers();
+
+    // 默认收起：迷你预览在、完整卡不在；展开后出现完整卡与 Keep/Vary 控制
+    expect(query('[data-variation-card]')).toBeNull();
+    act(() => {
+      query('[data-variation-set-toggle]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(query('[data-variation-card]')).not.toBeNull();
+    expect(query('[data-variation-controls]')).not.toBeNull();
+    expect(container.textContent).toContain('Keep constant');
   });
 
   it('splits audio into BGM and numbered voiceover tracks', () => {

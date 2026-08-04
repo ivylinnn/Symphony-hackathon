@@ -21,17 +21,23 @@ import {
   MIN_NODE_WIDTH,
   NODE_DEFAULT_WIDTH,
   NODE_KIND_CONFIG,
+  PRODUCT_BRIEF_HEIGHT,
   STORYBOARD_READY_HEIGHT,
   STORYBOARD_READY_WIDTH,
+  VARIATION_PLANNER_EXTRA,
+  VARIATION_SET_EXPANDED_HEIGHT,
+  VARIATION_SET_EXPANDED_WIDTH,
+  VARIATION_SET_HEIGHT,
+  VARIATION_SET_WIDTH,
   VIDEO_READY_HEIGHT,
   VIDEO_READY_WIDTH
 } from './const';
 import { CONTENT_STRATEGIES, buildStrategyGraph, type ContentStrategy } from './content-strategies';
-import { buildNode } from './graph-ops';
+import { appendEdge, buildNode } from './graph-ops';
 import { useCanvasGraph } from './hooks/use-canvas-graph';
 import { useCanvasViewport } from './hooks/use-canvas-viewport';
 import { buildScriptGraph } from './services/agent';
-import type { CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection, Viewport } from './types';
+import type { CanvasEdge, CanvasNode, CanvasNodeKind, LibraryAsset, PendingConnection, VariationEvent, VariationSpec, Viewport } from './types';
 import {
   getFitViewport,
   getFocusNodeViewport,
@@ -42,6 +48,14 @@ import {
   screenToWorld,
   worldToScreen
 } from './utils';
+import {
+  DEFAULT_VARIATION_PLAN,
+  buildControlledVariations,
+  buildQuickExploreVariations,
+  buildStrategyNodes,
+  buildStrategyVariations,
+  buildVariationSetNode
+} from './variation-plans';
 
 /** 指针拖拽的三种模式，用 ref 存避免每次 move 都触发重渲染。 */
 type DragState =
@@ -1031,6 +1045,208 @@ function CanvasPage() {
     [addPrebuiltGraph, connectToBestInput, edges, executeNode, nodes, removeNode]
   );
 
+  /** 变体集落地：生成中的容器先上画布，延时后把变体卡 patch 进去。 */
+  const spawnVariationSet = useCallback(
+    (source: CanvasNode, title: string, specs: VariationSpec[], vary: string[], offsetY = 0) => {
+      const plan = source.variationPlan ?? DEFAULT_VARIATION_PLAN;
+      const setNode = buildVariationSetNode(source, title, plan, vary);
+      setNode.y += offsetY;
+      addPrebuiltGraph([setNode], appendEdge([], source.id, 'out', setNode.id, 'prompt'));
+      setSelectedIds([setNode.id]);
+      window.setTimeout(() => {
+        patchNode(setNode.id, { status: 'done', variations: specs });
+      }, DEMO_GENERATING_MS);
+    },
+    [addPrebuiltGraph, patchNode]
+  );
+
+  /** 把一条变体落成画布上真正的 video 节点（缩略图当封面，hook 当文案）。 */
+  const materializeVariation = useCallback(
+    (setNode: CanvasNode, spec: VariationSpec, index: number, count: number): CanvasNode => ({
+      ...buildNode(
+        'video',
+        setNode.x + setNode.width + 140,
+        setNode.y + (index - (count - 1) / 2) * 330,
+        spec.name
+      ),
+      status: 'done' as const,
+      assetUrl: spec.thumbnail,
+      text: spec.hook,
+      note: `${spec.audience} · ${spec.whatChanged}`
+    }),
+    []
+  );
+
+  /** open-variation 落下的节点要等 state 提交后才存在；这里接力推进编辑模式。 */
+  const pendingEditNodeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pending = pendingEditNodeIdRef.current;
+    if (pending && nodes.some((item) => item.id === pending)) {
+      pendingEditNodeIdRef.current = null;
+      enterEditMode(pending);
+    }
+  }, [enterEditMode, nodes]);
+
+  /**
+   * 变体探索的统一分发器：一份产品源 → 一条创意策略 → 一组可控变体。
+   * brief 提出三条方向（explore）或直接出一组发散概念（quick-explore）；
+   * strategy 展开成变体集；变体可深分支（more-like-this）、落卡（expand-to-canvas）、进编辑器（open-variation）。
+   * 全程本地模拟，接真实策略/生成接口后替换各分支内的数据源即可。
+   */
+  const handleVariationEvent = useCallback(
+    (nodeId: string, event: VariationEvent) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        return;
+      }
+
+      switch (event.type) {
+        case 'plan-change':
+          patchNode(nodeId, { variationPlan: event.plan });
+          break;
+
+        case 'toggle-planner': {
+          const open = !node.variationPlannerOpen;
+          patchNode(nodeId, {
+            variationPlannerOpen: open,
+            variationPlan: node.variationPlan ?? DEFAULT_VARIATION_PLAN,
+            height: (node.height ?? PRODUCT_BRIEF_HEIGHT) + (open ? VARIATION_PLANNER_EXTRA : -VARIATION_PLANNER_EXTRA)
+          });
+          break;
+        }
+
+        case 'explore': {
+          // 层级三选一里的「方向优先」：先提三条创意方向，每条都能再展开
+          const plan = node.variationPlan ?? DEFAULT_VARIATION_PLAN;
+          patchNode(nodeId, { status: 'generating' });
+          window.setTimeout(() => {
+            const strategies = buildStrategyNodes(node, plan);
+            const strategyEdges = strategies.reduce<CanvasEdge[]>(
+              (acc, strategy) => appendEdge(acc, nodeId, 'out', strategy.id, 'prompt'),
+              []
+            );
+            addPrebuiltGraph(strategies, strategyEdges);
+            patchNode(nodeId, { status: 'done' });
+            setSelectedIds(strategies.map((strategy) => strategy.id));
+          }, DEMO_GENERATING_MS);
+          break;
+        }
+
+        case 'quick-explore': {
+          // Quick explore：跳过方向，直接给 N 个刻意不同的概念（早期发散用）
+          const plan = node.variationPlan ?? DEFAULT_VARIATION_PLAN;
+          spawnVariationSet(
+            node,
+            `${plan.offer} — quick explore`,
+            buildQuickExploreVariations(plan),
+            ['Hook', 'Background', 'Talent', 'Copy', 'Storyline', 'Music', 'Duration']
+          );
+          break;
+        }
+
+        case 'expand-strategy':
+          spawnVariationSet(
+            node,
+            `${node.title} — variations`,
+            buildStrategyVariations(node.note ?? 'trend-led', node.variationPlan ?? DEFAULT_VARIATION_PLAN),
+            node.varyDimensions ?? ['Hook']
+          );
+          break;
+
+        case 'toggle-expanded': {
+          const expanded = !node.variationsExpanded;
+          patchNode(nodeId, {
+            variationsExpanded: expanded,
+            width: expanded ? VARIATION_SET_EXPANDED_WIDTH : VARIATION_SET_WIDTH,
+            height: expanded ? VARIATION_SET_EXPANDED_HEIGHT : VARIATION_SET_HEIGHT
+          });
+          break;
+        }
+
+        case 'toggle-dimension': {
+          const vary = node.varyDimensions ?? [];
+          const keep = node.keepConstant ?? [];
+          if (vary.includes(event.dimension)) {
+            patchNode(nodeId, {
+              varyDimensions: vary.filter((dimension) => dimension !== event.dimension),
+              keepConstant: keep.includes(event.dimension) ? keep : [...keep, event.dimension]
+            });
+          } else {
+            patchNode(nodeId, {
+              varyDimensions: [...vary, event.dimension],
+              keepConstant: keep.filter((dimension) => dimension !== event.dimension)
+            });
+          }
+          break;
+        }
+
+        case 'select-variation':
+          // 单选语义：一组变体里只保留一个 selected，再点一次取消
+          patchNode(nodeId, {
+            variations: (node.variations ?? []).map((variation) =>
+              variation.id === event.variationId
+                ? { ...variation, status: variation.status === 'selected' ? 'draft' : 'selected' }
+                : variation.status === 'selected'
+                  ? { ...variation, status: 'draft' }
+                  : variation
+            )
+          });
+          break;
+
+        case 'more-like-this': {
+          // 深分支：拿这条变体当基准，只动 hook 和 CTA 的三个受控版本
+          const base = node.variations?.find((variation) => variation.id === event.variationId);
+          if (!base) {
+            return;
+          }
+          const plan = node.variationPlan ?? DEFAULT_VARIATION_PLAN;
+          const downstreamCount = edges.filter((edge) => edge.source === nodeId).length;
+          spawnVariationSet(
+            node,
+            `More like “${base.name}”`,
+            buildControlledVariations(base, plan),
+            ['Hook', 'Copy'],
+            downstreamCount * 160
+          );
+          break;
+        }
+
+        case 'open-variation': {
+          const spec = node.variations?.find((variation) => variation.id === event.variationId);
+          if (!spec) {
+            return;
+          }
+          const downstreamCount = edges.filter((edge) => edge.source === nodeId).length;
+          const videoNode = materializeVariation(node, spec, downstreamCount, downstreamCount * 2 + 1);
+          addPrebuiltGraph([videoNode], appendEdge([], nodeId, 'out', videoNode.id, 'video'));
+          patchNode(nodeId, {
+            variations: (node.variations ?? []).map((variation) =>
+              variation.id === spec.id ? { ...variation, status: 'edited' as const } : variation
+            )
+          });
+          pendingEditNodeIdRef.current = videoNode.id;
+          break;
+        }
+
+        case 'expand-to-canvas': {
+          const specs = node.variations ?? [];
+          if (specs.length === 0) {
+            return;
+          }
+          const variationNodes = specs.map((spec, index) => materializeVariation(node, spec, index, specs.length));
+          const variationEdges = variationNodes.reduce<CanvasEdge[]>(
+            (acc, videoNode) => appendEdge(acc, nodeId, 'out', videoNode.id, 'video'),
+            []
+          );
+          addPrebuiltGraph(variationNodes, variationEdges);
+          setSelectedIds(variationNodes.map((videoNode) => videoNode.id));
+          break;
+        }
+      }
+    },
+    [addPrebuiltGraph, edges, materializeVariation, nodes, patchNode, spawnVariationSet]
+  );
+
   /**
    * Video 节点点运行：如果上游同时接了 Storyboard 和 Audio Clips（即「剪成片」这条路），
    * 用本地固定成片模拟一次生成，而不是真的打生成接口——demo 用，别的 video 节点走原来的 executeNode。
@@ -1213,6 +1429,7 @@ function CanvasPage() {
               onTextChange={handleTextChange}
               onStoryboardGenerate={handleStoryboardGenerate}
               onOperationGenerate={handleOperationGenerate}
+              onVariationEvent={handleVariationEvent}
               onDuplicate={duplicateNode}
               onDelete={removeNode}
             />

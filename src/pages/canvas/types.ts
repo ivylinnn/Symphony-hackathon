@@ -1,5 +1,5 @@
-/** 节点分类：广告原生结构件 / 灵感复刻件 / 通用创意素材件 / 编辑处理件。 */
-export type CanvasNodeCategory = 'ads-native' | 'inspiration' | 'creative' | 'edit';
+/** 节点分类：广告原生结构件 / 灵感复刻件 / 通用创意素材件 / 变体探索件 / 编辑处理件。 */
+export type CanvasNodeCategory = 'ads-native' | 'inspiration' | 'creative' | 'variations' | 'edit';
 
 /** 广告原生节点，对应一条广告的脚本结构。 */
 export type AdsNativeNodeKind = 'hook' | 'body' | 'cta';
@@ -11,7 +11,9 @@ export type InspirationNodeKind =
   | 'product-brief'
   | 'tiktok-trend'
   | 'storyboard'
-  | 'audio-clips';
+  | 'audio-clips'
+  | 'strategy'
+  | 'variation-set';
 
 /** 创意节点，对应素材形态。 */
 export type CreativeNodeKind = 'text' | 'image' | 'video' | 'audio' | 'avatar' | 'import';
@@ -19,7 +21,10 @@ export type CreativeNodeKind = 'text' | 'image' | 'video' | 'audio' | 'avatar' |
 /** 编辑节点，对素材做拆分/加工/批处理，通常多输入或多输出。 */
 export type EditNodeKind = 'split-av' | 'split-tracks' | 'timeline' | 'batch';
 
-export type CanvasNodeKind = AdsNativeNodeKind | InspirationNodeKind | CreativeNodeKind | EditNodeKind;
+/** 变体探索节点：一份产品源 → 一条创意策略 → 一组可控变体。 */
+export type VariationNodeKind = 'strategy' | 'variation-set';
+
+export type CanvasNodeKind = AdsNativeNodeKind | InspirationNodeKind | CreativeNodeKind | VariationNodeKind | EditNodeKind;
 
 /** 端口承载的数据类型，决定图标与连线校验。 */
 export type PortType = 'prompt' | 'image' | 'video' | 'audio';
@@ -48,7 +53,9 @@ export type NodeBodyShape =
   | 'product-brief'
   | 'tiktok-trend'
   | 'storyboard'
-  | 'audio-clips';
+  | 'audio-clips'
+  | 'strategy'
+  | 'variation-set';
 
 /** 动态图形的种类，决定渲染的版式。 */
 export type GraphicKind = 'headline' | 'lower-third' | 'banner' | 'badge' | 'logo' | 'scribble';
@@ -239,6 +246,56 @@ export interface TrackPreview {
   clips: ClipPreview[];
 }
 
+/**
+ * 变体规划：在 brief 里先说清「什么该变」，避免 AI 生成六个没人要的随机表亲。
+ * 每个字段都是显式选择，也是每条变体存在理由的来源。
+ */
+export interface VariationPlan {
+  objective: string;
+  audience: string;
+  offer: string;
+  platform: string;
+  direction: string;
+  /** 生成几条变体，1-6。 */
+  count: number;
+}
+
+/** 变体卡的生命周期状态。 */
+export type VariationStatus = 'draft' | 'selected' | 'edited' | 'exported';
+
+/**
+ * 变体集里的一张卡。变体不是匿名输出：
+ * 名字、改了什么、给谁看、为什么值得试，都是一等字段。
+ */
+export interface VariationSpec {
+  id: string;
+  /** 「Trend-led hook」这样的语义名，而不是「Variation 4」。 */
+  name: string;
+  /** 相对基准改了什么。 */
+  whatChanged: string;
+  audience: string;
+  hook: string;
+  /** 0-100 的信心分，附带一句 rationale。 */
+  confidence: number;
+  rationale: string;
+  thumbnail?: string;
+  status: VariationStatus;
+}
+
+/** 变体节点上的交互事件，统一经 index 分发，避免十来个回调 prop。 */
+export type VariationEvent =
+  | { type: 'plan-change'; plan: VariationPlan }
+  | { type: 'toggle-planner' }
+  | { type: 'explore' }
+  | { type: 'quick-explore' }
+  | { type: 'expand-strategy' }
+  | { type: 'toggle-expanded' }
+  | { type: 'toggle-dimension'; dimension: string }
+  | { type: 'select-variation'; variationId: string }
+  | { type: 'more-like-this'; variationId: string }
+  | { type: 'open-variation'; variationId: string }
+  | { type: 'expand-to-canvas' };
+
 /** 节点生成状态，驱动卡片上的状态条展示。 */
 export type CanvasNodeStatus = 'idle' | 'generating' | 'done';
 
@@ -266,6 +323,20 @@ export interface CanvasNode {
   trendId?: string;
   /** Storyboard 节点是否已经落满 6 帧；缺省表示空态，等待用户输入触发生成。 */
   storyboardReady?: boolean;
+  /** product-brief 节点的变体规划；planner 展开时可编辑。 */
+  variationPlan?: VariationPlan;
+  /** product-brief 节点的变体 planner 是否展开。 */
+  variationPlannerOpen?: boolean;
+  /** strategy 节点的创意方向说明（为什么走这条路）。 */
+  rationale?: string;
+  /** variation-set 节点内的变体卡。 */
+  variations?: VariationSpec[];
+  /** variation-set 是否展开成完整卡片；默认收起，画布才不会变成视觉意大利面。 */
+  variationsExpanded?: boolean;
+  /** variation-set 保持不变的维度（产品、品牌、促销、片尾卡…）。 */
+  keepConstant?: string[];
+  /** variation-set 允许探索变化的维度（hook、背景、口播人…）。 */
+  varyDimensions?: string[];
 }
 
 export interface CanvasEdge {

@@ -77,6 +77,19 @@ export const VIDEO_READY_HEIGHT = Math.round(12 + ((VIDEO_READY_WIDTH - 24) * 16
 const STORYBOARD_EMPTY_HEIGHT = 300;
 const BATCH_NODE_HEIGHT = 220;
 
+/** Product brief 的基础高度（planner 收起时）。 */
+export const PRODUCT_BRIEF_HEIGHT = 440;
+/** Variation planner 展开后 brief 卡追加的高度。 */
+export const VARIATION_PLANNER_EXTRA = 372;
+/** Strategy 卡：方向 + 理由 + 受众 + 生成入口。 */
+const STRATEGY_NODE_HEIGHT = 264;
+/** Variation set 收起态：标题 + 2×3 迷你预览 + 底部操作。 */
+export const VARIATION_SET_WIDTH = 336;
+export const VARIATION_SET_HEIGHT = 396;
+/** Variation set 展开态：完整变体卡 + Keep/Vary 控制区。 */
+export const VARIATION_SET_EXPANDED_WIDTH = 720;
+export const VARIATION_SET_EXPANDED_HEIGHT = 860;
+
 /** 生成类节点通用的输入组合，和 Flora 的 Prompt/Image/Video/Audio 一致。 */
 const GENERATIVE_INPUTS: NodePortSpec[] = [
   { id: 'prompt', label: 'Prompt', type: 'prompt', max: 1 },
@@ -140,7 +153,7 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
     category: 'inspiration',
     label: 'Product brief',
     body: 'product-brief',
-    height: 440,
+    height: PRODUCT_BRIEF_HEIGHT,
     description: 'Who the product is for and what the ad must say.',
     inputs: [{ id: 'image', label: 'Images', type: 'image', max: 20 }],
     outputs: [{ id: 'out', label: 'Brief', type: 'prompt' }]
@@ -240,6 +253,32 @@ export const NODE_KIND_CONFIG: Record<CanvasNodeKind, NodeKindConfig> = {
     outputs: [{ id: 'out', label: 'Asset', type: 'image' }]
   },
 
+  // —— Variations：一份产品源 → 一条创意策略 → 一组可控变体 ——
+  strategy: {
+    category: 'variations',
+    label: 'Creative strategy',
+    body: 'strategy',
+    height: STRATEGY_NODE_HEIGHT,
+    description: 'One deliberate creative direction with its rationale — the reason a set of variations exists.',
+    inputs: [
+      { id: 'prompt', label: 'Brief', type: 'prompt', max: 1 },
+      { id: 'image', label: 'Product', type: 'image', max: 9 }
+    ],
+    outputs: [{ id: 'out', label: 'Strategy', type: 'prompt' }]
+  },
+  'variation-set': {
+    category: 'variations',
+    label: 'Variation set',
+    body: 'variation-set',
+    height: VARIATION_SET_HEIGHT,
+    description: 'A container of controlled variations — collapsed by default, expandable into the canvas.',
+    inputs: [
+      { id: 'prompt', label: 'Strategy', type: 'prompt', max: 2 },
+      { id: 'image', label: 'Product', type: 'image', max: 9 }
+    ],
+    outputs: [{ id: 'out', label: 'Variations', type: 'video' }]
+  },
+
   // —— Edit：对已有素材做拆分加工，多输出 ——
   'split-av': {
     category: 'edit',
@@ -327,16 +366,18 @@ export const CATEGORY_LABEL: Record<CanvasNodeCategory, string> = {
   'ads-native': 'Ads-native',
   inspiration: 'Inspiration',
   creative: 'Creative',
+  variations: 'Variations',
   edit: 'Edit'
 };
 
 /** 工具栏分组顺序，也是新增节点的展示顺序。 */
-export const CATEGORY_ORDER: CanvasNodeCategory[] = ['ads-native', 'inspiration', 'creative', 'edit'];
+export const CATEGORY_ORDER: CanvasNodeCategory[] = ['ads-native', 'inspiration', 'creative', 'variations', 'edit'];
 
 export const KINDS_BY_CATEGORY: Record<CanvasNodeCategory, CanvasNodeKind[]> = {
   'ads-native': ['hook', 'body', 'cta'],
   inspiration: ['product-images', 'brand-kit', 'product-brief', 'tiktok-trend', 'storyboard', 'audio-clips'],
   creative: ['text', 'image', 'video', 'audio', 'avatar', 'import'],
+  variations: ['strategy', 'variation-set'],
   edit: ['split-av', 'split-tracks', 'timeline', 'batch']
 };
 
