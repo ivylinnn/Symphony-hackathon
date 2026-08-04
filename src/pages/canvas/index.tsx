@@ -33,7 +33,7 @@ import {
   VIDEO_READY_WIDTH
 } from './const';
 import { CONTENT_STRATEGIES, buildStrategyGraph, type ContentStrategy } from './content-strategies';
-import { appendEdge, buildNode } from './graph-ops';
+import { appendEdge, buildNode, buildSeedGraph } from './graph-ops';
 import { useCanvasGraph } from './hooks/use-canvas-graph';
 import { useCanvasViewport } from './hooks/use-canvas-viewport';
 import { buildScriptGraph } from './services/agent';
@@ -267,21 +267,23 @@ function CanvasPage() {
     }
   }, [animateViewportTo]);
 
-  /** 空画布展示 agent composer；有节点后自动让位。 */
+  /** 空画布上点一下才唤起 composer；有节点后两者都让位。 */
   const isCanvasEmpty = nodes.length === 0;
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
 
-  /** 首屏带着种子工作流进场：挂载后把节点整体框进视野。 */
-  const didInitialFitRef = useRef(false);
-  useEffect(() => {
-    if (didInitialFitRef.current || nodes.length === 0) {
-      return;
-    }
-    didInitialFitRef.current = true;
+  /**
+   * Composer 提交（带产品图 / product brief）：落一套产品源工作流
+   * （产品图 + 品牌资产 → Product brief），镜头框住它，正式进入画布。
+   */
+  const landProductWorkflow = useCallback(() => {
+    const seed = buildSeedGraph();
+    addPrebuiltGraph(seed.nodes, seed.edges);
+    setIsComposerOpen(false);
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
-      setViewport(getFitViewport(nodes, rect.width, rect.height));
+      animateViewportTo(getFitViewport(seed.nodes, rect.width, rect.height));
     }
-  }, [nodes, setViewport]);
+  }, [addPrebuiltGraph, animateViewportTo]);
 
   const toWorld = useCallback(
     (clientX: number, clientY: number) => {
@@ -311,6 +313,12 @@ function CanvasPage() {
     // 视口还在缓动时立刻定格，否则框选/拉线的世界坐标会随动画漂移
     stopAnimation();
     setAddPanelAnchor(null);
+
+    // 空画布：点一下画布唤起 composer（提示词框）
+    if (isCanvasEmpty && !isComposerOpen && event.button === 0) {
+      setIsComposerOpen(true);
+      return;
+    }
 
     // 评论工具：点空白处落一条评论草稿
     if (tool === 'comment' && event.button === 0 && !isSpaceHeld) {
@@ -1709,9 +1717,18 @@ function CanvasPage() {
       />
 
       {/* 空画布的 agent 输入区：提示词 + 模板/加节点/教程三个入口 */}
-      {isCanvasEmpty && !isStrategiesOpen ? (
+      {/* 空画布：先给一句轻提示，点画布唤起 composer */}
+      {isCanvasEmpty && !isComposerOpen && !isStrategiesOpen ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center pl-[88px]">
+          <span className="text-[15px] font-medium text-neutral-lowOnSurface">
+            Click anywhere on the canvas to start
+          </span>
+        </div>
+      ) : null}
+
+      {isCanvasEmpty && isComposerOpen && !isStrategiesOpen ? (
         <CanvasComposer
-          onGenerateBrief={generateBrief}
+          onGenerateBrief={landProductWorkflow}
           onOpenTemplates={() => setIsStrategiesOpen(true)}
           onAddNode={() => setSidebarPanel('nodes')}
           onOpenTutorials={() => {

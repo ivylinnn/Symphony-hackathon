@@ -102,14 +102,18 @@ afterEach(() => {
 });
 
 describe('CanvasPage', () => {
-  it('seeds the canvas with product images, brand kit and product brief', () => {
+  it('opens the prompt box when clicking the empty canvas', () => {
     renderCanvas();
 
-    // 首屏三张种子卡：产品图 + 品牌资产两路汇入 Product brief
-    expect(countNodes('product-images')).toBe(1);
-    expect(countNodes('brand-kit')).toBe(1);
-    expect(countNodes('product-brief')).toBe(1);
-    expect(container.querySelectorAll('svg path').length).toBeGreaterThan(0);
+    // 首屏空画布只有一句提示；点画布后 composer 出现
+    expect(container.textContent).toContain('Click anywhere on the canvas to start');
+    expect(container.textContent).not.toContain('What do you want to create?');
+
+    act(() => {
+      query('[data-canvas-surface]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('What do you want to create?');
   });
 
   it('keeps every node kind behind the + button, including the Edit category', () => {
