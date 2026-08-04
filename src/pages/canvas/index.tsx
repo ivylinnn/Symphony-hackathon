@@ -13,7 +13,7 @@ import Minimap from './components/Minimap';
 import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
-import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W } from './components/NodeEditDock';
+import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
 import {
   AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
@@ -1684,6 +1684,16 @@ function CanvasPage() {
           videoUrl={editDockNode.videoUrl}
           posterUrl={editDockNode.assetUrl}
           initialPrompt={editDock?.prompt}
+          onSellingPointsApplied={() =>
+            // 卖点贴片应用完：节点的视频换成带 selling-point 的渲染版本
+            patchNode(editDockNode.id, {
+              videoUrl: SELLING_POINT_VIDEO_URL,
+              status: 'done',
+              note: 'Selling-point render',
+              width: VIDEO_READY_WIDTH,
+              height: VIDEO_READY_HEIGHT
+            })
+          }
           onClose={exitEditMode}
         />
       ) : null}

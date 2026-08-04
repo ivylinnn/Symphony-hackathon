@@ -33,13 +33,9 @@ const buildVideoClips = (duration: number) => [
   { id: 'clip-body', label: 'Body', start: duration / 3, duration: duration / 3 },
   { id: 'clip-cta', label: 'CTA', start: (duration * 2) / 3, duration: duration / 3 }
 ];
-/** 图形轨：品牌 logo 动画贴在开头，占时长的 27%。 */
-const buildGraphicClip = (duration: number) => ({
-  id: 'clip-logo',
-  label: 'Flora Logo Design',
-  start: 0,
-  duration: duration * 0.27
-});
+
+/** 卖点动效应用后，预览切到的成片（带 selling-point 贴片的渲染版本）。 */
+export const SELLING_POINT_VIDEO_URL = '/video-with-selling-points.mp4';
 
 /**
  * 离屏抽帧：同源视频逐点 seek，canvas 抓帧转 dataURL。
@@ -89,9 +85,6 @@ const MOTION_GRAPHICS_ACTION = 'Motion graphics';
 /** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
 const SELLING_POINT_SUGGESTIONS = ['Breathable fabric', 'Kangaroo pocket', '20% off summer sale'];
 
-/** 波形条的高度序列（0-1），循环铺满音频/图形条。 */
-const WAVE_PATTERN = [0.35, 0.7, 0.5, 0.9, 0.4, 0.65, 0.3, 0.8, 0.55, 0.45];
-
 interface DockMessage {
   id: string;
   role: 'user' | 'agent';
@@ -135,6 +128,8 @@ interface NodeEditDockProps {
   posterUrl?: string;
   /** 画布快捷入口带进来的第一条指令，打开即发送。 */
   initialPrompt?: string;
+  /** 卖点动效应用完成：由画布把节点的视频换成带贴片的渲染版本。 */
+  onSellingPointsApplied?: () => void;
   onClose: () => void;
 }
 
@@ -143,7 +138,15 @@ interface NodeEditDockProps {
  * 画布把镜头推近节点后，右侧滑入编辑 agent，底部滑入时间线轨道，
  * 参考 Flora 的 Timeline Editor 布局。
  */
-function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, onClose }: NodeEditDockProps) {
+function NodeEditDock({
+  nodeId,
+  nodeTitle,
+  videoUrl,
+  posterUrl,
+  initialPrompt,
+  onSellingPointsApplied,
+  onClose
+}: NodeEditDockProps) {
   const [messages, setMessages] = useState<DockMessage[]>(() => [
     {
       id: nextMessageId(),
@@ -237,8 +240,14 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
     };
   }, [nodeId, videoBroken, videoUrl]);
 
+  /* 换了视频（卖点渲染版等）就重置解码状态，重新绑定。 */
+  useEffect(() => {
+    setVideoBroken(false);
+  }, [videoUrl]);
+
   /* 抽帧铺视频轨；解不了码就保持空数组，渲染层退回封面平铺。 */
   useEffect(() => {
+    setFilmstrip([]);
     if (!videoUrl) {
       return;
     }
@@ -308,6 +317,13 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
   /** 等着用户回答的追问；motion graphics 会先问卖点再动手。 */
   const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | null>(null);
   const [sellingGraphics, setSellingGraphics] = useState<SellingGraphic[]>([]);
+  /** 卖点多选：chips 只负责勾选，确认按钮才发送。 */
+  const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
+
+  const togglePoint = (point: string) =>
+    setSelectedPoints((current) =>
+      current.includes(point) ? current.filter((item) => item !== point) : [...current, point]
+    );
 
   const reply = (build: () => DockMessage) => {
     setIsBusy(true);
@@ -328,6 +344,7 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
     // Motion graphics：不直接生成，先追问要打哪些卖点（对齐整页剪辑器的问答流）
     if (pendingIntent === 'motion-graphics') {
       setPendingIntent(null);
+      setSelectedPoints([]);
       const points = prompt
         .split(/[,，;；\n]/)
         .map((point) => point.trim())
@@ -337,21 +354,23 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
       replyTimerRef.current = window.setTimeout(() => {
         replyTimerRef.current = null;
         setIsBusy(false);
-        // 每个卖点一条动效：避开开头的 logo 动画，等距铺在剩下的时间线上
+        // 每个卖点一条动效，等距铺在时间线上
         setSellingGraphics(
           points.map((label, index) => ({
             id: `selling-${nextMessageId()}`,
             label,
-            startFrac: 0.32 + index * (0.6 / points.length),
-            durationFrac: Math.min(0.16, 0.5 / points.length)
+            startFrac: 0.1 + index * (0.8 / points.length),
+            durationFrac: Math.min(0.18, 0.6 / points.length)
           }))
         );
+        // 贴片应用完，预览换成带 selling-point 的渲染版本
+        onSellingPointsApplied?.();
         setMessages((current) => [
           ...current,
           {
             id: nextMessageId(),
             role: 'agent',
-            content: `Added ${points.length} motion graphic${points.length > 1 ? 's' : ''} — one callout per selling point (${points.join(', ')}), spread across track 1. Drag or ask me to retime them.`
+            content: `Added ${points.length} motion graphic${points.length > 1 ? 's' : ''} — one callout per selling point (${points.join(', ')}) on track 1 — and updated the preview with the selling-point render.`
           }
         ]);
       }, AGENT_REPLY_MS);
@@ -360,10 +379,11 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
 
     if (prompt === MOTION_GRAPHICS_ACTION) {
       setPendingIntent('motion-graphics');
+      setSelectedPoints([]);
       reply(() => ({
         id: nextMessageId(),
         role: 'agent',
-        content: 'Which selling points should the graphics call out? Pick one below or type up to three, comma-separated.',
+        content: 'Which selling points should the graphics call out? Pick any below, or type up to three, comma-separated.',
         options: SELLING_POINT_SUGGESTIONS
       }));
       return;
@@ -398,14 +418,8 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
   }
 
   const videoClips = buildVideoClips(duration);
-  const graphicClip = buildGraphicClip(duration);
   /** 每帧覆盖的秒数，胶片条按它换算像素宽。 */
   const frameSpanSeconds = duration / Math.max(1, filmstrip.length);
-
-  const waveBars = (width: number) => {
-    const count = Math.max(8, Math.floor(width / 7));
-    return Array.from({ length: count }, (_, index) => WAVE_PATTERN[index % WAVE_PATTERN.length]);
-  };
 
   return (
     <>
@@ -441,20 +455,44 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
               >
                 {message.content}
               </div>
-              {/* 追问的可点选项：只在还等着回答时可用 */}
+              {/* 追问的可点选项：多选勾选，确认才发送；只在还等着回答时可用 */}
               {message.options && pendingIntent ? (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {message.options.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      data-selling-point-option
-                      onClick={() => send(option)}
-                      className="rounded-full border border-solid border-primary-fill bg-neutral-surface px-2.5 py-1 text-[11px] font-medium text-primary-onSurface transition-colors hover:bg-primary-surface2"
-                    >
-                      {option}
-                    </button>
-                  ))}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {message.options.map((option) => {
+                    const isPicked = selectedPoints.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        data-selling-point-option
+                        aria-pressed={isPicked}
+                        onClick={() => togglePoint(option)}
+                        className={clsx(
+                          'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
+                          isPicked
+                            ? 'border-primary-fill bg-primary-fill text-neutral-onFill'
+                            : 'border-primary-fill bg-neutral-surface text-primary-onSurface hover:bg-primary-surface2'
+                        )}
+                      >
+                        {isPicked ? '✓ ' : ''}
+                        {option}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    data-selling-points-confirm
+                    disabled={selectedPoints.length === 0}
+                    onClick={() => send(selectedPoints.join(', '))}
+                    className={clsx(
+                      'rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity',
+                      selectedPoints.length > 0
+                        ? 'bg-neutral-fillHigh text-neutral-onFill hover:opacity-90'
+                        : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+                    )}
+                  >
+                    Add {selectedPoints.length || ''} selling point{selectedPoints.length === 1 ? '' : 's'}
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -677,25 +715,13 @@ function NodeEditDock({ nodeId, nodeTitle, videoUrl, posterUrl, initialPrompt, o
                 ))}
               </div>
 
-              {/* 轨道 1:品牌图形条 + 波形 */}
+              {/* 轨道 1：卖点动效轨。空着等 agent 问答落 callout，一个卖点一条 */}
               <div className="relative h-14 py-1.5">
-                <div
-                  title={graphicClip.label}
-                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/40 bg-primary-surface2"
-                  style={{ left: graphicClip.start * pxPerSecond, width: graphicClip.duration * pxPerSecond - 2 }}
-                >
-                  <span className="absolute left-1.5 top-1 text-[10px] font-semibold text-primary-onSurface">
-                    {graphicClip.label}
+                {sellingGraphics.length === 0 ? (
+                  <span className="absolute inset-y-1.5 flex items-center px-2 text-[10px] text-neutral-lowOnSurface">
+                    Motion graphics land here — ask the agent to call out selling points.
                   </span>
-                  <div className="absolute inset-x-1.5 bottom-1 flex h-3 items-end gap-px">
-                    {waveBars(graphicClip.duration * pxPerSecond).map((height, index) => (
-                      // 波形是纯装饰，序列固定，用下标当 key 没问题
-                      // eslint-disable-next-line react/no-array-index-key
-                      <span key={index} className="w-1 rounded-sm bg-primary-fill/50" style={{ height: `${height * 100}%` }} />
-                    ))}
-                  </div>
-                </div>
-                {/* 卖点动效：agent 问答落下来的 callout，一个卖点一条 */}
+                ) : null}
                 {sellingGraphics.map((graphic) => (
                   <div
                     key={graphic.id}
