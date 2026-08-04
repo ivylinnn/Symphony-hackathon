@@ -75,7 +75,7 @@ function Minimap({ nodes, viewport, containerRef, isAgentOpen, onNavigate }: Min
       data-minimap
       className={clsx(
         'absolute bottom-4 z-20 cursor-pointer overflow-hidden rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_10px_30px_rgba(16,24,40,0.16)]',
-        isAgentOpen ? 'right-[352px]' : 'right-24'
+        isAgentOpen ? 'right-[356px]' : 'right-24'
       )}
       style={{ width: MAP_WIDTH + MAP_PADDING * 2, height: MAP_HEIGHT + MAP_PADDING * 2 }}
       onPointerDown={(event) => {

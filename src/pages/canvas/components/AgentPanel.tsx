@@ -1,6 +1,8 @@
-import { KsIconAiAssistant, KsIconChevronRight, KsIconSend } from '@fe-infra/keystone-icons-react';
+import { KsIconAiAssistant, KsIconAiGeneration, KsIconChevronRight, KsIconSend } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
+
+import { EDIT_DOCK_RIGHT_W } from './NodeEditDock';
 
 export interface AgentMessage {
   id: string;
@@ -12,16 +14,55 @@ export interface AgentMessage {
   variant?: 'brief';
 }
 
+/** 编辑上下文：进入剪辑步骤时由画布传入，同一个面板切换成剪辑对话。 */
+export interface AgentEditingContext {
+  /** 正在剪辑的节点标题。 */
+  nodeTitle: string;
+  /** 画布快捷入口带进来的第一条指令，进入即发送。 */
+  initialPrompt?: string;
+  /** 卖点动效确认后回调：由画布落时间线贴片并换成渲染版视频。 */
+  onApplySellingPoints: (points: string[]) => void;
+}
+
 interface AgentPanelProps {
   isOpen: boolean;
   /** Agent 正在生成，禁用发送避免重复触发。 */
   isBusy: boolean;
   messages: AgentMessage[];
+  /** 有值时面板处于剪辑步骤：显示该节点的剪辑对话与快捷动作。 */
+  editing?: AgentEditingContext | null;
   onToggle: () => void;
   onSend: (content: string) => void;
   /** 点击气泡下方的后续动作。 */
   onAction: (label: string) => void;
 }
+
+/* ------------------------------------------------------------------ */
+/* 剪辑对话的本地剧本（原 Editing agent，并入 Creative agent）             */
+/* ------------------------------------------------------------------ */
+
+/** 剪辑步骤的快捷诉求。 */
+const EDIT_QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Motion graphics', 'Swap product'];
+/** Motion graphics 的追问入口：先问卖点，再按卖点落图形。 */
+const MOTION_GRAPHICS_ACTION = 'Motion graphics';
+/** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
+const SELLING_POINT_SUGGESTIONS = ['Breathable fabric', 'Kangaroo pocket', '20% off summer sale'];
+/** agent 假装思考的时长（毫秒），演示用。 */
+const AGENT_REPLY_MS = 900;
+
+interface EditMessage {
+  id: string;
+  role: 'user' | 'agent';
+  content: string;
+  /** 气泡下方的多选选项（卖点建议）。 */
+  options?: string[];
+}
+
+let editMessageSeq = 0;
+const nextEditMessageId = () => {
+  editMessageSeq += 1;
+  return `edit-msg-${editMessageSeq}`;
+};
 
 function MessageBubble({ message, onAction }: { message: AgentMessage; onAction: (label: string) => void }) {
   const isUser = message.role === 'user';
@@ -61,14 +102,32 @@ function MessageBubble({ message, onAction }: { message: AgentMessage; onAction:
 }
 
 /**
- * 画布右侧的 Agent 会话面板。
- * 收起时坍缩成右下角的 FAB，展开时是历史消息 + 底部输入框。
+ * Creative agent：画布唯一的 agent 面板。
+ * 展开时是右侧全高面板；收起时坍缩成右下角的悬浮球。
+ * 平时承接画布搭建对话；进入剪辑步骤后切换成该节点的剪辑对话（含 motion graphics 问答）。
  */
-function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend, onAction }: AgentPanelProps) {
+function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAction }: AgentPanelProps) {
   const [draft, setDraft] = useState('');
   const historyRef = useRef<HTMLDivElement>(null);
-  /** 出现 product brief 后把面板撑到 70vh，长文才不用一直滚。 */
-  const hasBrief = messages.some((message) => message.variant === 'brief');
+
+  /* —— 剪辑对话的本地状态 —— */
+  const [editMessages, setEditMessages] = useState<EditMessage[]>([]);
+  const [isEditBusy, setIsEditBusy] = useState(false);
+  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | null>(null);
+  const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
+  const replyTimerRef = useRef<number | null>(null);
+
+  const isEditing = Boolean(editing);
+  const busy = isEditing ? isEditBusy : isBusy;
+
+  useEffect(
+    () => () => {
+      if (replyTimerRef.current !== null) {
+        window.clearTimeout(replyTimerRef.current);
+      }
+    },
+    []
+  );
 
   /* 新消息进来时滚到底部。 */
   useEffect(() => {
@@ -76,45 +135,145 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend, onAction }: Ag
     if (history) {
       history.scrollTop = history.scrollHeight;
     }
-  }, [messages, isOpen]);
+  }, [messages, editMessages, isEditBusy, isOpen]);
+
+  const editReply = (build: () => EditMessage) => {
+    setIsEditBusy(true);
+    replyTimerRef.current = window.setTimeout(() => {
+      replyTimerRef.current = null;
+      setIsEditBusy(false);
+      setEditMessages((current) => [...current, build()]);
+    }, AGENT_REPLY_MS);
+  };
+
+  const sendEdit = (content: string) => {
+    const prompt = content.trim();
+    if (!prompt || isEditBusy || !editing) {
+      return;
+    }
+    setEditMessages((current) => [...current, { id: nextEditMessageId(), role: 'user', content: prompt }]);
+
+    // Motion graphics：先追问卖点，确认后交给画布落贴片、换渲染版视频
+    if (pendingIntent === 'motion-graphics') {
+      setPendingIntent(null);
+      setSelectedPoints([]);
+      const points = prompt
+        .split(/[,，;；\n]/)
+        .map((point) => point.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      setIsEditBusy(true);
+      replyTimerRef.current = window.setTimeout(() => {
+        replyTimerRef.current = null;
+        setIsEditBusy(false);
+        editing.onApplySellingPoints(points);
+        setEditMessages((current) => [
+          ...current,
+          {
+            id: nextEditMessageId(),
+            role: 'agent',
+            content: `Added ${points.length} motion graphic${points.length > 1 ? 's' : ''} — one callout per selling point (${points.join(', ')}) on track 1 — and updated the preview with the selling-point render.`
+          }
+        ]);
+      }, AGENT_REPLY_MS);
+      return;
+    }
+
+    if (prompt === MOTION_GRAPHICS_ACTION) {
+      setPendingIntent('motion-graphics');
+      setSelectedPoints([]);
+      editReply(() => ({
+        id: nextEditMessageId(),
+        role: 'agent',
+        content: 'Which selling points should the graphics call out? Pick any below, or type up to three, comma-separated.',
+        options: SELLING_POINT_SUGGESTIONS
+      }));
+      return;
+    }
+
+    editReply(() => ({
+      id: nextEditMessageId(),
+      role: 'agent',
+      content: 'Done — applied to the timeline below. Scrub through the cut and tell me what to adjust: pacing, captions, or assets.'
+    }));
+  };
+
+  /* 进入剪辑步骤：重开一段该节点的对话，并把入口带来的指令替用户发出去。 */
+  const editingKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editing) {
+      editingKeyRef.current = null;
+      setPendingIntent(null);
+      setSelectedPoints([]);
+      return;
+    }
+    if (editingKeyRef.current === editing.nodeTitle) {
+      return;
+    }
+    editingKeyRef.current = editing.nodeTitle;
+    setPendingIntent(null);
+    setSelectedPoints([]);
+    setEditMessages([
+      {
+        id: nextEditMessageId(),
+        role: 'agent',
+        content: `“${editing.nodeTitle}” is on the timeline. Tell me the cut you want — trim, captions, motion graphics, or swap assets — and I'll apply it here.`
+      }
+    ]);
+    if (editing.initialPrompt) {
+      // 让欢迎语先渲染，再补上入口指令
+      window.setTimeout(() => sendEdit(editing.initialPrompt ?? ''), 0);
+    }
+    // sendEdit 依赖易变状态；这段只在换编辑对象时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const togglePoint = (point: string) =>
+    setSelectedPoints((current) =>
+      current.includes(point) ? current.filter((item) => item !== point) : [...current, point]
+    );
 
   const submit = () => {
     const content = draft.trim();
-    if (!content || isBusy) {
+    if (!content || busy) {
       return;
     }
-    onSend(content);
+    if (isEditing) {
+      sendEdit(content);
+    } else {
+      onSend(content);
+    }
     setDraft('');
   };
 
   if (!isOpen) {
+    // 收起态：右下角悬浮球（参考稿的深色圆钮）
     return (
       <button
         type="button"
-        title="Open agent"
+        title="Open Creative agent"
         onClick={onToggle}
-        className="absolute bottom-6 right-6 z-20 flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)] transition-transform hover:scale-105"
+        className="absolute bottom-6 right-6 z-30 flex size-14 items-center justify-center rounded-full bg-neutral-fillHigh text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.24)] transition-transform hover:scale-105"
       >
-        <KsIconAiAssistant size={24} />
+        <KsIconAiGeneration size={24} />
       </button>
     );
   }
 
   return (
     <aside
-      className={clsx(
-        'absolute bottom-4 right-4 z-20 flex w-[320px] flex-col overflow-hidden rounded-2xl border border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_10px_30px_rgba(16,24,40,0.16)] transition-[height]',
-        hasBrief ? 'h-[70vh]' : 'h-[50vh]'
-      )}
+      data-creative-agent
+      className="absolute inset-y-0 right-0 z-30 flex animate-dock-in-right flex-col border-l border-solid border-neutral-fillLow bg-neutral-surface shadow-[-12px_0_32px_rgba(16,24,40,0.10)]"
+      style={{ width: EDIT_DOCK_RIGHT_W }}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3">
         <span className="flex size-7 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
           <KsIconAiAssistant size={16} />
         </span>
-        <span className="flex-1 truncate text-[13px] font-semibold text-neutral-highOnSurface">Agent</span>
+        <span className="flex-1 truncate text-[13px] font-semibold text-neutral-highOnSurface">Creative agent</span>
         <button
           type="button"
-          title="Collapse agent panel"
+          title="Collapse Creative agent"
           onClick={onToggle}
           className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
         >
@@ -123,17 +282,94 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend, onAction }: Ag
       </header>
 
       <div ref={historyRef} className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} onAction={onAction} />
-        ))}
+        {isEditing ? (
+          <>
+            {editMessages.map((message) => (
+              <div key={message.id} className={clsx('flex flex-col', message.role === 'user' ? 'items-end' : 'items-start')}>
+                <div
+                  className={clsx(
+                    'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-[19px] text-neutral-highOnSurface',
+                    message.role === 'user' ? 'rounded-br-md bg-primary-surface2' : 'rounded-bl-md bg-neutral-surface2'
+                  )}
+                >
+                  {message.content}
+                </div>
+                {/* 追问的多选选项：勾选后由确认按钮统一发送 */}
+                {message.options && pendingIntent ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {message.options.map((option) => {
+                      const isPicked = selectedPoints.includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          data-selling-point-option
+                          aria-pressed={isPicked}
+                          onClick={() => togglePoint(option)}
+                          className={clsx(
+                            'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
+                            isPicked
+                              ? 'border-primary-fill bg-primary-fill text-neutral-onFill'
+                              : 'border-primary-fill bg-neutral-surface text-primary-onSurface hover:bg-primary-surface2'
+                          )}
+                        >
+                          {isPicked ? '✓ ' : ''}
+                          {option}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      data-selling-points-confirm
+                      disabled={selectedPoints.length === 0}
+                      onClick={() => sendEdit(selectedPoints.join(', '))}
+                      className={clsx(
+                        'rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity',
+                        selectedPoints.length > 0
+                          ? 'bg-neutral-fillHigh text-neutral-onFill hover:opacity-90'
+                          : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
+                      )}
+                    >
+                      Add {selectedPoints.length || ''} selling point{selectedPoints.length === 1 ? '' : 's'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {isEditBusy ? (
+              <div className="flex items-center gap-1.5 text-[12px] text-neutral-lowOnSurface">
+                <span className="size-1.5 animate-pulse rounded-full bg-primary-fill" />
+                Editing…
+              </div>
+            ) : null}
+          </>
+        ) : (
+          messages.map((message) => <MessageBubble key={message.id} message={message} onAction={onAction} />)
+        )}
       </div>
 
       <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
+        {isEditing ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {EDIT_QUICK_ACTIONS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => sendEdit(label)}
+                className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-2.5 py-1 text-[11px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-2 focus-within:border-primary-fill">
           <textarea
             value={draft}
             rows={2}
-            placeholder={isBusy ? 'Working…' : 'Ask the agent to build or edit nodes…'}
+            placeholder={
+              busy ? 'Working…' : isEditing ? 'Describe the edit…' : 'Ask the agent to build or edit nodes…'
+            }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               // Enter 发送，Shift+Enter 换行
@@ -148,11 +384,11 @@ function AgentPanel({ isOpen, isBusy, messages, onToggle, onSend, onAction }: Ag
             <button
               type="button"
               title="Send"
-              disabled={!draft.trim() || isBusy}
+              disabled={!draft.trim() || busy}
               onClick={submit}
               className={clsx(
                 'flex size-7 items-center justify-center rounded-lg transition-colors',
-                draft.trim() && !isBusy
+                draft.trim() && !busy
                   ? 'bg-primary-fill text-neutral-onFill'
                   : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
               )}

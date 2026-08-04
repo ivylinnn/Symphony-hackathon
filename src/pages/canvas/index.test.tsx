@@ -391,10 +391,11 @@ describe('CanvasPage', () => {
 
     openEditorByDblClick('timeline');
 
-    // 编辑模式不再整页接管：右侧是编辑 agent，底部是时间线轨道，画布仍在
-    const agentDock = query('[data-edit-dock-agent]');
-    expect(agentDock).not.toBeNull();
-    expect(agentDock?.textContent).toContain('Editing agent');
+    // 编辑模式不再整页接管：右侧是统一的 Creative agent，底部是时间线轨道，画布仍在
+    const agentPanel = query('[data-creative-agent]');
+    expect(agentPanel).not.toBeNull();
+    expect(agentPanel?.textContent).toContain('Creative agent');
+    expect(agentPanel?.textContent).toContain('is on the timeline');
     const timelineDock = query('[data-edit-dock-timeline]');
     expect(timelineDock).not.toBeNull();
     expect(query('[title="Play"]')).not.toBeNull();
@@ -409,8 +410,9 @@ describe('CanvasPage', () => {
     openEditorByDblClick('timeline');
 
     clickByTitle('Close editor');
-    expect(query('[data-edit-dock-agent]')).toBeNull();
+    // 时间线收起；Creative agent 面板保留，回到画布对话
     expect(query('[data-edit-dock-timeline]')).toBeNull();
+    expect(query('[data-creative-agent]')?.textContent).not.toContain('is on the timeline');
   });
 
   it('builds a connected Hook/Body/CTA script from an agent prompt', async () => {

@@ -201,6 +201,8 @@ function CanvasPage() {
   const [addPanelAnchor, setAddPanelAnchor] = useState<AddPanelAnchor | null>(null);
   /** 内联编辑模式：正在编辑的节点 + 随入口带上的第一条 agent 指令。 */
   const [editDock, setEditDock] = useState<{ nodeId: string; prompt?: string } | null>(null);
+  /** Creative agent 确认的卖点，交给时间线坞落成图形轨 callout。 */
+  const [editSellingPoints, setEditSellingPoints] = useState<string[]>([]);
   // Agent 默认收起为右下角 FAB
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isAgentBusy, setIsAgentBusy] = useState(false);
@@ -248,6 +250,9 @@ function CanvasPage() {
       // 圈选入口暂时并入 agent 指令，等画笔搬进画布后再还原
       const prompt = launch?.prompt ?? (launch?.draw ? 'Select an area of the frame to modify' : undefined);
       setEditDock({ nodeId, prompt });
+      setEditSellingPoints([]);
+      // 剪辑步骤强制展开 Creative agent，剪辑对话就在这一个面板里
+      setIsAgentOpen(true);
     },
     [animateViewportTo, nodes, viewport]
   );
@@ -255,6 +260,7 @@ function CanvasPage() {
   /** 退出编辑模式：坞收起，镜头拉回进入前的视口。 */
   const exitEditMode = useCallback(() => {
     setEditDock(null);
+    setEditSellingPoints([]);
     if (preEditViewportRef.current) {
       animateViewportTo(preEditViewportRef.current);
       preEditViewportRef.current = null;
@@ -1705,32 +1711,41 @@ function CanvasPage() {
         <ContentStrategiesPopover onPick={applyStrategy} onClose={() => setIsStrategiesOpen(false)} />
       ) : null}
 
-      {/* 内联编辑模式：画布保持可见，右侧滑入编辑 agent，底部滑入时间线轨道 */}
+      {/* 内联编辑模式：画布保持可见，底部滑入时间线；agent 对话在 Creative agent 面板里 */}
       {editDockNode ? (
         <NodeEditDock
           nodeId={editDockNode.id}
-          nodeTitle={editDockNode.title}
           videoUrl={editDockNode.videoUrl}
           posterUrl={editDockNode.assetUrl}
-          initialPrompt={editDock?.prompt}
-          onSellingPointsApplied={() =>
-            // 卖点贴片应用完：节点的视频换成带 selling-point 的渲染版本
-            patchNode(editDockNode.id, {
-              videoUrl: SELLING_POINT_VIDEO_URL,
-              status: 'done',
-              note: 'Selling-point render',
-              width: VIDEO_READY_WIDTH,
-              height: VIDEO_READY_HEIGHT
-            })
-          }
+          sellingPoints={editSellingPoints}
           onClose={exitEditMode}
         />
       ) : null}
 
+      {/* Creative agent：画布唯一的 agent 面板；剪辑步骤自动切换成该节点的剪辑对话 */}
       <AgentPanel
         isOpen={isAgentOpen}
         isBusy={isAgentBusy}
         messages={messages}
+        editing={
+          editDockNode
+            ? {
+                nodeTitle: editDockNode.title,
+                initialPrompt: editDock?.prompt,
+                onApplySellingPoints: (points) => {
+                  setEditSellingPoints(points);
+                  // 卖点贴片应用完：节点的视频换成带 selling-point 的渲染版本
+                  patchNode(editDockNode.id, {
+                    videoUrl: SELLING_POINT_VIDEO_URL,
+                    status: 'done',
+                    note: 'Selling-point render',
+                    width: VIDEO_READY_WIDTH,
+                    height: VIDEO_READY_HEIGHT
+                  });
+                }
+              }
+            : null
+        }
         onToggle={() => setIsAgentOpen((open) => !open)}
         onSend={sendMessage}
         onAction={handleAgentAction}

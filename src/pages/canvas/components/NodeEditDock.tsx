@@ -1,20 +1,17 @@
 import {
-  KsIconAiAssistant,
   KsIconClose,
   KsIconCopyContent,
   KsIconCut,
   KsIconDelete,
-  KsIconSend,
   KsIconSound,
   KsIconZoomIn,
   KsIconZoomOut
 } from '@fe-infra/keystone-icons-react';
-import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
-/** 右侧 agent 坞的宽度；index 里算聚焦视口时要把它从可视区里扣掉。 */
+/** 右侧 Creative agent 面板的宽度；聚焦视口和时间线右缘都以它让位。 */
 export const EDIT_DOCK_RIGHT_W = 340;
-/** 底部时间线坞的高度；同上参与聚焦视口计算。 */
+/** 底部时间线坞的高度；参与聚焦视口计算。 */
 export const EDIT_DOCK_BOTTOM_H = 252;
 
 /** 没有真实视频可绑定时（纯封面变体卡等）时间线的兜底时长（秒）。 */
@@ -22,8 +19,6 @@ const DEMO_DURATION = 19.15;
 /** 时间线基准密度，缩放滑杆在此基础上乘系数。 */
 const BASE_PX_PER_SECOND = 56;
 const PLAYBACK_TICK_MS = 100;
-/** agent 假装思考的时长（毫秒），演示用。 */
-const AGENT_REPLY_MS = 900;
 /** 从视频里抽多少帧铺进视频轨。 */
 const FILMSTRIP_FRAMES = 8;
 
@@ -77,36 +72,6 @@ const extractFilmstrip = async (src: string, count: number): Promise<string[]> =
   return frames;
 };
 
-/** 常驻在输入区上方的快捷诉求，点了就当一条用户消息发出去。 */
-const QUICK_ACTIONS = ['Trim silences', 'Add captions', 'Motion graphics', 'Swap product'];
-
-/** Motion graphics 的追问入口：先问卖点，再按卖点落图形（对齐整页剪辑器的流程）。 */
-const MOTION_GRAPHICS_ACTION = 'Motion graphics';
-/** 卖点建议，来自 hoodie 产品 brief 的核心卖点。 */
-const SELLING_POINT_SUGGESTIONS = ['Breathable fabric', 'Kangaroo pocket', '20% off summer sale'];
-
-interface DockMessage {
-  id: string;
-  role: 'user' | 'agent';
-  content: string;
-  /** 气泡下方的可点选项（卖点建议等），点了就当用户消息发出去。 */
-  options?: string[];
-}
-
-/** 按卖点落在图形轨上的动效条；位置用时长占比存，缩放/换视频都不会跑位。 */
-interface SellingGraphic {
-  id: string;
-  label: string;
-  startFrac: number;
-  durationFrac: number;
-}
-
-let messageSeq = 0;
-const nextMessageId = () => {
-  messageSeq += 1;
-  return `dock-msg-${messageSeq}`;
-};
-
 /** 00:07.30 这样的 mm:ss.cs 格式。 */
 const formatTime = (seconds: number) => {
   const clamped = Math.max(0, seconds);
@@ -120,45 +85,20 @@ const formatTime = (seconds: number) => {
 interface NodeEditDockProps {
   /** 正在编辑的节点 id，用来在 DOM 里找到卡片上的 <video> 做播放同步。 */
   nodeId: string;
-  /** 正在编辑的节点标题，出现在欢迎语与轨道占位上。 */
-  nodeTitle: string;
   /** 节点的真实视频；有值时时间线用它的时长、抽帧和播放进度。 */
   videoUrl?: string;
   /** 视频封面，抽不了帧时铺视频轨的兜底缩略图。 */
   posterUrl?: string;
-  /** 画布快捷入口带进来的第一条指令，打开即发送。 */
-  initialPrompt?: string;
-  /** 卖点动效应用完成：由画布把节点的视频换成带贴片的渲染版本。 */
-  onSellingPointsApplied?: () => void;
+  /** Creative agent 确认的卖点，按顺序落成图形轨上的 callout。 */
+  sellingPoints: string[];
   onClose: () => void;
 }
 
 /**
- * 节点内联剪辑模式：不再整页接管画布。
- * 画布把镜头推近节点后，右侧滑入编辑 agent，底部滑入时间线轨道，
- * 参考 Flora 的 Timeline Editor 布局。
+ * 内联编辑模式的底部时间线坞（agent 对话在右侧的 Creative agent 面板里）。
+ * 画布把镜头推近节点后，本组件从底部滑入，绑定该节点的视频做播放同步。
  */
-function NodeEditDock({
-  nodeId,
-  nodeTitle,
-  videoUrl,
-  posterUrl,
-  initialPrompt,
-  onSellingPointsApplied,
-  onClose
-}: NodeEditDockProps) {
-  const [messages, setMessages] = useState<DockMessage[]>(() => [
-    {
-      id: nextMessageId(),
-      role: 'agent',
-      content: `“${nodeTitle}” is on the timeline. Tell me the cut you want — trim, captions, motion graphics, or swap assets — and I'll apply it here.`
-    }
-  ]);
-  const [isBusy, setIsBusy] = useState(false);
-  const [draft, setDraft] = useState('');
-  const historyRef = useRef<HTMLDivElement>(null);
-  const replyTimerRef = useRef<number | null>(null);
-
+function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, onClose }: NodeEditDockProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -185,22 +125,10 @@ function NodeEditDock({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  /* 新消息进来时滚到底部。 */
+  /* 换了视频（卖点渲染版等）就重置解码状态，重新绑定。 */
   useEffect(() => {
-    const history = historyRef.current;
-    if (history) {
-      history.scrollTop = history.scrollHeight;
-    }
-  }, [messages, isBusy]);
-
-  useEffect(
-    () => () => {
-      if (replyTimerRef.current !== null) {
-        window.clearTimeout(replyTimerRef.current);
-      }
-    },
-    []
-  );
+    setVideoBroken(false);
+  }, [videoUrl]);
 
   /*
    * 绑定画布卡片上的 <video>：时长、播放态、播放头全部跟着真实视频走。
@@ -239,11 +167,6 @@ function NodeEditDock({
       boundVideoRef.current = null;
     };
   }, [nodeId, videoBroken, videoUrl]);
-
-  /* 换了视频（卖点渲染版等）就重置解码状态，重新绑定。 */
-  useEffect(() => {
-    setVideoBroken(false);
-  }, [videoUrl]);
 
   /* 抽帧铺视频轨；解不了码就保持空数组，渲染层退回封面平铺。 */
   useEffect(() => {
@@ -314,99 +237,6 @@ function NodeEditDock({
     setIsPlaying((playing) => !playing);
   };
 
-  /** 等着用户回答的追问；motion graphics 会先问卖点再动手。 */
-  const [pendingIntent, setPendingIntent] = useState<'motion-graphics' | null>(null);
-  const [sellingGraphics, setSellingGraphics] = useState<SellingGraphic[]>([]);
-  /** 卖点多选：chips 只负责勾选，确认按钮才发送。 */
-  const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
-
-  const togglePoint = (point: string) =>
-    setSelectedPoints((current) =>
-      current.includes(point) ? current.filter((item) => item !== point) : [...current, point]
-    );
-
-  const reply = (build: () => DockMessage) => {
-    setIsBusy(true);
-    replyTimerRef.current = window.setTimeout(() => {
-      replyTimerRef.current = null;
-      setIsBusy(false);
-      setMessages((current) => [...current, build()]);
-    }, AGENT_REPLY_MS);
-  };
-
-  const send = (content: string) => {
-    const prompt = content.trim();
-    if (!prompt || isBusy) {
-      return;
-    }
-    setMessages((current) => [...current, { id: nextMessageId(), role: 'user', content: prompt }]);
-
-    // Motion graphics：不直接生成，先追问要打哪些卖点（对齐整页剪辑器的问答流）
-    if (pendingIntent === 'motion-graphics') {
-      setPendingIntent(null);
-      setSelectedPoints([]);
-      const points = prompt
-        .split(/[,，;；\n]/)
-        .map((point) => point.trim())
-        .filter(Boolean)
-        .slice(0, 3);
-      setIsBusy(true);
-      replyTimerRef.current = window.setTimeout(() => {
-        replyTimerRef.current = null;
-        setIsBusy(false);
-        // 每个卖点一条动效，等距铺在时间线上
-        setSellingGraphics(
-          points.map((label, index) => ({
-            id: `selling-${nextMessageId()}`,
-            label,
-            startFrac: 0.1 + index * (0.8 / points.length),
-            durationFrac: Math.min(0.18, 0.6 / points.length)
-          }))
-        );
-        // 贴片应用完，预览换成带 selling-point 的渲染版本
-        onSellingPointsApplied?.();
-        setMessages((current) => [
-          ...current,
-          {
-            id: nextMessageId(),
-            role: 'agent',
-            content: `Added ${points.length} motion graphic${points.length > 1 ? 's' : ''} — one callout per selling point (${points.join(', ')}) on track 1 — and updated the preview with the selling-point render.`
-          }
-        ]);
-      }, AGENT_REPLY_MS);
-      return;
-    }
-
-    if (prompt === MOTION_GRAPHICS_ACTION) {
-      setPendingIntent('motion-graphics');
-      setSelectedPoints([]);
-      reply(() => ({
-        id: nextMessageId(),
-        role: 'agent',
-        content: 'Which selling points should the graphics call out? Pick any below, or type up to three, comma-separated.',
-        options: SELLING_POINT_SUGGESTIONS
-      }));
-      return;
-    }
-
-    reply(() => ({
-      id: nextMessageId(),
-      role: 'agent',
-      content: `Done — applied to the timeline below. Scrub through the cut and tell me what to adjust: pacing, captions, or assets.`
-    }));
-  };
-
-  /* 画布工具条带进来的指令：坞一挂上就替用户发出去。 */
-  const initialSentRef = useRef(false);
-  useEffect(() => {
-    if (initialPrompt && !initialSentRef.current) {
-      initialSentRef.current = true;
-      send(initialPrompt);
-    }
-    // send 依赖 isBusy，只在挂载时发一次即可
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt]);
-
   const seekFromRuler = (event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     seekTo((event.clientX - rect.left + event.currentTarget.scrollLeft) / pxPerSecond);
@@ -421,335 +251,206 @@ function NodeEditDock({
   /** 每帧覆盖的秒数，胶片条按它换算像素宽。 */
   const frameSpanSeconds = duration / Math.max(1, filmstrip.length);
 
-  return (
-    <>
-      {/* 右侧：编辑 agent 会话 */}
-      <aside
-        data-edit-dock-agent
-        className="absolute inset-y-0 right-0 z-30 flex animate-dock-in-right flex-col border-l border-solid border-neutral-fillLow bg-neutral-surface shadow-[-12px_0_32px_rgba(16,24,40,0.10)]"
-        style={{ width: EDIT_DOCK_RIGHT_W }}
-      >
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-solid border-neutral-fillLow px-3">
-          <span className="flex size-7 items-center justify-center rounded-full bg-primary-surface2 text-primary-onSurface">
-            <KsIconAiAssistant size={16} />
-          </span>
-          <span className="flex-1 truncate text-[13px] font-semibold text-neutral-highOnSurface">Editing agent</span>
-          <button
-            type="button"
-            title="Close editor"
-            onClick={onClose}
-            className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            <KsIconClose size={14} />
-          </button>
-        </header>
+  /** 卖点 callout：避开开头，等距铺在时间线上（占比存储，缩放不跑位）。 */
+  const sellingGraphics = sellingPoints.map((label, index) => ({
+    id: `selling-${index}-${label}`,
+    label,
+    startFrac: 0.1 + index * (0.8 / sellingPoints.length),
+    durationFrac: Math.min(0.18, 0.6 / sellingPoints.length)
+  }));
 
-        <div ref={historyRef} className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3">
-          {messages.map((message) => (
-            <div key={message.id} className={clsx('flex flex-col', message.role === 'user' ? 'items-end' : 'items-start')}>
-              <div
-                className={clsx(
-                  'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[13px] leading-[19px] text-neutral-highOnSurface',
-                  message.role === 'user' ? 'rounded-br-md bg-primary-surface2' : 'rounded-bl-md bg-neutral-surface2'
-                )}
-              >
-                {message.content}
-              </div>
-              {/* 追问的可点选项：多选勾选，确认才发送；只在还等着回答时可用 */}
-              {message.options && pendingIntent ? (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {message.options.map((option) => {
-                    const isPicked = selectedPoints.includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        data-selling-point-option
-                        aria-pressed={isPicked}
-                        onClick={() => togglePoint(option)}
-                        className={clsx(
-                          'rounded-full border border-solid px-2.5 py-1 text-[11px] font-medium transition-colors',
-                          isPicked
-                            ? 'border-primary-fill bg-primary-fill text-neutral-onFill'
-                            : 'border-primary-fill bg-neutral-surface text-primary-onSurface hover:bg-primary-surface2'
-                        )}
-                      >
-                        {isPicked ? '✓ ' : ''}
-                        {option}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    data-selling-points-confirm
-                    disabled={selectedPoints.length === 0}
-                    onClick={() => send(selectedPoints.join(', '))}
-                    className={clsx(
-                      'rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity',
-                      selectedPoints.length > 0
-                        ? 'bg-neutral-fillHigh text-neutral-onFill hover:opacity-90'
-                        : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
-                    )}
-                  >
-                    Add {selectedPoints.length || ''} selling point{selectedPoints.length === 1 ? '' : 's'}
-                  </button>
-                </div>
-              ) : null}
+  return (
+    <section
+      data-edit-dock-timeline
+      className="absolute bottom-0 left-0 z-30 flex animate-dock-in-up flex-col border-t border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_-12px_32px_rgba(16,24,40,0.10)]"
+      style={{ height: EDIT_DOCK_BOTTOM_H, right: EDIT_DOCK_RIGHT_W }}
+    >
+      {/* 走带条：剪辑工具 / 播放控制 / 缩放 / 关闭 */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-solid border-neutral-fillLow px-3 py-1.5">
+        <button
+          type="button"
+          title="Split clip at playhead"
+          className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconCut size={14} />
+        </button>
+        <button
+          type="button"
+          title="Duplicate clip"
+          className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconCopyContent size={14} />
+        </button>
+        <button
+          type="button"
+          title="Delete clip"
+          className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconDelete size={14} />
+        </button>
+
+        <span className="flex-1" />
+
+        <span className="text-[13px] font-medium tabular-nums text-neutral-highOnSurface">
+          {formatTime(currentTime)}
+          <span className="text-neutral-lowOnSurface"> / {formatTime(duration)}</span>
+        </span>
+        <button
+          type="button"
+          title="Jump to start"
+          onClick={() => seekTo(0)}
+          className="ml-2 flex size-7 items-center justify-center rounded-lg text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          ⏮
+        </button>
+        <button
+          type="button"
+          title={isPlaying ? 'Pause' : 'Play'}
+          onClick={togglePlay}
+          className="flex size-8 items-center justify-center rounded-full bg-neutral-fillHigh text-[12px] text-neutral-onFill transition-opacity hover:opacity-85"
+        >
+          {isPlaying ? '❚❚' : '▶'}
+        </button>
+        <button
+          type="button"
+          title="Jump to end"
+          onClick={() => seekTo(duration)}
+          className="flex size-7 items-center justify-center rounded-lg text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          ⏭
+        </button>
+
+        <span className="flex-1" />
+
+        <div className="flex items-center gap-2">
+          <KsIconZoomOut size={13} className="text-neutral-lowOnSurface" />
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.1}
+            value={timelineZoom}
+            title="Timeline zoom"
+            onChange={(event) => setTimelineZoom(Number(event.target.value))}
+            className="w-24 accent-primary-fill"
+          />
+          <KsIconZoomIn size={13} className="text-neutral-lowOnSurface" />
+        </div>
+        <button
+          type="button"
+          title="Close editor"
+          onClick={onClose}
+          className="ml-1 flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
+        >
+          <KsIconClose size={14} />
+        </button>
+      </div>
+
+      {/* 轨道区：左侧 gutter 固定，右侧标尺 + 轨道横向滚动 */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-14 shrink-0 flex-col border-r border-solid border-neutral-fillLow">
+          <div className="h-7 shrink-0" />
+          {[2, 1].map((trackNo) => (
+            <div key={trackNo} className="flex h-14 items-center justify-center gap-1 text-neutral-mediumOnSurface">
+              <span className="text-[11px] font-medium tabular-nums">{trackNo}</span>
+              <KsIconSound size={11} />
             </div>
           ))}
-          {isBusy ? (
-            <div className="flex items-center gap-1.5 text-[12px] text-neutral-lowOnSurface">
-              <span className="size-1.5 animate-pulse rounded-full bg-primary-fill" />
-              Editing…
+        </div>
+
+        <div className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="relative" style={{ width: timelineWidth + 48 }}>
+            {/* 标尺：点击定位播放头 */}
+            <div className="relative h-7 cursor-pointer border-b border-solid border-neutral-fillLow" onClick={seekFromRuler}>
+              {rulerMarks.map((second) => (
+                <span
+                  key={second}
+                  className="absolute top-1.5 text-[10px] tabular-nums text-neutral-lowOnSurface"
+                  style={{ left: second * pxPerSecond + 4 }}
+                >
+                  {formatTime(second).slice(0, 5)}
+                </span>
+              ))}
             </div>
-          ) : null}
-        </div>
 
-        <div className="shrink-0 border-t border-solid border-neutral-fillLow p-2.5">
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {QUICK_ACTIONS.map((label) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => send(label)}
-                className="rounded-full border border-solid border-neutral-fillLow bg-neutral-surface px-2.5 py-1 text-[11px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="rounded-xl border border-solid border-neutral-fillLow bg-neutral-surface1 p-2 focus-within:border-primary-fill">
-            <textarea
-              value={draft}
-              rows={2}
-              placeholder={isBusy ? 'Working…' : 'Describe the edit…'}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  send(draft);
-                  setDraft('');
-                }
-              }}
-              className="w-full resize-none bg-transparent text-[13px] leading-[18px] text-neutral-highOnSurface outline-none placeholder:text-neutral-lowOnSurface"
-            />
-            <div className="flex justify-end">
-              <button
-                type="button"
-                title="Send"
-                disabled={!draft.trim() || isBusy}
-                onClick={() => {
-                  send(draft);
-                  setDraft('');
-                }}
-                className={clsx(
-                  'flex size-7 items-center justify-center rounded-lg transition-colors',
-                  draft.trim() && !isBusy
-                    ? 'bg-primary-fill text-neutral-onFill'
-                    : 'cursor-not-allowed bg-neutral-surface2 text-neutral-lowOnSurface'
-                )}
-              >
-                <KsIconSend size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* 底部：时间线轨道，宽度让出右侧 agent 坞 */}
-      <section
-        data-edit-dock-timeline
-        className="absolute bottom-0 left-0 z-30 flex animate-dock-in-up flex-col border-t border-solid border-neutral-fillLow bg-neutral-surface shadow-[0_-12px_32px_rgba(16,24,40,0.10)]"
-        style={{ height: EDIT_DOCK_BOTTOM_H, right: EDIT_DOCK_RIGHT_W }}
-      >
-        {/* 走带条：剪辑工具 / 播放控制 / 缩放 */}
-        <div className="flex shrink-0 items-center gap-1 border-b border-solid border-neutral-fillLow px-3 py-1.5">
-          <button
-            type="button"
-            title="Split clip at playhead"
-            className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            <KsIconCut size={14} />
-          </button>
-          <button
-            type="button"
-            title="Duplicate clip"
-            className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            <KsIconCopyContent size={14} />
-          </button>
-          <button
-            type="button"
-            title="Delete clip"
-            className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            <KsIconDelete size={14} />
-          </button>
-
-          <span className="flex-1" />
-
-          <span className="text-[13px] font-medium tabular-nums text-neutral-highOnSurface">
-            {formatTime(currentTime)}
-            <span className="text-neutral-lowOnSurface"> / {formatTime(duration)}</span>
-          </span>
-          <button
-            type="button"
-            title="Jump to start"
-            onClick={() => seekTo(0)}
-            className="ml-2 flex size-7 items-center justify-center rounded-lg text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            ⏮
-          </button>
-          <button
-            type="button"
-            title={isPlaying ? 'Pause' : 'Play'}
-            onClick={togglePlay}
-            className="flex size-8 items-center justify-center rounded-full bg-neutral-fillHigh text-[12px] text-neutral-onFill transition-opacity hover:opacity-85"
-          >
-            {isPlaying ? '❚❚' : '▶'}
-          </button>
-          <button
-            type="button"
-            title="Jump to end"
-            onClick={() => seekTo(duration)}
-            className="flex size-7 items-center justify-center rounded-lg text-[11px] text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
-          >
-            ⏭
-          </button>
-
-          <span className="flex-1" />
-
-          <div className="flex items-center gap-2">
-            <KsIconZoomOut size={13} className="text-neutral-lowOnSurface" />
-            <input
-              type="range"
-              min={0.5}
-              max={2}
-              step={0.1}
-              value={timelineZoom}
-              title="Timeline zoom"
-              onChange={(event) => setTimelineZoom(Number(event.target.value))}
-              className="w-24 accent-primary-fill"
-            />
-            <KsIconZoomIn size={13} className="text-neutral-lowOnSurface" />
-          </div>
-        </div>
-
-        {/* 轨道区：左侧 gutter 固定，右侧标尺 + 轨道横向滚动 */}
-        <div className="flex min-h-0 flex-1">
-          <div className="flex w-14 shrink-0 flex-col border-r border-solid border-neutral-fillLow">
-            <div className="h-7 shrink-0" />
-            {[2, 1].map((trackNo) => (
-              <div
-                key={trackNo}
-                className="flex h-14 items-center justify-center gap-1 text-neutral-mediumOnSurface"
-              >
-                <span className="text-[11px] font-medium tabular-nums">{trackNo}</span>
-                <KsIconSound size={11} />
-              </div>
-            ))}
-          </div>
-
-          <div className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
-            <div className="relative" style={{ width: timelineWidth + 48 }}>
-              {/* 标尺：点击定位播放头 */}
-              <div
-                className="relative h-7 cursor-pointer border-b border-solid border-neutral-fillLow"
-                onClick={seekFromRuler}
-              >
-                {rulerMarks.map((second) => (
-                  <span
-                    key={second}
-                    className="absolute top-1.5 text-[10px] tabular-nums text-neutral-lowOnSurface"
-                    style={{ left: second * pxPerSecond + 4 }}
-                  >
-                    {formatTime(second).slice(0, 5)}
+            {/* 轨道 2：视频分段。抽到帧就铺真实胶片条，否则退回封面平铺 */}
+            <div className="relative h-14 py-1.5">
+              {videoClips.map((clip) => (
+                <div
+                  key={clip.id}
+                  title={clip.label}
+                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-neutral-fillLow bg-neutral-surface2"
+                  style={{ left: clip.start * pxPerSecond, width: clip.duration * pxPerSecond - 2 }}
+                >
+                  {filmstrip.length > 0 ? (
+                    // 整条胶片按 -start 偏移，各段裁出自己覆盖的帧，拼起来正好是完整视频
+                    <div className="absolute inset-y-0 flex" style={{ left: -clip.start * pxPerSecond, width: timelineWidth }}>
+                      {filmstrip.map((frame, index) => (
+                        <img
+                          // 胶片帧顺序固定，用下标当 key 没问题
+                          // eslint-disable-next-line react/no-array-index-key
+                          key={index}
+                          src={frame}
+                          alt=""
+                          draggable={false}
+                          className="h-full object-cover"
+                          style={{ width: frameSpanSeconds * pxPerSecond }}
+                        />
+                      ))}
+                    </div>
+                  ) : posterUrl ? (
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        backgroundImage: `url(${posterUrl})`,
+                        backgroundSize: 'auto 100%',
+                        backgroundRepeat: 'repeat-x'
+                      }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary-surface2 to-neutral-surface2" />
+                  )}
+                  <span className="absolute left-1.5 top-1 rounded bg-neutral-fillHigh/70 px-1 text-[10px] font-medium text-neutral-onFill">
+                    {clip.label}
                   </span>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
 
-              {/* 轨道 2：视频分段。抽到帧就铺真实胶片条，否则退回封面平铺 */}
-              <div className="relative h-14 py-1.5">
-                {videoClips.map((clip) => (
-                  <div
-                    key={clip.id}
-                    title={clip.label}
-                    className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-neutral-fillLow bg-neutral-surface2"
-                    style={{ left: clip.start * pxPerSecond, width: clip.duration * pxPerSecond - 2 }}
-                  >
-                    {filmstrip.length > 0 ? (
-                      // 整条胶片按 -start 偏移，各段裁出自己覆盖的帧，拼起来正好是完整视频
-                      <div
-                        className="absolute inset-y-0 flex"
-                        style={{ left: -clip.start * pxPerSecond, width: timelineWidth }}
-                      >
-                        {filmstrip.map((frame, index) => (
-                          <img
-                            // 胶片帧顺序固定，用下标当 key 没问题
-                            // eslint-disable-next-line react/no-array-index-key
-                            key={index}
-                            src={frame}
-                            alt=""
-                            draggable={false}
-                            className="h-full object-cover"
-                            style={{ width: frameSpanSeconds * pxPerSecond }}
-                          />
-                        ))}
-                      </div>
-                    ) : posterUrl ? (
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          backgroundImage: `url(${posterUrl})`,
-                          backgroundSize: 'auto 100%',
-                          backgroundRepeat: 'repeat-x'
-                        }}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary-surface2 to-neutral-surface2" />
-                    )}
-                    <span className="absolute left-1.5 top-1 rounded bg-neutral-fillHigh/70 px-1 text-[10px] font-medium text-neutral-onFill">
-                      {clip.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* 轨道 1：卖点动效轨。空着等 agent 问答落 callout，一个卖点一条 */}
-              <div className="relative h-14 py-1.5">
-                {sellingGraphics.length === 0 ? (
-                  <span className="absolute inset-y-1.5 flex items-center px-2 text-[10px] text-neutral-lowOnSurface">
-                    Motion graphics land here — ask the agent to call out selling points.
+            {/* 轨道 1：卖点动效轨。空着等 agent 问答落 callout，一个卖点一条 */}
+            <div className="relative h-14 py-1.5">
+              {sellingGraphics.length === 0 ? (
+                <span className="absolute inset-y-1.5 flex items-center px-2 text-[10px] text-neutral-lowOnSurface">
+                  Motion graphics land here — ask the Creative agent to call out selling points.
+                </span>
+              ) : null}
+              {sellingGraphics.map((graphic) => (
+                <div
+                  key={graphic.id}
+                  title={`Motion graphic — ${graphic.label}`}
+                  data-selling-graphic
+                  className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-amber-300 bg-amber-100"
+                  style={{
+                    left: graphic.startFrac * duration * pxPerSecond,
+                    width: graphic.durationFrac * duration * pxPerSecond - 2
+                  }}
+                >
+                  <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-amber-700">
+                    ✦ {graphic.label}
                   </span>
-                ) : null}
-                {sellingGraphics.map((graphic) => (
-                  <div
-                    key={graphic.id}
-                    title={`Motion graphic — ${graphic.label}`}
-                    data-selling-graphic
-                    className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-amber-300 bg-amber-100"
-                    style={{
-                      left: graphic.startFrac * duration * pxPerSecond,
-                      width: graphic.durationFrac * duration * pxPerSecond - 2
-                    }}
-                  >
-                    <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-amber-700">
-                      ✦ {graphic.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
 
-              {/* 播放头：绿旗 + 竖线，贯穿标尺和轨道 */}
-              <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: currentTime * pxPerSecond }}>
-                <div className="absolute -left-[5px] top-0 h-3.5 w-2.5 rounded-sm rounded-bl-none bg-primary-fill" />
-                <div className="absolute inset-y-0 w-px bg-primary-fill" />
-              </div>
+            {/* 播放头：绿旗 + 竖线，贯穿标尺和轨道 */}
+            <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: currentTime * pxPerSecond }}>
+              <div className="absolute -left-[5px] top-0 h-3.5 w-2.5 rounded-sm rounded-bl-none bg-primary-fill" />
+              <div className="absolute inset-y-0 w-px bg-primary-fill" />
             </div>
           </div>
         </div>
-      </section>
-    </>
+      </div>
+    </section>
   );
 }
 

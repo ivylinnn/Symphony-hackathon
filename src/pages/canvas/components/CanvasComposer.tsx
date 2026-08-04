@@ -5,6 +5,7 @@ import {
   KsIconImageCollection,
   KsIconPeople,
   KsIconPlus,
+  KsIconTextFile,
   KsIconTips,
   KsIconToolbox,
   KsIconVideoClip
@@ -32,7 +33,7 @@ interface CanvasComposerProps {
 interface Attachment {
   id: string;
   /** 产品图渲染成方图缩略格，其余渲染成宽胶囊。 */
-  kind: 'image' | 'trend' | 'video' | 'avatar';
+  kind: 'image' | 'trend' | 'video' | 'avatar' | 'brief';
   /** 胶囊上显示的类型名。 */
   label: string;
   /** 本地上传的缩略图。 */
@@ -140,15 +141,16 @@ function CanvasComposer({
   };
 
   const hasImages = attachments.some((item) => item.kind === 'image');
-  /** 上传了产品图，或写了提示词，都可以发起生成。 */
-  const canSubmit = hasImages || Boolean(prompt.trim());
+  const hasBrief = attachments.some((item) => item.kind === 'brief');
+  /** 上传了产品图 / 挂了 product brief / 写了提示词，都可以发起生成。 */
+  const canSubmit = hasImages || hasBrief || Boolean(prompt.trim());
 
   const submit = () => {
     if (!canSubmit) {
       return;
     }
-    // 有产品图：交给画布落输入节点，brief 在右下角 agent 里出
-    if (hasImages) {
+    // 有产品图或 brief：交给画布落输入节点，brief 在 Creative agent 里出
+    if (hasImages || hasBrief) {
       onGenerateBrief();
       return;
     }
@@ -215,6 +217,14 @@ function CanvasComposer({
                             icon={<KsIconToolbox size={14} />}
                             label="Select from asset library"
                             onClick={() => setMenu('assets')}
+                          />
+                          <MenuItem
+                            icon={<KsIconTextFile size={14} />}
+                            label="Add product brief"
+                            onClick={() => {
+                              addAttachment({ kind: 'brief', label: 'Product brief' });
+                              setMenu(null);
+                            }}
                           />
                         </MenuSection>
                         <MenuSection title="Reference">
@@ -316,7 +326,11 @@ function CanvasComposer({
                     className="h-14 w-16 shrink-0 overflow-hidden rounded-xl"
                     style={attachment.background ? { background: attachment.background } : undefined}
                   >
-                    {attachment.videoUrl ? (
+                    {attachment.kind === 'brief' ? (
+                      <span className="flex size-full items-center justify-center bg-primary-surface2 text-primary-onSurface">
+                        <KsIconTextFile size={18} />
+                      </span>
+                    ) : attachment.videoUrl ? (
                       <video
                         src={attachment.videoUrl}
                         muted
