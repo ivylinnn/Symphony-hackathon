@@ -1679,7 +1679,9 @@ function CanvasPage() {
       {/* 内联编辑模式：画布保持可见，右侧滑入编辑 agent，底部滑入时间线轨道 */}
       {editDockNode ? (
         <NodeEditDock
+          nodeId={editDockNode.id}
           nodeTitle={editDockNode.title}
+          videoUrl={editDockNode.videoUrl}
           posterUrl={editDockNode.assetUrl}
           initialPrompt={editDock?.prompt}
           onClose={exitEditMode}

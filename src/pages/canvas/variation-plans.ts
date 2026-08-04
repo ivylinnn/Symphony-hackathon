@@ -104,13 +104,27 @@ interface VariationSeed {
   rationale: string;
   /** 缺省用 plan.audience；深分支的受众探索会覆盖。 */
   audience?: string;
+  /** 专属缩略图；缺省从 THUMBS 里轮换。 */
+  thumbnail?: string;
 }
+
+/**
+ * 三个初始概念的专属缩略图（用户提供的三张概念图）。
+ * 把对应文件放进 public/ 即可生效：
+ * concept-trend-led.png（街头滑板）/ concept-benefit-demo.png（球场）/ concept-lifestyle.png（天台聚会）。
+ */
+const CONCEPT_THUMBS = {
+  'trend-led': '/concept-trend-led.png',
+  'benefit-demo': '/concept-benefit-demo.png',
+  'summer-lifestyle': '/concept-lifestyle.png'
+} as const;
 
 /** 每条创意方向下的变体种子；生成时按 plan 填充受众和促销。 */
 const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
   'trend-led': [
     {
       name: 'Trend-led hook',
+      thumbnail: CONCEPT_THUMBS['trend-led'],
       whatChanged: 'Opens on the outfit transition beat; discount lands in the first line.',
       hook: 'Wait for it… {offer} on everything you just saw.',
       confidence: 86,
@@ -134,6 +148,7 @@ const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
   'benefit-demo': [
     {
       name: 'Pocket-first demo',
+      thumbnail: CONCEPT_THUMBS['benefit-demo'],
       whatChanged: 'Leads with the kangaroo pocket demo instead of the outfit.',
       hook: 'This pocket fits your phone, keys AND the {offer}.',
       confidence: 82,
@@ -157,6 +172,7 @@ const SEEDS_BY_STRATEGY: Record<string, VariationSeed[]> = {
   'summer-lifestyle': [
     {
       name: 'Golden-hour story',
+      thumbnail: CONCEPT_THUMBS['summer-lifestyle'],
       whatChanged: 'Background moved to a beach sunset; softer pacing.',
       hook: 'The tee that survived every plan you didn’t make.',
       confidence: 79,
@@ -216,7 +232,7 @@ const fillSeed = (seed: VariationSeed, plan: VariationPlan, index: number): Vari
   hook: seed.hook.replace('{offer}', plan.offer),
   confidence: seed.confidence,
   rationale: seed.rationale,
-  thumbnail: THUMBS[index % THUMBS.length],
+  thumbnail: seed.thumbnail ?? THUMBS[index % THUMBS.length],
   status: 'draft'
 });
 

@@ -578,6 +578,7 @@ function NodeCard({
       onPointerUp={() => onDropOnCard(node.id)}
       onDoubleClick={() => onOpenEditor(node.id)}
       data-node-kind={node.kind}
+      data-node-id={node.id}
     >
       {/* 卡片外的名字行（Flora 风格）：图标 + 名字挂在卡片左上角外侧。
           hover/选中时这块位置让给操作条，避免两者叠在一起。 */}
