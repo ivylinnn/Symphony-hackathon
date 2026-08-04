@@ -19,8 +19,10 @@ const DEMO_DURATION = 19.15;
 /** 时间线基准密度，缩放滑杆在此基础上乘系数。 */
 const BASE_PX_PER_SECOND = 56;
 const PLAYBACK_TICK_MS = 100;
-/** 从视频里抽多少帧铺进视频轨。 */
-const FILMSTRIP_FRAMES = 8;
+/** 从视频里抽多少帧铺进视频轨。帧越密每帧铺得越窄，放大时也不糊。 */
+const FILMSTRIP_FRAMES = 14;
+/** 抽帧画布高度：远高于轨道显示高度（~44px），保证缩放后依然高清。 */
+const FILMSTRIP_FRAME_HEIGHT = 256;
 
 /**
  * 视频轨按广告结构切段：最后 2 秒单独切出来做 CTA，
@@ -65,9 +67,9 @@ const extractFilmstrip = async (src: string, count: number): Promise<string[]> =
     throw new Error('no decodable video');
   }
   const canvas = document.createElement('canvas');
-  const scale = 96 / video.videoHeight;
+  const scale = FILMSTRIP_FRAME_HEIGHT / video.videoHeight;
   canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-  canvas.height = 96;
+  canvas.height = FILMSTRIP_FRAME_HEIGHT;
   const context = canvas.getContext('2d');
   if (!context) {
     throw new Error('no canvas context');
@@ -80,7 +82,7 @@ const extractFilmstrip = async (src: string, count: number): Promise<string[]> =
       video.currentTime = ((index + 0.5) / count) * video.duration;
     });
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    frames.push(canvas.toDataURL('image/jpeg', 0.6));
+    frames.push(canvas.toDataURL('image/jpeg', 0.85));
   }
   video.removeAttribute('src');
   video.load();
@@ -283,7 +285,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, endCardUrl, 
       return;
     }
     let cancelled = false;
-    extractFilmstrip(endCardUrl, 3)
+    extractFilmstrip(endCardUrl, 4)
       .then((frames) => {
         if (!cancelled) {
           setEndCardStrip(frames);
