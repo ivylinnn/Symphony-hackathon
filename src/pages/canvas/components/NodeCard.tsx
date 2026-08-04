@@ -62,6 +62,8 @@ interface NodeCardProps {
   onVariationEvent: (nodeId: string, event: VariationEvent) => void;
   /** 本节点正处于内联编辑模式：悬浮菜单换成「Exit editing mode」。 */
   isEditing: boolean;
+  /** 编辑模式贴上片尾卡后的预览素材：叠一个隐藏的 overlay video，时间线播到片尾段时由剪辑坞点亮。 */
+  endCardUrl: string | null;
   /** 退出内联编辑模式。 */
   onExitEditor: () => void;
   onDuplicate: (nodeId: string) => void;
@@ -214,6 +216,7 @@ function NodeBody({
   isHovered,
   videoRotation = 0,
   isEnhanced = false,
+  endCardUrl = null,
   onTextChange,
   onOpenEditor,
   onStoryboardGenerate,
@@ -227,6 +230,8 @@ function NodeBody({
   videoRotation?: number;
   /** 悬浮工具条的「Enhance」：叠加一层画质增强滤镜。 */
   isEnhanced?: boolean;
+  /** 编辑模式下片尾卡预览 overlay 的素材地址。 */
+  endCardUrl?: string | null;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
@@ -324,6 +329,17 @@ function NodeBody({
           ) : (
             <span className="text-[12px] font-medium text-neutral-mediumOnSurface">{node.title}</span>
           )}
+          {/* 片尾卡预览 overlay：默认全透明盖在主片上，时间线播进片尾段时由剪辑坞点亮并播放 */}
+          {endCardUrl ? (
+            <video
+              data-end-card-video
+              src={endCardUrl}
+              muted
+              playsInline
+              preload="auto"
+              className="pointer-events-none absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-200"
+            />
+          ) : null}
           {/* 悬停时的剪辑入口：所有视频卡中央都是 Edit，直接进剪辑模式 */}
           {node.kind === 'video' && isHovered ? (
             <button
@@ -547,6 +563,7 @@ function NodeCard({
   onAudioGenerate,
   onVariationEvent,
   isEditing,
+  endCardUrl,
   onExitEditor,
   onDuplicate,
   onDelete
@@ -670,6 +687,7 @@ function NodeCard({
             isHovered={isHovered}
             videoRotation={videoRotation}
             isEnhanced={isEnhanced}
+            endCardUrl={endCardUrl}
             onTextChange={(text) => onTextChange(node.id, text)}
             onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}

@@ -13,7 +13,7 @@ import Minimap from './components/Minimap';
 import NodeCard from './components/NodeCard';
 import NodePalette from './components/NodePalette';
 import SelectionToolbar from './components/SelectionToolbar';
-import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
+import NodeEditDock, { EDIT_DOCK_BOTTOM_H, EDIT_DOCK_RIGHT_W, END_CARD_VIDEO_URL, SELLING_POINT_VIDEO_URL } from './components/NodeEditDock';
 import {
   AUDIO_CLIPS_WIDTH,
   GRID_SIZE,
@@ -1585,6 +1585,7 @@ function CanvasPage() {
                 )
               }
               isEditing={editDock?.nodeId === node.id}
+              endCardUrl={editDock?.nodeId === node.id && editHasEndCard ? END_CARD_VIDEO_URL : null}
               onExitEditor={exitEditMode}
               onDuplicate={duplicateNode}
               onDelete={removeNode}

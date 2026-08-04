@@ -229,7 +229,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, isClosing, onToggle, on
         return {
           id: nextEditMessageId(),
           role: 'agent',
-          content: 'Added the branded end card — it plays after the CTA, at the end of everything on the timeline. The original cut is untouched.'
+          content: 'Added the branded end card — it replaces the CTA clip on the timeline and plays the final 5 seconds right in the preview.'
         };
       });
       return;

@@ -25,15 +25,19 @@ const FILMSTRIP_FRAMES = 8;
 /**
  * 视频轨按广告结构切段：最后 2 秒单独切出来做 CTA，
  * 其余时长对半分给 Hook / Body。
+ * 片尾卡应用后 CTA 段被它整段替换，主片只留 Hook / Body。
  */
-const buildVideoClips = (duration: number) => {
+const buildVideoClips = (duration: number, hasEndCard: boolean) => {
   const ctaSeconds = Math.min(2, duration / 3);
   const half = (duration - ctaSeconds) / 2;
-  return [
+  const clips = [
     { id: 'clip-hook', label: 'Hook', start: 0, duration: half },
-    { id: 'clip-body', label: 'Body', start: half, duration: half },
-    { id: 'clip-cta', label: 'CTA', start: duration - ctaSeconds, duration: ctaSeconds }
+    { id: 'clip-body', label: 'Body', start: half, duration: half }
   ];
+  if (!hasEndCard) {
+    clips.push({ id: 'clip-cta', label: 'CTA', start: duration - ctaSeconds, duration: ctaSeconds });
+  }
+  return clips;
 };
 
 /** 卖点动效应用后，预览切到的成片（带 selling-point 贴片的渲染版本）。 */
@@ -128,13 +132,28 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
   /** 视频解不了码（缺编解码器等）：解绑，播放头退回本地推进。 */
   const [videoBroken, setVideoBroken] = useState(false);
 
-  /** 片尾卡的胶片帧，接在主片之后单独抽。 */
+  /** 片尾卡的胶片帧，替换 CTA 段后单独抽。 */
   const [endCardStrip, setEndCardStrip] = useState<string[]>([]);
+  /** 播放头当前是否落在片尾卡段：预览切到节点卡上的片尾卡 overlay。 */
+  const inEndSegmentRef = useRef(false);
 
   const pxPerSecond = BASE_PX_PER_SECOND * timelineZoom;
+  /** 片尾卡替换掉最后的 CTA 段：主片只播到 CTA 起点，剩下交给片尾卡。 */
+  const ctaSeconds = Math.min(2, duration / 3);
+  const mainSeconds = hasEndCard ? duration - ctaSeconds : duration;
   /** 主片 + 片尾卡的总时长；标尺、播放头、走带都以它为准。 */
-  const totalDuration = duration + (hasEndCard ? END_CARD_SECONDS : 0);
+  const totalDuration = mainSeconds + (hasEndCard ? END_CARD_SECONDS : 0);
   const timelineWidth = totalDuration * pxPerSecond;
+
+  /** 节点卡上的片尾卡预览 overlay：进入片尾段时淡入盖住主片。 */
+  const findEndCardVideo = () =>
+    document.querySelector<HTMLVideoElement>(`[data-node-id="${nodeId}"] [data-end-card-video]`);
+  const setEndCardVisible = (visible: boolean) => {
+    const overlay = findEndCardVideo();
+    if (overlay) {
+      overlay.style.opacity = visible ? '1' : '0';
+    }
+  };
 
   /* Esc 直接退出编辑模式，回到画布。 */
   useEffect(() => {
@@ -160,7 +179,9 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     if (!videoUrl || videoBroken) {
       return;
     }
-    const video = document.querySelector<HTMLVideoElement>(`[data-node-id="${nodeId}"] video`);
+    const video = document.querySelector<HTMLVideoElement>(
+      `[data-node-id="${nodeId}"] video:not([data-end-card-video])`
+    );
     if (!video) {
       return;
     }
@@ -177,7 +198,30 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     video.addEventListener('error', markBroken);
 
     const poll = window.setInterval(() => {
-      setCurrentTime(video.currentTime);
+      // 片尾段：进度跟着 overlay 走，主片保持暂停
+      if (hasEndCard && inEndSegmentRef.current) {
+        const overlay = findEndCardVideo();
+        if (overlay) {
+          setCurrentTime(Math.min(totalDuration, mainSeconds + overlay.currentTime));
+          setIsPlaying(!overlay.paused && !overlay.ended);
+          return;
+        }
+      }
+      // 主片播到 CTA 起点：暂停主片，无缝切到片尾卡 overlay
+      if (hasEndCard && !video.paused && video.currentTime >= mainSeconds - PLAYBACK_TICK_MS / 1000) {
+        video.pause();
+        const overlay = findEndCardVideo();
+        if (overlay) {
+          inEndSegmentRef.current = true;
+          overlay.style.opacity = '1';
+          overlay.currentTime = 0;
+          overlay.play().catch(() => {});
+          setCurrentTime(mainSeconds);
+          setIsPlaying(true);
+          return;
+        }
+      }
+      setCurrentTime(Math.min(video.currentTime, mainSeconds));
       setIsPlaying(!video.paused && !video.ended);
     }, PLAYBACK_TICK_MS);
 
@@ -188,7 +232,17 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
       video.pause();
       boundVideoRef.current = null;
     };
-  }, [nodeId, videoBroken, videoUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId, videoBroken, videoUrl, hasEndCard, mainSeconds, totalDuration]);
+
+  /* 撤掉片尾卡时归位：藏起 overlay，播放头回主片语境。 */
+  useEffect(() => {
+    if (!hasEndCard) {
+      inEndSegmentRef.current = false;
+      setEndCardVisible(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEndCard]);
 
   /* 抽帧铺视频轨；解不了码就保持空数组，渲染层退回封面平铺。 */
   useEffect(() => {
@@ -236,6 +290,11 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     const timer = window.setInterval(() => {
       setCurrentTime((time) => {
         const next = time + PLAYBACK_TICK_MS / 1000;
+        // 预览同步跟着播放头：过了主片就亮出片尾卡 overlay
+        if (hasEndCard) {
+          inEndSegmentRef.current = next >= mainSeconds;
+          setEndCardVisible(next >= mainSeconds);
+        }
         if (next >= totalDuration) {
           setIsPlaying(false);
           return totalDuration;
@@ -244,22 +303,62 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
       });
     }, PLAYBACK_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [isPlaying, totalDuration]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, totalDuration, hasEndCard, mainSeconds]);
 
   const seekTo = (time: number) => {
     const clamped = Math.min(totalDuration, Math.max(0, time));
     const video = boundVideoRef.current;
-    if (video) {
-      video.currentTime = clamped;
+    const overlay = hasEndCard ? findEndCardVideo() : null;
+    if (hasEndCard && clamped >= mainSeconds) {
+      // 落进片尾段：主片暂停，overlay 顶上并对齐进度
+      inEndSegmentRef.current = true;
+      video?.pause();
+      if (overlay) {
+        overlay.style.opacity = '1';
+        try {
+          overlay.currentTime = clamped - mainSeconds;
+        } catch {
+          // 解不了码的环境 seek 会失败，忽略即可
+        }
+      }
+    } else {
+      if (inEndSegmentRef.current && overlay) {
+        overlay.pause();
+        overlay.style.opacity = '0';
+      }
+      inEndSegmentRef.current = false;
+      if (video) {
+        video.currentTime = clamped;
+      }
     }
     setCurrentTime(clamped);
   };
 
   const togglePlay = () => {
+    const overlay = hasEndCard ? findEndCardVideo() : null;
+    // 播放头在片尾段：控制 overlay，播完从头回主片
+    if (inEndSegmentRef.current && overlay && boundVideoRef.current) {
+      if (overlay.paused || overlay.ended) {
+        if (overlay.ended || currentTime >= totalDuration - PLAYBACK_TICK_MS / 1000) {
+          seekTo(0);
+          togglePlayMain();
+          return;
+        }
+        overlay.play().catch(() => {});
+      } else {
+        overlay.pause();
+      }
+      return;
+    }
+    togglePlayMain();
+  };
+
+  const togglePlayMain = () => {
     const video = boundVideoRef.current;
     if (video) {
       if (video.paused || video.ended) {
-        if (video.ended || video.currentTime >= duration) {
+        if (video.ended || video.currentTime >= mainSeconds) {
           video.currentTime = 0;
         }
         video.play().catch(() => {
@@ -272,8 +371,8 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
       }
       return;
     }
-    if (!isPlaying && currentTime >= duration) {
-      setCurrentTime(0);
+    if (!isPlaying && currentTime >= totalDuration) {
+      seekTo(0);
     }
     setIsPlaying((playing) => !playing);
   };
@@ -288,7 +387,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
     rulerMarks.push(second);
   }
 
-  const videoClips = buildVideoClips(duration);
+  const videoClips = buildVideoClips(duration, hasEndCard);
   /** 每帧覆盖的秒数，胶片条按它换算像素宽。 */
   const frameSpanSeconds = duration / Math.max(1, filmstrip.length);
 
@@ -456,13 +555,13 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
                   </span>
                 </div>
               ))}
-              {/* 片尾卡：接在所有元素之后的独立片段，原视频不动 */}
+              {/* 片尾卡：整段替换原 CTA，从主片截断点接到结尾 */}
               {hasEndCard ? (
                 <div
-                  title="Branded end card (5s)"
+                  title="Branded end card (5s) — replaces the CTA"
                   data-end-card-clip
                   className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-primary-fill/60 bg-primary-surface2"
-                  style={{ left: duration * pxPerSecond + 2, width: END_CARD_SECONDS * pxPerSecond - 2 }}
+                  style={{ left: mainSeconds * pxPerSecond + 2, width: END_CARD_SECONDS * pxPerSecond - 4 }}
                 >
                   {endCardStrip.length > 0 ? (
                     <div className="absolute inset-y-0 flex w-full">
@@ -492,7 +591,7 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
                   title={`Promotion — ${promotion}`}
                   data-promotion-clip
                   className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-rose-300 bg-rose-100"
-                  style={{ left: duration * 0.55 * pxPerSecond, width: duration * 0.43 * pxPerSecond - 2 }}
+                  style={{ left: mainSeconds * 0.55 * pxPerSecond, width: mainSeconds * 0.43 * pxPerSecond - 2 }}
                 >
                   <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-rose-700">
                     % {promotion}
@@ -506,8 +605,8 @@ function NodeEditDock({ nodeId, videoUrl, posterUrl, sellingPoints, hasEndCard, 
                   data-selling-graphic
                   className="absolute inset-y-1.5 overflow-hidden rounded-md border border-solid border-amber-300 bg-amber-100"
                   style={{
-                    left: graphic.startFrac * duration * pxPerSecond,
-                    width: graphic.durationFrac * duration * pxPerSecond - 2
+                    left: graphic.startFrac * mainSeconds * pxPerSecond,
+                    width: graphic.durationFrac * mainSeconds * pxPerSecond - 2
                   }}
                 >
                   <span className="absolute left-1.5 top-1 truncate text-[10px] font-semibold text-amber-700">
