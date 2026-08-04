@@ -1,4 +1,4 @@
-import { KsIconArrowRight, KsIconChevronDown, KsIconCut, KsIconPlus } from '@fe-infra/keystone-icons-react';
+import { KsIconAiGeneration, KsIconArrowRight, KsIconChevronDown, KsIconCut, KsIconPlus } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import type React from 'react';
 import { useRef, useState } from 'react';
@@ -45,6 +45,8 @@ interface NodeCardProps {
   onDropOnCard: (nodeId: string) => void;
   /** 打开全屏编辑器；launch 可带一条指令（进门就交给 agent）或直接进入圈选模式。 */
   onOpenEditor: (nodeId: string, launch?: { prompt?: string; draw?: boolean }) => void;
+  /** 视频卡中央的 Refine：长出下游精修工作流（分镜 + 配音 + 成片节点）。 */
+  onRefine: (nodeId: string) => void;
   onRunTool: (nodeId: string, kind: EditNodeKind) => void;
   /** 执行本节点，调用平台的生成能力。 */
   onRun: (nodeId: string) => void;
@@ -212,6 +214,7 @@ function NodeBody({
   isEnhanced = false,
   onTextChange,
   onOpenEditor,
+  onRefine,
   onStoryboardGenerate,
   onOperationGenerate,
   onAudioGenerate,
@@ -225,6 +228,7 @@ function NodeBody({
   isEnhanced?: boolean;
   onTextChange: (text: string) => void;
   onOpenEditor: (nodeId: string) => void;
+  onRefine: (nodeId: string) => void;
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
   onOperationGenerate: (nodeId: string) => void;
   onAudioGenerate: (nodeId: string) => void;
@@ -324,13 +328,13 @@ function NodeBody({
           {node.kind === 'video' && isHovered ? (
             <button
               type="button"
-              title="Open the editor"
+              title="Refine — draft the storyboard, audio and final-cut nodes"
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => onOpenEditor(node.id)}
+              onClick={() => onRefine(node.id)}
               className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-neutral-fillHigh/85 px-3.5 py-1.5 text-[12px] font-semibold text-neutral-onFill shadow-[0_4px_12px_rgba(16,24,40,0.30)] transition-transform hover:scale-105"
             >
-              <KsIconCut size={13} />
-              Edit
+              <KsIconAiGeneration size={13} />
+              Refine
             </button>
           ) : null}
         </div>
@@ -520,6 +524,7 @@ function NodeCard({
   onRunTool,
   onRun,
   onTextChange,
+  onRefine,
   onStoryboardGenerate,
   onOperationGenerate,
   onAudioGenerate,
@@ -649,6 +654,7 @@ function NodeCard({
             onTextChange={(text) => onTextChange(node.id, text)}
             onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}
+            onRefine={onRefine}
             onOperationGenerate={onOperationGenerate}
             onAudioGenerate={onAudioGenerate}
             onVariationEvent={onVariationEvent}

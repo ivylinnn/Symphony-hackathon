@@ -1082,6 +1082,44 @@ function CanvasPage() {
     [addPrebuiltGraph, connectToBestInput, edges, executeNode, nodes, removeNode]
   );
 
+  /**
+   * 视频卡中央的 Refine：从这条成片长出下游精修工作流。
+   * 分镜节点带满内容落地，配音和成片节点保持默认空态等用户触发。
+   */
+  const handleRefine = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        return;
+      }
+      const baseX = node.x + node.width + 160;
+      const baseY = node.y - 200;
+      const storyboard = {
+        ...buildNode('storyboard', baseX, baseY, 'Storyboard'),
+        width: STORYBOARD_READY_WIDTH,
+        height: STORYBOARD_READY_HEIGHT,
+        storyboardReady: true,
+        status: 'done' as const
+      };
+      const audioClips = { ...buildNode('audio-clips', baseX, baseY + STORYBOARD_READY_HEIGHT + 80), width: AUDIO_CLIPS_WIDTH };
+      const finalVideo = buildNode('video', baseX + STORYBOARD_READY_WIDTH + 160, baseY + 420, 'Refined cut');
+
+      let refineEdges: CanvasEdge[] = [];
+      refineEdges = appendEdge(refineEdges, nodeId, 'out', storyboard.id, 'video');
+      refineEdges = appendEdge(refineEdges, storyboard.id, 'out', audioClips.id, 'prompt');
+      refineEdges = appendEdge(refineEdges, storyboard.id, 'out', finalVideo.id, 'prompt');
+      refineEdges = appendEdge(refineEdges, audioClips.id, 'out', finalVideo.id, 'audio');
+
+      addPrebuiltGraph([storyboard, audioClips, finalVideo], refineEdges);
+      setSelectedIds([storyboard.id, audioClips.id, finalVideo.id]);
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        animateViewportTo(getFitViewport([node, storyboard, audioClips, finalVideo], rect.width, rect.height));
+      }
+    },
+    [addPrebuiltGraph, animateViewportTo, nodes]
+  );
+
   /** Audio Clips 空态点「Generate audio」：跑一段生成态，再展开完整配音面板。 */
   const handleAudioGenerate = useCallback(
     (nodeId: string) => {
@@ -1522,6 +1560,7 @@ function CanvasPage() {
               onOperationGenerate={handleOperationGenerate}
               onAudioGenerate={handleAudioGenerate}
               onVariationEvent={handleVariationEvent}
+              onRefine={handleRefine}
               isEditing={editDock?.nodeId === node.id}
               onExitEditor={exitEditMode}
               onDuplicate={duplicateNode}
