@@ -1,4 +1,4 @@
-import { KsIconAiAssistant, KsIconAiGeneration, KsIconChevronRight, KsIconSend } from '@fe-infra/keystone-icons-react';
+import { KsIconAiAssistant, KsIconAiGeneration, KsIconChevronDown, KsIconSend } from '@fe-infra/keystone-icons-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
@@ -277,7 +277,7 @@ function AgentPanel({ isOpen, isBusy, messages, editing, onToggle, onSend, onAct
           onClick={onToggle}
           className="flex size-7 items-center justify-center rounded-lg text-neutral-mediumOnSurface transition-colors hover:bg-neutral-surface2"
         >
-          <KsIconChevronRight size={16} />
+          <KsIconChevronDown size={16} />
         </button>
       </header>
 

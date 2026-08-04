@@ -1478,6 +1478,8 @@ function CanvasPage() {
               onStoryboardGenerate={handleStoryboardGenerate}
               onOperationGenerate={handleOperationGenerate}
               onVariationEvent={handleVariationEvent}
+              isEditing={editDock?.nodeId === node.id}
+              onExitEditor={exitEditMode}
               onDuplicate={duplicateNode}
               onDelete={removeNode}
             />
@@ -1619,14 +1621,17 @@ function CanvasPage() {
         </div>
       ) : null}
 
-      <SelectionToolbar
-        count={selectedIds.length}
-        onSaveAsTemplate={saveAsTemplate}
-        onDuplicate={duplicateSelected}
-        onSelectAll={selectAll}
-        onDelete={deleteSelected}
-        onClear={() => setSelectedIds([])}
-      />
+      {/* 编辑模式下让位给「Exit editing mode」，不叠在推近的节点上 */}
+      {!editDock ? (
+        <SelectionToolbar
+          count={selectedIds.length}
+          onSaveAsTemplate={saveAsTemplate}
+          onDuplicate={duplicateSelected}
+          onSelectAll={selectAll}
+          onDelete={deleteSelected}
+          onClear={() => setSelectedIds([])}
+        />
+      ) : null}
 
       {/* 画布内隐藏了全局侧边导航，这里提供唯一的退出入口 */}
       <button

@@ -15,7 +15,7 @@ import {
   StoryboardBody,
   TikTokTrendBody
 } from './InspirationNodes';
-import NodeHoverToolbar, { VideoHoverToolbar } from './NodeHoverToolbar';
+import NodeHoverToolbar, { EditingModeToolbar, VideoHoverToolbar } from './NodeHoverToolbar';
 import { NodeKindIcon, PORT_TYPE_ICON } from './nodeIcons';
 import { BriefVariationPlanner, StrategyBody, VariationSetBody } from './VariationNodes';
 
@@ -54,6 +54,10 @@ interface NodeCardProps {
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
   /** 变体探索的所有交互（planner / strategy / variation set）统一走这一个分发器。 */
   onVariationEvent: (nodeId: string, event: VariationEvent) => void;
+  /** 本节点正处于内联编辑模式：悬浮菜单换成「Exit editing mode」。 */
+  isEditing: boolean;
+  /** 退出内联编辑模式。 */
+  onExitEditor: () => void;
   onDuplicate: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
 }
@@ -515,6 +519,8 @@ function NodeCard({
   onStoryboardGenerate,
   onOperationGenerate,
   onVariationEvent,
+  isEditing,
+  onExitEditor,
   onDuplicate,
   onDelete
 }: NodeCardProps) {
@@ -594,7 +600,10 @@ function NodeCard({
         </div>
       )}
 
-      {isHovered || isSoleSelection ? (
+      {isEditing ? (
+        // 剪辑模式：菜单只剩一个动作——退出编辑
+        <EditingModeToolbar onExit={onExitEditor} />
+      ) : isHovered || isSoleSelection ? (
         node.kind === 'video' && node.videoUrl ? (
           <VideoHoverToolbar
             onExtractFrame={extractFrame}

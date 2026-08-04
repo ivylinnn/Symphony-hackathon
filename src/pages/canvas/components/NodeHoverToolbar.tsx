@@ -1,4 +1,5 @@
 import {
+  KsIconClose,
   KsIconAiGeneration,
   KsIconArrowRight,
   KsIconCamera,
@@ -186,6 +187,25 @@ interface VideoHoverToolbarProps {
  * 画布上能就地完成的（抽帧/高清/旋转/下载/全屏/音频分离）直接执行，
  * 需要剪辑能力的动作则带着对应指令跳进全屏编辑器。
  */
+/** 剪辑模式下的极简工具条：整条菜单让位给唯一动作——退出编辑。 */
+export function EditingModeToolbar({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="absolute bottom-full left-0 z-30 mb-2" onPointerDown={(event) => event.stopPropagation()}>
+      <div className="flex items-center whitespace-nowrap rounded-xl bg-neutral-fillHigh px-1.5 py-1 text-neutral-onFill shadow-[0_10px_30px_rgba(16,24,40,0.16)]">
+        <button
+          type="button"
+          title="Exit editing mode"
+          onClick={onExit}
+          className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-neutral-onFill/90 transition-colors hover:bg-neutral-onFill/15"
+        >
+          <KsIconClose size={12} />
+          Exit editing mode
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function VideoHoverToolbar({
   onExtractFrame,
   onToggleEnhance,
