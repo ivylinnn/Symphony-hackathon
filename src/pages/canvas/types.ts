@@ -330,6 +330,8 @@ export interface CanvasNode {
   trendId?: string;
   /** Storyboard 节点是否已经落满 6 帧；缺省表示空态，等待用户输入触发生成。 */
   storyboardReady?: boolean;
+  /** Audio Clips 节点是否已生成配音；缺省表示空态，等「Generate audio」触发。 */
+  audioReady?: boolean;
   /** product-brief 节点的变体规划；planner 展开时可编辑。 */
   variationPlan?: VariationPlan;
   /** product-brief 节点的变体 planner 是否展开。 */

@@ -52,6 +52,8 @@ interface NodeCardProps {
   onTextChange: (nodeId: string, text: string) => void;
   /** Storyboard 触发生成：卡片内的输入框和卡片通用的运行按钮都走这一个，结局都保证落满 6 帧。 */
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
+  /** Audio Clips 触发生成：空态点「Generate audio」后展开完整配音面板。 */
+  onAudioGenerate: (nodeId: string) => void;
   /** 变体探索的所有交互（planner / strategy / variation set）统一走这一个分发器。 */
   onVariationEvent: (nodeId: string, event: VariationEvent) => void;
   /** 本节点正处于内联编辑模式：悬浮菜单换成「Exit editing mode」。 */
@@ -212,6 +214,7 @@ function NodeBody({
   onOpenEditor,
   onStoryboardGenerate,
   onOperationGenerate,
+  onAudioGenerate,
   onVariationEvent
 }: {
   node: CanvasNode;
@@ -224,6 +227,7 @@ function NodeBody({
   onOpenEditor: (nodeId: string) => void;
   onStoryboardGenerate: (nodeId: string, text?: string) => void;
   onOperationGenerate: (nodeId: string) => void;
+  onAudioGenerate: (nodeId: string) => void;
   onVariationEvent: (nodeId: string, event: VariationEvent) => void;
 }) {
   const config = NODE_KIND_CONFIG[node.kind];
@@ -258,7 +262,7 @@ function NodeBody({
     return <StoryboardBody node={node} onGenerate={onStoryboardGenerate} />;
   }
   if (config.body === 'audio-clips') {
-    return <AudioClipsBody />;
+    return <AudioClipsBody node={node} onGenerate={onAudioGenerate} />;
   }
 
   // 脚本卡：9:16 配图在上，描述文案在下（可编辑、可滚动）
@@ -518,6 +522,7 @@ function NodeCard({
   onTextChange,
   onStoryboardGenerate,
   onOperationGenerate,
+  onAudioGenerate,
   onVariationEvent,
   isEditing,
   onExitEditor,
@@ -645,6 +650,7 @@ function NodeCard({
             onStoryboardGenerate={onStoryboardGenerate}
             onOpenEditor={onOpenEditor}
             onOperationGenerate={onOperationGenerate}
+            onAudioGenerate={onAudioGenerate}
             onVariationEvent={onVariationEvent}
           />
         </div>
@@ -656,6 +662,8 @@ function NodeCard({
               ? onOperationGenerate
               : config.body === 'storyboard'
                 ? (nodeId) => onStoryboardGenerate(nodeId)
+                : config.body === 'audio-clips'
+                  ? onAudioGenerate
                 : config.body === 'strategy'
                   ? (nodeId) => onVariationEvent(nodeId, { type: 'expand-strategy' })
                   : config.body === 'variation-set'

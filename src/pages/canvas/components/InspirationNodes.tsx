@@ -1428,7 +1428,13 @@ let audioUploadSeq = 0;
  * 上轨是逐帧旁白（可拖拽换位、可替换音源），下轨是背景音乐；
  * 两条轨都支持本机上传或从素材库换入。
  */
-export function AudioClipsBody() {
+export function AudioClipsBody({
+  node,
+  onGenerate
+}: {
+  node: CanvasNode;
+  onGenerate: (nodeId: string) => void;
+}) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [voClips, setVoClips] = useState<AudioTrackClip[]>(buildVoiceClips);
@@ -1542,6 +1548,39 @@ export function AudioClipsBody() {
       </div>
     </div>
   );
+
+  // 空态：先点「Generate audio」才展开完整的配音面板
+  if (!node.audioReady) {
+    const isGenerating = node.status === 'generating';
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2.5 px-4 text-center">
+        {isGenerating ? (
+          <>
+            <span className="size-6 animate-spin rounded-full border-2 border-solid border-neutral-fillMedHigh border-t-primary-fill" />
+            <p className="text-[12px] leading-[17px] text-neutral-mediumOnSurface">
+              Generating 6 voiceover clips with ElevenLabs…
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px] leading-[16px] text-neutral-mediumOnSurface">
+              ElevenLabs Multilingual v2 · Rachel
+              <br />6 voiceover clips + brand BGM from the connected brief.
+            </p>
+            <button
+              type="button"
+              data-generate-audio
+              onClick={() => onGenerate(node.id)}
+              onPointerDown={(event) => event.stopPropagation()}
+              className="rounded-lg bg-primary-fill px-4 py-1.5 text-[12px] font-semibold text-neutral-onFill transition-opacity hover:opacity-90"
+            >
+              Generate audio
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div onPointerDown={(event) => event.stopPropagation()}>
