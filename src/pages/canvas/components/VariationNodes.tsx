@@ -508,13 +508,17 @@ export function VariationSetBody({ node, onEvent }: { node: CanvasNode; onEvent:
         </button>
         <button
           type="button"
-          title="Place every variation on the canvas as its own node"
+          title={
+            variations.some((variation) => variation.status === 'selected')
+              ? 'Place only the selected story on the canvas'
+              : 'Place every variation on the canvas as its own node'
+          }
           data-variation-add-to-canvas
           onClick={() => onEvent({ type: 'expand-to-canvas' })}
           onPointerDown={(event) => event.stopPropagation()}
           className="rounded-md bg-neutral-surface1 px-2 py-1 text-[11px] font-medium text-neutral-highOnSurface transition-colors hover:bg-neutral-surface2"
         >
-          Add to canvas
+          {variations.some((variation) => variation.status === 'selected') ? 'Add selected to canvas' : 'Add to canvas'}
         </button>
       </div>
 

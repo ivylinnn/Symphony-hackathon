@@ -1255,11 +1255,14 @@ function CanvasPage() {
         }
 
         case 'expand-to-canvas': {
+          // 选中了某条方向就只落那一个节点；没选中才整组摊开
           const specs = node.variations ?? [];
-          if (specs.length === 0) {
+          const selected = specs.filter((variation) => variation.status === 'selected');
+          const toPlace = selected.length > 0 ? selected : specs;
+          if (toPlace.length === 0) {
             return;
           }
-          const variationNodes = specs.map((spec, index) => materializeVariation(node, spec, index, specs.length));
+          const variationNodes = toPlace.map((spec, index) => materializeVariation(node, spec, index, toPlace.length));
           const variationEdges = variationNodes.reduce<CanvasEdge[]>(
             (acc, videoNode) => appendEdge(acc, nodeId, 'out', videoNode.id, 'video'),
             []
