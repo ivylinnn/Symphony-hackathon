@@ -235,7 +235,7 @@ function CanvasComposer({
                           />
                           <MenuItem
                             icon={<KsIconTextFile size={14} />}
-                            label="Upload product brief (PDF)"
+                            label="Add product brief"
                             onClick={pickBriefPdf}
                           />
                         </MenuSection>
